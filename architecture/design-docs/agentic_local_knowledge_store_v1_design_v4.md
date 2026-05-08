@@ -1,0 +1,942 @@
+# Agentic Local Knowledge Store — v1 Design (v4)
+
+## 1. Purpose
+
+This document defines the v1 architecture for a local-first, block-based knowledge system designed for safe human and agent interaction.
+
+The goal is to create a small, auditable substrate where:
+
+- documents can be rendered locally and read in a browser;
+- conversations can happen over those documents;
+- agents can participate in conversations and mutate content;
+- all changes are traceable and rollbackable;
+- the canonical format is JSON, readable without any editor or application;
+- both humans and agents author content in Djot, a formally parseable light markup language.
+
+The goal is **not** to build a general-purpose note-taking app, a rich document editor, or an Anytype/Obsidian replacement.
+
+## 2. Core user requirements
+
+These are the load-bearing requirements that drive every design decision. If a feature or constraint cannot be traced back to one of these, it does not belong in v1.
+
+| ID | Requirement |
+|----|-------------|
+| R1 | I can read rendered documents locally in a browser, including tables, math, images, and syntax-highlighted code. |
+| R2 | Every rendered block carries a stable, copyable unique identifier so I can reference it precisely from any external tool. |
+| R3 | I can have free-standing conversations not attached to any document. This is a primary working mode. |
+| R4 | Agents can participate in conversations and mutate documents. |
+| R5 | Agents cannot silently destroy content. All mutations create new block versions; all previous versions are retained. |
+| R6 | The canonical format is JSON, readable and parseable without any editor or application. |
+| R7 | The system is local-first. No internet, no auth, no multi-user. |
+| R8 | I author documents and conversations in a text editor. The browser is a reader, not a writer. |
+| R9 | The authoring format is natural for both humans and LLM agents — close to Markdown, formally parseable, with native support for block-level attributes. |
+
+## 3. Core thesis
+
+The system treats documentation, comments, agent discussions, and review feedback as structured data, not as mutable Markdown files.
+
+The central design rule is:
+
+> No content is ever destroyed. All changes produce new block versions. All previous versions are retained. Every mutation is traceable to an author and a point in time.
+
+### Why JSON and not Markdown as canonical storage?
+
+The choice of JSON over Markdown for the canonical *storage* layer was driven by experience with Markdown-based workflows (Obsidian). In Markdown:
+
+- block-level identity is fragile, dependent on convention rather than enforcement;
+- agent edits cannot be reliably scoped to specific blocks;
+- two-way sync between a canonical format and Markdown is error-prone.
+
+JSON blocks with stable IDs make immutability and targeting enforceable rather than conventional.
+
+### Why Djot and not Markdown as the authoring format?
+
+Markdown is natural for both humans and agents to write, but it is ambiguous to parse. The CommonMark specification requires 17 rules just for emphasis, and many constructs require backtracking or lookahead to resolve.
+
+Djot is a light markup language designed by John MacFarlane (creator of Pandoc and CommonMark) to look and feel like Markdown while being formally parseable in linear time with no backtracking. It fixes Markdown's ambiguities while preserving its readability.
+
+Critically for this system, Djot has native support for **block-level attributes**: `{#block_id}` before any block. This is exactly the stable block identity mechanism the system requires, built into the language rather than bolted on.
+
+The authoring format (Djot) and the storage format (JSON) are different layers:
+
+```text
+Djot (.djot files)     — what humans and agents write
+JSON (JSONL files)     — what the system stores
+HTML (generated pages) — what the browser renders
+```
+
+Djot can be deterministically parsed into JSON blocks. JSON blocks can be deterministically rendered back to Djot. This enables a clean separation where authoring feels like writing text, but storage provides the block-level identity, versioning, and traceability the system requires.
+
+### Why Djot works for agents
+
+LLMs produce Markdown-like text by default. Djot is close enough to Markdown that agents write it fluently with minimal prompting. The key differences (e.g., `_` for italic, `*` for bold, blank lines required between blocks) are simple rules easily provided in a system prompt.
+
+Unlike JSON — where formatting is structurally demanding and consumes attention — Djot imposes almost no formatting overhead on the LLM. The agent's natural reasoning output is already close to valid Djot. A parser feedback loop handles the rare formatting errors: if the agent produces malformed Djot, the parser returns a useful error message and the agent corrects it.
+
+This is fundamentally less demanding than asking an agent to produce structured JSON, where a single missing comma breaks everything and error messages are unhelpful.
+
+## 4. v1 scope
+
+### Included in v1
+
+1. Canonical JSON-based storage in JSONL files.
+2. Versioned blocks with stable IDs.
+3. Page documents composed of block references.
+4. Conversation documents for both free-standing chats and contextual comments.
+5. Operations as the grouping unit for related mutations, with full rollback capability.
+6. Djot as the authoring format for both humans and agents.
+7. Pre-rendered local HTML pages generated from page documents.
+8. Stable, copyable block IDs embedded in rendered HTML.
+9. Message-level attachments linking messages to blocks, pages, or other conversations. Block attachments include the version at time of reference.
+10. Agent mentions in messages to signal that a specific agent's input is requested.
+11. Local-only operation. No server process required.
+12. A CLI tool library for all system operations, designed for future editor integration.
+
+### Excluded from v1
+
+1. An API server or web application framework.
+2. Any browser-side writing.
+3. A WYSIWYG document editor.
+4. Real-time collaboration.
+5. Multi-user permissions.
+6. Remote sync.
+7. CRDTs.
+8. Public internet deployment.
+9. Mobile apps.
+10. A plugin system.
+11. Rich database views.
+12. Semantic folder-based collections.
+13. A separate comment object model (comments are conversations).
+14. Proposal-based review workflow (replaced by direct mutation with rollback).
+
+## 5. Local-first assumption
+
+The system runs locally as a collection of files and scripts. There is no server process.
+
+A typical v1 deployment is:
+
+```text
+JSONL files as canonical storage
++ SQLite index (derived, rebuilt on demand)
++ .djot files as the human/agent authoring surface
++ Python CLI tools for all operations
++ pandoc for parsing and rendering
++ generated HTML pages opened directly in a browser
++ local agent processes that interact via the same CLI tools or Python library
+```
+
+This means v1 does not need to solve:
+
+- account management;
+- authentication or authorization;
+- remote synchronization;
+- collaborative conflict resolution;
+- encryption for network transport;
+- public hosting security;
+- HTTP routing, request handling, or API design.
+
+## 6. Storage model
+
+### Logical model
+
+The store contains four object kinds:
+
+```text
+block        — versioned content unit
+page         — renderable document composed of block references
+conversation — ordered sequence of messages with optional attachments
+operation    — grouping label for related mutations
+```
+
+Mutations are not a separate object kind. A mutation is a new version of an existing block. The block version history *is* the mutation log. An operation groups related mutations so they can be understood and rolled back as a unit.
+
+### Physical layout
+
+```text
+workspace/
+  store/
+    blocks.jsonl
+    pages.jsonl
+    conversations.jsonl
+    operations.jsonl
+
+  indexes/
+    index.sqlite            ← derived, rebuilt on demand
+
+  authoring/
+    pages/
+      cache_invalidation.djot
+      api_design.djot
+    conversations/
+      conv_001.djot
+      conv_002.djot
+
+  site/
+    generated/
+      index.html
+      docs/
+        doc_001.html
+      assets/
+        style.css
+```
+
+### Why JSONL for canonical storage?
+
+- One file per object kind, not thousands of tiny files.
+- Append-friendly — new block versions, messages, and operations are appended.
+- Directly loadable into document databases (MongoDB, DuckDB) when the time comes.
+- Inspectable with standard command-line tools (`grep`, `jq`, `head`).
+- Git-friendly for line-level diffs.
+
+### Why a separate authoring directory?
+
+The `authoring/` directory contains `.djot` files — the human and agent writing surface. These files are *not* canonical. They are input to the ingestion process. The canonical data lives in `store/*.jsonl`.
+
+This separation means:
+
+- the authoring files can be messy, in-progress, or experimental;
+- ingestion is an explicit step that validates and transforms;
+- the canonical store is never directly edited by a human or agent writing text;
+- the authoring files can optionally be kept after ingestion (as source records) or discarded.
+
+### Design note: physical storage is an implementation detail
+
+The design is independent of the physical storage format. JSONL is chosen for v1. A later version may use DuckDB, MongoDB, or another document database. The logical model (blocks, pages, conversations, operations) remains the same regardless of backend.
+
+## 7. Djot as the authoring format
+
+Both humans and agents author content in Djot. This section describes how Djot relates to the canonical block model.
+
+### What a human-authored page looks like
+
+```djot
+{#blk_001}
+# Cache invalidation
+
+{#blk_002}
+The cache is invalidated when the source document changes.
+This means any downstream consumer must *check freshness*
+before using cached data.
+
+{#blk_003}
+## Edge cases
+
+{#blk_004}
+- Concurrent writes may cause stale reads.
+
+{#blk_005}
+- Circular dependencies must be detected.
+
+{#blk_006}
+> Always validate the cache timestamp before serving.
+> This is _not optional_.
+
+{#blk_007}
+```python
+def invalidate(key):
+    cache.pop(key, None)
+```
+
+{#blk_008}
+| Strategy | Complexity | Reliability |
+| --- | --- | --- |
+| TTL | Low | Medium |
+| Event-based | High | High |
+
+{#blk_009}
+$$`E = mc^2`
+```
+
+Each `{#id}` is a native Djot attribute that assigns a stable block ID to the following block element. This is not a custom extension — it is standard Djot syntax.
+
+### How ingestion works
+
+The ingestion tool reads a `.djot` file and produces canonical block and page records:
+
+1. Parse the Djot file into an AST (using pandoc or a Djot parser).
+2. Walk the AST. Each block-level element with an `{#id}` attribute becomes a block record.
+3. Block-level elements without an explicit ID get an auto-generated ID.
+4. The ordered sequence of block IDs becomes the page's `root` array.
+5. Block records are appended to `blocks.jsonl`. The page record is appended to `pages.jsonl`.
+
+For blocks that already exist in the store (same ID), ingestion creates a new version if the content has changed. If the content is identical (verified by hash), no new version is created.
+
+### How agents author content
+
+Agents write Djot text — either as complete documents or as fragments targeting specific blocks.
+
+**Creating new content:** The agent writes a `.djot` file (or a Djot string passed to the ingestion function). The system parses it into blocks.
+
+**Updating existing content:** The agent writes Djot text with an existing `{#blk_456}` attribute. The ingestion tool detects that `blk_456` already exists and creates a new version if the content has changed.
+
+**Why this works for agents:** Djot is close enough to Markdown that agents produce it fluently. The formatting overhead is negligible compared to JSON. If the agent produces malformed Djot, the parser returns a localized, useful error that the agent can fix — unlike JSON where a structural error can be difficult to diagnose.
+
+### Block types are derived from the AST, not hand-specified
+
+In previous design versions, block types (`paragraph`, `heading`, `code`, etc.) were explicit fields in the block schema. With Djot, block types are derived from the Djot AST during ingestion.
+
+A `#` line becomes a heading block. A paragraph becomes a paragraph block. A code fence becomes a code block. A `>` block becomes a quote block. The human or agent does not need to specify `"type": "paragraph"` — they just write text.
+
+The block `type` field in the canonical JSON is still present (for querying and rendering without re-parsing Djot), but it is set by the ingestion tool, not by the author.
+
+### Inline markup
+
+Djot inline syntax is used within block content:
+
+| Djot syntax | Meaning |
+|-------------|---------|
+| `_italic_` | Emphasis |
+| `*bold*` | Strong emphasis |
+| `` `code` `` | Inline code |
+| `[text](url)` | Link |
+| `{-deleted-}` | Strikethrough/deletion |
+| `{+inserted+}` | Insertion |
+| `{=highlighted=}` | Highlight |
+| `^superscript^` | Superscript |
+| `~subscript~` | Subscript |
+
+Inline markup is stored as-is in the block's `text` field. It is parsed into HTML at render time by pandoc. No custom inline parser is needed.
+
+### Djot for conversation messages
+
+Message bodies in conversations also use Djot inline markup. When a human or agent writes a conversation message, the body is a Djot-formatted string. It is stored as-is and rendered to HTML when conversations are displayed.
+
+## 8. Blocks
+
+A block is a versioned content unit. Its type and content are derived from Djot during ingestion.
+
+### Block identity model
+
+A block has a **stable ID** that persists across all versions. When a block is mutated, the ID stays the same and a new version is created. All previous versions are retained.
+
+- **Structural references** (page `root` arrays) use bare block IDs and always resolve to the latest version.
+- **Historical references** (conversation message attachments) include the block version at time of reference, creating an exact snapshot.
+
+### Block schema
+
+```json
+{
+  "id": "blk_456",
+  "version": 1,
+  "schema": "block.v1",
+  "type": "paragraph",
+  "content": {
+    "text": "The cache is invalidated when the source document changes."
+  },
+  "created_by": "human:istvan",
+  "created_at": "2026-05-06T12:00:00Z",
+  "hash": "sha256:abc123..."
+}
+```
+
+After mutation (as part of an operation):
+
+```json
+{
+  "id": "blk_456",
+  "version": 2,
+  "schema": "block.v1",
+  "type": "paragraph",
+  "content": {
+    "text": "The cache is invalidated when the source document or any declared dependency changes."
+  },
+  "created_by": "agent:writer",
+  "created_at": "2026-05-06T12:10:00Z",
+  "hash": "sha256:def789...",
+  "parent_version": 1,
+  "mutation_context": {
+    "operation_id": "op_001",
+    "conversation_id": "conv_002",
+    "message_id": "msg_004"
+  }
+}
+```
+
+### Key fields
+
+| Field | Purpose |
+|-------|---------|
+| `id` | Stable block identity. Never changes across versions. Corresponds to Djot `{#id}` attribute. |
+| `version` | Integer, monotonically increasing per block ID. |
+| `schema` | Always `"block.v1"` in v1. Exists for future format evolution. |
+| `type` | Derived from Djot AST: `paragraph`, `heading`, `code`, `list_item`, `quote`, `image`, `table`, `math`, `div`. |
+| `content` | Type-specific payload. The `text` field stores Djot inline markup as-is. |
+| `created_by` | Author identifier in `namespace:name` format. |
+| `created_at` | ISO 8601 timestamp. |
+| `hash` | SHA-256 of serialized `content`. Computed at creation, used for change detection and integrity. |
+| `parent_version` | Version this was derived from. Absent on version 1. |
+| `rollback_to` | Present only on rollback versions. |
+| `mutation_context` | Optional. Links to the operation, conversation, and message that caused this version. |
+
+### Why versioned blocks with stable IDs?
+
+The alternative — generating a new block ID on every mutation and remapping all references — was rejected because:
+
+- remapping is risky (missed references become dangling pointers);
+- conversation attachments to blocks would break;
+- every mutation would require updating pages and potentially many conversations;
+- the stable-ID model is more intuitive.
+
+The tradeoff (a bare ID refers to a lineage, not an exact snapshot) is resolved by the **two-reference-pattern**: pages use bare IDs (always latest), conversation attachments include the version (exact snapshot).
+
+### Content types
+
+Block content schemas are type-specific. The `type` is derived from the Djot AST, and the `content` structure matches what pandoc extracts:
+
+| Djot construct | Block type | Content fields |
+|----------------|-----------|----------------|
+| Paragraph | `paragraph` | `text` |
+| `# Heading` | `heading` | `text`, `level` |
+| Code fence | `code` | `text`, `language` |
+| `- list item` | `list_item` | `text`, `style` (ordered/unordered) |
+| `> blockquote` | `quote` | `text` |
+| `![alt](src)` | `image` | `src`, `alt`, `caption` |
+| Pipe table | `table` | `headers`, `rows`, `alignments` |
+| `$$` math | `math` | `tex`, `display` |
+| `::: div` | `div` | `children` (list of block IDs), `class` |
+
+The Djot `div` container (`::: name ... :::`) maps to a block that can contain other blocks, providing grouping when needed. This addresses the document structure question without requiring a tree in the page's `root` array.
+
+## 9. Page documents
+
+A page document is an ordered list of block references.
+
+### Page schema
+
+```json
+{
+  "id": "doc_001",
+  "schema": "page.v1",
+  "title": "Cache invalidation",
+  "root": [
+    "blk_001",
+    "blk_002",
+    "blk_003",
+    "blk_004",
+    "blk_005",
+    "blk_006",
+    "blk_007",
+    "blk_008",
+    "blk_009"
+  ],
+  "created_by": "human:istvan",
+  "created_at": "2026-05-06T12:00:00Z",
+  "updated_at": "2026-05-06T12:00:00Z"
+}
+```
+
+The `root` field is a flat ordered list of block IDs. Hierarchy is implicit in heading levels, consistent with how Djot and Markdown documents work. The renderer resolves each block ID to its latest version.
+
+### Pages are rendered, not edited in the browser
+
+The browser is a reading surface. Each block displays a copyable unique identifier. The human authors and edits through `.djot` files and CLI tools.
+
+### Pre-rendered HTML
+
+Generated HTML is a projection. It can be deleted and regenerated. The rendering pipeline uses pandoc or a custom renderer that:
+
+1. Reads the page's `root` array.
+2. Resolves each block ID to its latest version.
+3. Renders the Djot inline markup in each block's `text` field to HTML.
+4. Wraps each block in a `<section>` with the block ID, version, and conversation count.
+5. Writes the HTML file to `site/generated/`.
+
+Each rendered block includes:
+
+```html
+<section class="doc-block" data-doc-id="doc_001"
+         data-block-id="blk_456" data-block-version="3"
+         id="blk_456">
+  <p>The cache is invalidated when the source document changes.</p>
+  <span class="block-id" title="Click to copy">blk_456</span>
+  <span class="block-version">v3</span>
+  <span class="block-conversations">💬 2</span>
+</section>
+```
+
+## 10. Conversations
+
+Conversation is the primary interaction primitive. There is no separate data model for comments, threads, chats, or agent discussions.
+
+### Conversation schema
+
+```json
+{
+  "id": "conv_001",
+  "schema": "conversation.v1",
+  "title": "Architecture discussion",
+  "status": "open",
+  "created_at": "2026-05-06T12:00:00Z",
+  "updated_at": "2026-05-06T12:00:00Z",
+  "messages": [
+    {
+      "id": "msg_001",
+      "author": "human:istvan",
+      "created_at": "2026-05-06T12:00:00Z",
+      "body": "Help me think through the architecture.",
+      "attachments": [],
+      "mentions": []
+    }
+  ]
+}
+```
+
+### How conversations are authored
+
+The human writes a `.djot` file with YAML frontmatter for the message envelope:
+
+```
+---
+conversation: conv_001
+author: human:istvan
+attachments:
+  - type: block
+    doc_id: doc_001
+    block_id: blk_456
+    version: 2
+mentions:
+  - agent:writer
+---
+
+This paragraph needs a concrete example. The current text is too
+abstract for someone encountering cache invalidation for the first
+time.
+```
+
+The CLI tool reads this file, parses the frontmatter as message metadata, treats the Djot body as the message text, and appends the message to the conversation in `conversations.jsonl`.
+
+For new conversations, the frontmatter omits the `conversation` field (or uses `conversation: new`), and the tool creates a new conversation record.
+
+### Message body format
+
+Message bodies are Djot-formatted strings. They support the full Djot inline markup vocabulary. They are stored as-is and rendered to HTML when displayed.
+
+### Message attachments
+
+A message may attach references to:
+
+- a block (with version): `{ "type": "block", "doc_id": "doc_001", "block_id": "blk_456", "version": 2 }`
+- a page: `{ "type": "page", "doc_id": "doc_001" }`
+- another conversation: `{ "type": "conversation", "conversation_id": "conv_002" }`
+
+Block attachments **require** a `version` field to preserve exactly which content the author was looking at.
+
+### Agent mentions
+
+Messages may include mentions to signal that a specific agent's input is requested. The `mentions` field is a list of identifiers in `namespace:name` format.
+
+Mentions are the signaling mechanism for agent invocation. An external agent process monitors for its own mentions (via the SQLite index or by scanning JSONL) and responds by appending messages or mutating blocks.
+
+The invocation mechanism (how the agent process runs or is triggered) is outside the scope of this design.
+
+### Free-standing conversations
+
+A free-standing conversation has no block or page attachments on its first message. It is used for brainstorming, design discussions, agent-assisted research, and work not yet tied to a specific document.
+
+### Comments as conversations
+
+A "comment" is a conversation whose first message is attached to a block. There is no separate comment model. This unification was a deliberate design decision: a comment frequently evolves into a multi-turn discussion, and maintaining separate models would require migration between them or duplicated behavior.
+
+### How conversations for a block are found
+
+Query the attachment index for entries matching a block ID. Used during rendering to show conversation counts per block.
+
+### Conversation status
+
+- `open` — active.
+- `resolved` — addressed, no further input expected.
+- `archived` — removed from active views.
+
+## 11. Operations and mutations
+
+### Mutations
+
+A mutation is a new version of an existing block. The block version history *is* the mutation log.
+
+### Operations
+
+An operation groups related mutations into a single logical change. When an agent rewrites several blocks as part of one task, those mutations share an `operation_id` for batch understanding and rollback.
+
+```json
+{
+  "id": "op_001",
+  "schema": "operation.v1",
+  "description": "Rewrite cache invalidation section for clarity",
+  "created_by": "agent:writer",
+  "created_at": "2026-05-06T12:10:00Z",
+  "conversation_id": "conv_002",
+  "message_id": "msg_004",
+  "status": "active"
+}
+```
+
+### Who can mutate?
+
+Both humans and agents. The safety model is immutability + traceability + rollback, not pre-approval.
+
+### Rollback
+
+Single block rollback creates a new version with the content of a specified earlier version. Operation rollback does this for all blocks in the operation and marks the operation as `rolled_back`.
+
+## 12. CLI tool interface
+
+In v1, all system operations are performed through CLI tools. There is no API server.
+
+### Design principle: tools as a library with CLI wrappers
+
+Each operation is implemented as a Python function in a shared library. CLI wrappers invoke these functions. This design ensures:
+
+- agents can call the same functions directly (as Python imports or subprocess calls);
+- a future editor plugin (e.g., neovim) can call the same functions;
+- a future API server can wrap the same functions in HTTP routes;
+- no operation logic lives only in a CLI script.
+
+### Core operations
+
+**Ingestion:**
+- `ingest_page(djot_path, author)` — parse a .djot file into blocks + page, write to JSONL.
+- `ingest_block(djot_text, block_id, author, operation_id)` — parse Djot text as a single block update.
+
+**Conversations:**
+- `new_conversation(title, author)` — create a new conversation.
+- `add_message(conversation_id, djot_path_or_text, author, attachments, mentions)` — append a message.
+
+**Querying:**
+- `query_conversations(block_id, mention, status, author)` — search conversations by various criteria.
+- `block_history(block_id)` — show version history for a block.
+- `search(text_query)` — full-text search across blocks and conversations.
+
+**Mutation and rollback:**
+- `new_operation(description, author, conversation_id)` — create an operation.
+- `rollback(block_id, target_version)` — roll back a single block.
+- `rollback_operation(operation_id)` — roll back all mutations in an operation.
+
+**Rendering:**
+- `render()` — regenerate all HTML pages and rebuild SQLite indexes.
+- `render_page(page_id)` — regenerate a single page.
+
+**Serving (convenience):**
+- `serve()` — start a minimal static file server for `site/generated/` (equivalent to `python -m http.server`).
+
+### Write coordination
+
+All write operations use file locking (e.g., `fcntl.flock`) to serialize appends to JSONL files. This prevents corruption when multiple agents or the human invoke tools concurrently. At v1 scale (single user, few agents), this is sufficient.
+
+### Designed for editor integration
+
+The CLI tools are deliberately structured so that a future editor plugin can provide:
+
+- a command to append a message to a conversation from within the editor;
+- a template system for new conversations and messages;
+- a side panel listing conversations (especially valuable for finding older conversations);
+- inline display of parse errors with suggestions for fixing them;
+- quick-copy of block IDs from rendered views into message attachments.
+
+These are not v1 features. But the underlying functions are the same ones the CLI tools use, so the integration path is straightforward.
+
+## 13. Indexes
+
+### Required indexes
+
+| Index | Purpose |
+|-------|---------|
+| `attachment_index` | Maps block/page references in message attachments to conversation IDs. Used for conversation counts per block. |
+| `block_latest` | Maps block IDs to their latest version number. Used during rendering. |
+| `mention_index` | Maps agent/human identifiers to conversations where they are mentioned. Used by agents to find pending work. |
+| `conversation_participants` | Derived from message authors. Useful for filtering conversations by participant. |
+
+### Implementation
+
+SQLite tables rebuilt from JSONL during rendering:
+
+```sql
+CREATE TABLE attachment_index (
+    conversation_id TEXT, message_id TEXT,
+    target_type TEXT, target_doc_id TEXT,
+    target_block_id TEXT, target_version INTEGER
+);
+CREATE TABLE block_latest (
+    block_id TEXT PRIMARY KEY, latest_version INTEGER
+);
+CREATE TABLE mention_index (
+    conversation_id TEXT, message_id TEXT, mentioned_id TEXT
+);
+CREATE TABLE conversation_participants (
+    conversation_id TEXT, participant_id TEXT
+);
+```
+
+Indexes are projections. They can be deleted and rebuilt from canonical JSONL.
+
+## 14. Rendering
+
+### Pipeline
+
+```text
+blocks.jsonl + pages.jsonl + conversations.jsonl + index.sqlite
+    ↓
+render.py
+    ↓
+site/generated/*.html
+```
+
+Rendering resolves each page's block references to the latest version, converts Djot inline markup to HTML (using pandoc), wraps each block with identity metadata, adds conversation counts, and writes static HTML files.
+
+### Serving
+
+Generated HTML is opened directly in a browser:
+
+- As `file://` URLs (simplest, no process needed).
+- Or via `python -m http.server` pointed at `site/generated/` (for proper URL routing).
+
+No application server is required.
+
+## 15. Minimal v1 user flows
+
+### Flow 1: Read a page
+
+1. Run `render` to regenerate HTML and indexes.
+2. Open the generated HTML file in a browser.
+3. Each block has a visible, copyable block ID and version indicator.
+
+### Flow 2: Author a new page
+
+1. Write a `.djot` file in `authoring/pages/` with `{#block_id}` attributes on each block.
+2. Run `ingest_page` to parse the Djot into blocks and a page record.
+3. Run `render` to generate HTML.
+
+### Flow 3: Start a free-standing conversation
+
+1. Write a `.djot` message file with YAML frontmatter (no attachments).
+2. Run `new_conversation` or `add_message` with `conversation: new`.
+3. Mention an agent if desired.
+
+### Flow 4: Comment on a block
+
+1. Copy the block ID from the rendered page.
+2. Write a `.djot` message file with the block ID in the frontmatter attachments.
+3. Run `add_message` to append it to a new or existing conversation.
+
+### Flow 5: Agent mutates blocks
+
+1. Agent detects a mention via the mention index.
+2. Agent reads the referenced blocks (from JSONL or via the query library).
+3. Agent creates an operation.
+4. Agent writes updated Djot content for each block, preserving the `{#block_id}`.
+5. Agent runs ingestion, which creates new block versions linked to the operation.
+6. Next `render` shows the updated content.
+
+### Flow 6: Roll back an operation
+
+1. Human notices bad agent edits in the rendered page.
+2. Human identifies the operation ID (from block history or the operations JSONL).
+3. Human runs `rollback_operation`.
+4. New block versions are created restoring pre-operation content.
+5. Next `render` shows the rolled-back content.
+
+## 16. Key dependencies
+
+| Dependency | Role | Maturity |
+|------------|------|----------|
+| Pandoc | Djot parsing, AST generation, HTML rendering | Very high. Maintained by Djot's creator. Supports Djot natively as input and output format. |
+| Python | CLI tools, ingestion, JSONL manipulation, SQLite indexing | Very high. |
+| SQLite | Derived indexes for efficient querying | Very high. |
+| Djot | Authoring format | Young but formally specified. Created by the author of Pandoc and CommonMark. Multiple implementations exist (JS, Lua, Rust, Go, Haskell, PHP). Treesitter grammar available for editor support. |
+
+## 17. Risks and mitigations
+
+### Risk: Djot is a young format with a small ecosystem
+
+Mitigation: Djot is designed by John MacFarlane, who also created Pandoc and co-created CommonMark. Pandoc provides native Djot support as both input and output. Djot's formal specification and multiple implementations reduce bus-factor risk. If Djot were abandoned, the format is simple enough that existing parsers would continue to work, and migration to CommonMark would be straightforward.
+
+### Risk: LLMs produce malformed Djot
+
+Mitigation: Djot is close enough to Markdown that agents produce valid output most of the time. When they don't, Djot's linear parser produces localized, useful error messages. A parse-feedback-retry loop handles the remaining cases.
+
+### Risk: JSONL files grow large
+
+Mitigation: at expected v1 scale (hundreds of pages, thousands of block versions), JSONL files remain manageable. Migration to a document database is planned for when file size becomes a concern.
+
+### Risk: conversations become noisy
+
+Mitigation: the `status` field allows filtering. The query tools support searching by block, mention, author, and status.
+
+### Risk: rendered pages become stale
+
+Mitigation: regeneration is an explicit step. A future version may add file-watching.
+
+### Risk: agents create low-quality content
+
+Mitigation: all changes are traceable and rollbackable (individually or by operation).
+
+### Risk: concurrent writes corrupt JSONL files
+
+Mitigation: all write operations use file locking. At v1 scale, contention is rare.
+
+### Risk: hand-editing JSONL is needed for edge cases
+
+Mitigation: JSONL is human-readable and editable with standard tools (`jq`, text editors). This is a fallback, not the primary workflow.
+
+## 18. Non-negotiable v1 invariants
+
+1. Canonical data is stored as JSON (JSONL files in v1).
+2. Rendered HTML and SQLite indexes are regenerable projections.
+3. Every rendered block has a stable, copyable block ID and version indicator.
+4. Blocks are versioned with stable IDs — no content is ever destroyed.
+5. All block versions record their author and timestamp.
+6. Related mutations are grouped by operations for batch rollback.
+7. Comments are conversations with block attachments (including version), not separate objects.
+8. Free-standing conversations are a primary working mode.
+9. Context is attached to messages, not conversations. Block attachments include the version.
+10. Mentions are the signaling mechanism for agent invocation.
+11. The browser is a reader, not a writer.
+12. The system is local-first — no internet, no auth, no multi-user.
+13. Both humans and agents author content in Djot.
+14. There is no server process in v1. All operations are CLI tools / library functions.
+
+## 19. Deliberately deferred features
+
+### API server
+
+Deferred because v1 operates through CLI tools and a Python library. A future version may add an API layer by wrapping the same library functions in HTTP routes. The library-first design ensures no operation logic is lost when the API is added.
+
+### Editor integration (neovim plugin)
+
+Deferred but explicitly anticipated. The CLI tools and Python library are designed so that an editor plugin can call the same functions to: append messages, display conversations, show parse errors, manage templates, and search older conversations. This is a high-value future addition.
+
+### Browser-side writing
+
+Deferred because v1 uses a text editor for authoring.
+
+### Proposal/review workflow
+
+Deferred because mutation + operation + rollback provides equivalent safety with less ceremony.
+
+### Rich document editing / WYSIWYG
+
+Deferred because v1 focuses on reading in the browser, authoring in Djot.
+
+### Automatic regeneration
+
+Deferred. V1 uses manual rendering.
+
+### DuckDB / MongoDB backend
+
+Deferred. JSONL is the v1 backend.
+
+### CRDTs, remote sync, multi-user, public deployment
+
+Deferred. Not needed for local-first single-user operation.
+
+### Page versioning
+
+Deferred. Block content is versioned. Page structural changes are not versioned in v1.
+
+## 20. Schema summary
+
+### block.v1
+
+```json
+{
+  "id": "string, stable across versions, matches Djot {#id}",
+  "version": "integer, monotonically increasing per id",
+  "schema": "block.v1",
+  "type": "paragraph | heading | code | list_item | quote | image | table | math | div",
+  "content": "object, type-specific, text fields contain Djot inline markup",
+  "created_by": "string, namespace:name",
+  "created_at": "string, ISO 8601",
+  "hash": "string, sha256 of serialized content",
+  "parent_version": "integer, optional",
+  "rollback_to": "integer, optional",
+  "mutation_context": {
+    "operation_id": "string, optional",
+    "conversation_id": "string, optional",
+    "message_id": "string, optional"
+  }
+}
+```
+
+### page.v1
+
+```json
+{
+  "id": "string",
+  "schema": "page.v1",
+  "title": "string",
+  "root": ["array of block ID strings, ordered"],
+  "created_by": "string, namespace:name",
+  "created_at": "string, ISO 8601",
+  "updated_at": "string, ISO 8601"
+}
+```
+
+### conversation.v1
+
+```json
+{
+  "id": "string",
+  "schema": "conversation.v1",
+  "title": "string",
+  "status": "open | resolved | archived",
+  "created_at": "string, ISO 8601",
+  "updated_at": "string, ISO 8601",
+  "messages": [
+    {
+      "id": "string",
+      "author": "string, namespace:name",
+      "created_at": "string, ISO 8601",
+      "body": "string, Djot inline markup",
+      "attachments": [
+        {
+          "type": "block | page | conversation",
+          "doc_id": "string, for block and page",
+          "block_id": "string, for block",
+          "version": "integer, required for block",
+          "conversation_id": "string, for conversation"
+        }
+      ],
+      "mentions": ["array of namespace:name strings"]
+    }
+  ]
+}
+```
+
+### operation.v1
+
+```json
+{
+  "id": "string",
+  "schema": "operation.v1",
+  "description": "string",
+  "created_by": "string, namespace:name",
+  "created_at": "string, ISO 8601",
+  "conversation_id": "string, optional",
+  "message_id": "string, optional",
+  "status": "active | rolled_back"
+}
+```
+
+### Indexes (SQLite, rebuilt from JSONL)
+
+```sql
+attachment_index(conversation_id, message_id, target_type, target_doc_id, target_block_id, target_version)
+block_latest(block_id, latest_version)
+mention_index(conversation_id, message_id, mentioned_id)
+conversation_participants(conversation_id, participant_id)
+```
+
+## 21. Summary
+
+The v1 system is a deliberately narrow local knowledge substrate with four object kinds: **blocks**, **pages**, **conversations**, and **operations**.
+
+Both humans and agents author content in **Djot**, a formally parseable light markup language that feels like Markdown but can be deterministically converted to and from structured data. Block IDs are native Djot attributes (`{#id}`), not a bolted-on convention.
+
+Canonical data is stored as **JSONL**. Rendered HTML and SQLite indexes are **regenerable projections**. The browser is a reader with copyable block IDs, not a writer.
+
+Blocks are **versioned with stable IDs**. No content is ever destroyed. All changes are traceable to an author, a time, an operation, and optionally a conversation. Related mutations are grouped by **operations** for batch rollback.
+
+Conversations are the **single interaction primitive**. Free-standing discussions, block comments, and agent requests are all conversations, differing only in whether messages carry attachments and mentions.
+
+There is **no server process**. All operations are performed through a Python library with CLI wrappers, designed for future integration with an editor plugin, an API server, or other tooling.
+
+The system is **local-first**, authored in a text editor, read in a browser, and stored as JSONL files designed for future migration to a document database.

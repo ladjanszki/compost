@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic Local Knowledge Store — v1 Design</title>
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #666;
+    --border: #e0e0e0;
+    --code-bg: #f5f5f5;
+    --badge-bg: #f0f0f0;
+    --badge-hover: #e0e0e0;
+    --badge-copied: #d4edda;
+    --link: #0066cc;
+  }
+  
+  body {
+    max-width: 920px;
+    margin: 40px auto;
+    padding: 0 24px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--fg);
+    background: var(--bg);
+  }
+  
+  h1 { font-size: 1.8em; margin-top: 2em; border-bottom: 2px solid var(--border); padding-bottom: 0.3em; }
+  h2 { font-size: 1.4em; margin-top: 2em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+  h3 { font-size: 1.15em; margin-top: 1.5em; }
+  
+  code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  }
+  
+  pre {
+    background: var(--code-bg);
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+    font-size: 0.95em;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  th { background: var(--code-bg); font-weight: 600; }
+  
+  blockquote {
+    border-left: 4px solid var(--border);
+    margin: 1em 0;
+    padding: 0.5em 1em;
+    color: var(--muted);
+  }
+  
+  /* Block ID badges */
+  [id] {
+    position: relative;
+  }
+  
+  .block-id-badge {
+    position: absolute;
+    right: -10px;
+    transform: translateX(100%);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    background: var(--badge-bg);
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s;
+    white-space: nowrap;
+    user-select: none;
+    z-index: 10;
+  }
+  
+  [id]:hover > .block-id-badge,
+  .block-id-badge:hover {
+    opacity: 1;
+  }
+  
+  .block-id-badge:hover {
+    background: var(--badge-hover);
+  }
+  
+  .block-id-badge.copied {
+    background: var(--badge-copied);
+    opacity: 1;
+  }
+
+  /* On narrow screens, show badges inline */
+  @media (max-width: 1100px) {
+    .block-id-badge {
+      position: static;
+      transform: none;
+      display: inline-block;
+      margin-left: 8px;
+    }
+  }
+</style>
+
+</head>
+<body>
+<h1 id="Agentic-Local-Knowledge-Store-—-v1-Design-v4">Agentic Local
+Knowledge Store — v1 Design (v4)</h1>
+<h2 id="1-Purpose">1. Purpose</h2>
+<p>This document defines the v1 architecture for a local-first,
+block-based knowledge system designed for safe human and agent
+interaction.</p>
+<p>The goal is to create a small, auditable substrate where:</p>
+<ul>
+<li>documents can be rendered locally and read in a browser;</li>
+<li>conversations can happen over those documents;</li>
+<li>agents can participate in conversations and mutate content;</li>
+<li>all changes are traceable and rollbackable;</li>
+<li>the canonical format is JSON, readable without any editor or
+application;</li>
+<li>both humans and agents author content in Djot, a formally parseable
+light markup language.</li>
+</ul>
+<p>The goal is <strong>not</strong> to build a general-purpose
+note-taking app, a rich document editor, or an Anytype/Obsidian
+replacement.</p>
+<h2 id="2-Core-user-requirements">2. Core user requirements</h2>
+<p>These are the load-bearing requirements that drive every design
+decision. If a feature or constraint cannot be traced back to one of
+these, it does not belong in v1.</p>
+<table>
+<thead>
+<tr>
+<th><p>ID</p></th>
+<th><p>Requirement</p></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p>R1</p></td>
+<td><p>I can read rendered documents locally in a browser, including
+tables, math, images, and syntax-highlighted code.</p></td>
+</tr>
+<tr>
+<td><p>R2</p></td>
+<td><p>Every rendered block carries a stable, copyable unique identifier
+so I can reference it precisely from any external tool.</p></td>
+</tr>
+<tr>
+<td><p>R3</p></td>
+<td><p>I can have free-standing conversations not attached to any
+document. This is a primary working mode.</p></td>
+</tr>
+<tr>
+<td><p>R4</p></td>
+<td><p>Agents can participate in conversations and mutate
+documents.</p></td>
+</tr>
+<tr>
+<td><p>R5</p></td>
+<td><p>Agents cannot silently destroy content. All mutations create new
+block versions; all previous versions are retained.</p></td>
+</tr>
+<tr>
+<td><p>R6</p></td>
+<td><p>The canonical format is JSON, readable and parseable without any
+editor or application.</p></td>
+</tr>
+<tr>
+<td><p>R7</p></td>
+<td><p>The system is local-first. No internet, no auth, no
+multi-user.</p></td>
+</tr>
+<tr>
+<td><p>R8</p></td>
+<td><p>I author documents and conversations in a text editor. The
+browser is a reader, not a writer.</p></td>
+</tr>
+<tr>
+<td><p>R9</p></td>
+<td><p>The authoring format is natural for both humans and LLM agents —
+close to Markdown, formally parseable, with native support for
+block-level attributes.</p></td>
+</tr>
+</tbody>
+</table>
+<h2 id="3-Core-thesis">3. Core thesis</h2>
+<p>The system treats documentation, comments, agent discussions, and
+review feedback as structured data, not as mutable Markdown files.</p>
+<p>The central design rule is:</p>
+<blockquote>
+<p>No content is ever destroyed. All changes produce new block versions.
+All previous versions are retained. Every mutation is traceable to an
+author and a point in time.</p>
+</blockquote>
+<h3 id="Why-JSON-and-not-Markdown-as-canonical-storage?">Why JSON and
+not Markdown as canonical storage?</h3>
+<p>The choice of JSON over Markdown for the canonical
+<strong>storage</strong> layer was driven by experience with
+Markdown-based workflows (Obsidian). In Markdown:</p>
+<ul>
+<li>block-level identity is fragile, dependent on convention rather than
+enforcement;</li>
+<li>agent edits cannot be reliably scoped to specific blocks;</li>
+<li>two-way sync between a canonical format and Markdown is
+error-prone.</li>
+</ul>
+<p>JSON blocks with stable IDs make immutability and targeting
+enforceable rather than conventional.</p>
+<h3 id="Why-Djot-and-not-Markdown-as-the-authoring-format?">Why Djot and
+not Markdown as the authoring format?</h3>
+<p>Markdown is natural for both humans and agents to write, but it is
+ambiguous to parse. The CommonMark specification requires 17 rules just
+for emphasis, and many constructs require backtracking or lookahead to
+resolve.</p>
+<p>Djot is a light markup language designed by John MacFarlane (creator
+of Pandoc and CommonMark) to look and feel like Markdown while being
+formally parseable in linear time with no backtracking. It fixes
+Markdown’s ambiguities while preserving its readability.</p>
+<p>Critically for this system, Djot has native support for
+<strong>block-level attributes</strong>: <code>{#block_id}</code> before
+any block. This is exactly the stable block identity mechanism the
+system requires, built into the language rather than bolted on.</p>
+<p>The authoring format (Djot) and the storage format (JSON) are
+different layers:</p>
+<pre class="text"><code>Djot (.djot files)     — what humans and agents write
+JSON (JSONL files)     — what the system stores
+HTML (generated pages) — what the browser renders
+</code></pre>
+<p>Djot can be deterministically parsed into JSON blocks. JSON blocks
+can be deterministically rendered back to Djot. This enables a clean
+separation where authoring feels like writing text, but storage provides
+the block-level identity, versioning, and traceability the system
+requires.</p>
+<h3 id="Why-Djot-works-for-agents">Why Djot works for agents</h3>
+<p>LLMs produce Markdown-like text by default. Djot is close enough to
+Markdown that agents write it fluently with minimal prompting. The key
+differences (e.g., <code>_</code> for italic, <code>*</code> for bold,
+blank lines required between blocks) are simple rules easily provided in
+a system prompt.</p>
+<p>Unlike JSON — where formatting is structurally demanding and consumes
+attention — Djot imposes almost no formatting overhead on the LLM. The
+agent’s natural reasoning output is already close to valid Djot. A
+parser feedback loop handles the rare formatting errors: if the agent
+produces malformed Djot, the parser returns a useful error message and
+the agent corrects it.</p>
+<p>This is fundamentally less demanding than asking an agent to produce
+structured JSON, where a single missing comma breaks everything and
+error messages are unhelpful.</p>
+<h2 id="4-v1-scope">4. v1 scope</h2>
+<section id="Included-in-v1">
+<h3>Included in v1</h3>
+<ol type="1">
+<li>Canonical JSON-based storage in JSONL files.</li>
+<li>Versioned blocks with stable IDs.</li>
+<li>Page documents composed of block references.</li>
+<li>Conversation documents for both free-standing chats and contextual
+comments.</li>
+<li>Operations as the grouping unit for related mutations, with full
+rollback capability.</li>
+<li>Djot as the authoring format for both humans and agents.</li>
+<li>Pre-rendered local HTML pages generated from page documents.</li>
+<li>Stable, copyable block IDs embedded in rendered HTML.</li>
+<li>Message-level attachments linking messages to blocks, pages, or
+other conversations. Block attachments include the version at time of
+reference.</li>
+<li>Agent mentions in messages to signal that a specific agent’s input
+is requested.</li>
+<li>Local-only operation. No server process required.</li>
+<li>A CLI tool library for all system operations, designed for future
+editor integration.</li>
+</ol>
+<section id="Excluded-from-v1">
+<h3>Excluded from v1</h3>
+<ol type="1">
+<li>An API server or web application framework.</li>
+<li>Any browser-side writing.</li>
+<li>A WYSIWYG document editor.</li>
+<li>Real-time collaboration.</li>
+<li>Multi-user permissions.</li>
+<li>Remote sync.</li>
+<li>CRDTs.</li>
+<li>Public internet deployment.</li>
+<li>Mobile apps.</li>
+<li>A plugin system.</li>
+<li>Rich database views.</li>
+<li>Semantic folder-based collections.</li>
+<li>A separate comment object model (comments are conversations).</li>
+<li>Proposal-based review workflow (replaced by direct mutation with
+rollback).</li>
+</ol>
+<section id="5-Local-first-assumption">
+<h2>5. Local-first assumption</h2>
+<p>The system runs locally as a collection of files and scripts. There
+is no server process.</p>
+<p>A typical v1 deployment is:</p>
+<pre class="text"><code>JSONL files as canonical storage
++ SQLite index (derived, rebuilt on demand)
++ .djot files as the human/agent authoring surface
++ Python CLI tools for all operations
++ pandoc for parsing and rendering
++ generated HTML pages opened directly in a browser
++ local agent processes that interact via the same CLI tools or Python library
+</code></pre>
+<p>This means v1 does not need to solve:</p>
+<ul>
+<li>account management;</li>
+<li>authentication or authorization;</li>
+<li>remote synchronization;</li>
+<li>collaborative conflict resolution;</li>
+<li>encryption for network transport;</li>
+<li>public hosting security;</li>
+<li>HTTP routing, request handling, or API design.</li>
+</ul>
+<h2 id="6-Storage-model">6. Storage model</h2>
+<h3 id="Logical-model">Logical model</h3>
+<p>The store contains four object kinds:</p>
+<pre class="text"><code>block        — versioned content unit
+page         — renderable document composed of block references
+conversation — ordered sequence of messages with optional attachments
+operation    — grouping label for related mutations
+</code></pre>
+<p>Mutations are not a separate object kind. A mutation is a new version
+of an existing block. The block version history <strong>is</strong> the
+mutation log. An operation groups related mutations so they can be
+understood and rolled back as a unit.</p>
+<h3 id="Physical-layout">Physical layout</h3>
+<pre class="text"><code>workspace/
+  store/
+    blocks.jsonl
+    pages.jsonl
+    conversations.jsonl
+    operations.jsonl
+
+  indexes/
+    index.sqlite            ← derived, rebuilt on demand
+
+  authoring/
+    pages/
+      cache_invalidation.djot
+      api_design.djot
+    conversations/
+      conv_001.djot
+      conv_002.djot
+
+  site/
+    generated/
+      index.html
+      docs/
+        doc_001.html
+      assets/
+        style.css
+</code></pre>
+<section id="Why-JSONL-for-canonical-storage?">
+<h3>Why JSONL for canonical storage?</h3>
+<ul>
+<li>One file per object kind, not thousands of tiny files.</li>
+<li>Append-friendly — new block versions, messages, and operations are
+appended.</li>
+<li>Directly loadable into document databases (MongoDB, DuckDB) when the
+time comes.</li>
+<li>Inspectable with standard command-line tools (<code>grep</code>,
+<code>jq</code>, <code>head</code>).</li>
+<li>Git-friendly for line-level diffs.</li>
+</ul>
+<section id="Why-a-separate-authoring-directory?">
+<h3>Why a separate authoring directory?</h3>
+<p>The <code>authoring/</code> directory contains <code>.djot</code>
+files — the human and agent writing surface. These files are
+<strong>not</strong> canonical. They are input to the ingestion process.
+The canonical data lives in <code>store/*.jsonl</code>.</p>
+<p>This separation means:</p>
+<ul>
+<li>the authoring files can be messy, in-progress, or experimental;</li>
+<li>ingestion is an explicit step that validates and transforms;</li>
+<li>the canonical store is never directly edited by a human or agent
+writing text;</li>
+<li>the authoring files can optionally be kept after ingestion (as
+source records) or discarded.</li>
+</ul>
+<h3
+id="Design-note:-physical-storage-is-an-implementation-detail">Design
+note: physical storage is an implementation detail</h3>
+<p>The design is independent of the physical storage format. JSONL is
+chosen for v1. A later version may use DuckDB, MongoDB, or another
+document database. The logical model (blocks, pages, conversations,
+operations) remains the same regardless of backend.</p>
+</section>
+</section>
+</section>
+</section>
+</section>
+<h2 id="7-Djot-as-the-authoring-format">7. Djot as the authoring
+format</h2>
+<p>Both humans and agents author content in Djot. This section describes
+how Djot relates to the canonical block model.</p>
+<h3 id="What-a-human-authored-page-looks-like">What a human-authored
+page looks like</h3>
+<pre class="djot"><code>{#blk_001}
+# Cache invalidation
+
+{#blk_002}
+The cache is invalidated when the source document changes.
+This means any downstream consumer must *check freshness*
+before using cached data.
+
+{#blk_003}
+## Edge cases
+
+{#blk_004}
+- Concurrent writes may cause stale reads.
+
+{#blk_005}
+- Circular dependencies must be detected.
+
+{#blk_006}
+&gt; Always validate the cache timestamp before serving.
+&gt; This is _not optional_.
+
+{#blk_007}
+```python
+def invalidate(key):
+    cache.pop(key, None)
+</code></pre>
+<table id="blk_008">
+<thead>
+<tr>
+<th><p>Strategy</p></th>
+<th><p>Complexity</p></th>
+<th><p>Reliability</p></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p>TTL</p></td>
+<td><p>Low</p></td>
+<td><p>Medium</p></td>
+</tr>
+<tr>
+<td><p>Event-based</p></td>
+<td><p>High</p></td>
+<td><p>High</p></td>
+</tr>
+</tbody>
+</table>
+<p id="blk_009"><span
+class="math display"><em>E</em> = <em>m</em><em>c</em><sup>2</sup></span>
+<code></code></p>
+<p>Each <code>{#id}</code> is a native Djot attribute that assigns a
+stable block ID to the following block element. This is not a custom
+extension — it is standard Djot syntax.</p>
+<h3 id="How-ingestion-works">How ingestion works</h3>
+<p>The ingestion tool reads a <code>.djot</code> file and produces
+canonical block and page records:</p>
+<ol type="1">
+<li>Parse the Djot file into an AST (using pandoc or a Djot
+parser).</li>
+<li>Walk the AST. Each block-level element with an <code>{#id}</code>
+attribute becomes a block record.</li>
+<li>Block-level elements without an explicit ID get an auto-generated
+ID.</li>
+<li>The ordered sequence of block IDs becomes the page’s
+<code>root</code> array.</li>
+<li>Block records are appended to <code>blocks.jsonl</code>. The page
+record is appended to <code>pages.jsonl</code>.</li>
+</ol>
+<p>For blocks that already exist in the store (same ID), ingestion
+creates a new version if the content has changed. If the content is
+identical (verified by hash), no new version is created.</p>
+<h3 id="How-agents-author-content">How agents author content</h3>
+<p>Agents write Djot text — either as complete documents or as fragments
+targeting specific blocks.</p>
+<p><strong>Creating new content:</strong> The agent writes a
+<code>.djot</code> file (or a Djot string passed to the ingestion
+function). The system parses it into blocks.</p>
+<p><strong>Updating existing content:</strong> The agent writes Djot
+text with an existing <code>{#blk_456}</code> attribute. The ingestion
+tool detects that <code>blk_456</code> already exists and creates a new
+version if the content has changed.</p>
+<p><strong>Why this works for agents:</strong> Djot is close enough to
+Markdown that agents produce it fluently. The formatting overhead is
+negligible compared to JSON. If the agent produces malformed Djot, the
+parser returns a localized, useful error that the agent can fix — unlike
+JSON where a structural error can be difficult to diagnose.</p>
+<h3 id="Block-types-are-derived-from-the-AST-not-hand-specified">Block
+types are derived from the AST, not hand-specified</h3>
+<p>In previous design versions, block types (<code>paragraph</code>,
+<code>heading</code>, <code>code</code>, etc.) were explicit fields in
+the block schema. With Djot, block types are derived from the Djot AST
+during ingestion.</p>
+<p>A <code>#</code> line becomes a heading block. A paragraph becomes a
+paragraph block. A code fence becomes a code block. A <code>&gt;</code>
+block becomes a quote block. The human or agent does not need to specify
+<code>"type": "paragraph"</code> — they just write text.</p>
+<p>The block <code>type</code> field in the canonical JSON is still
+present (for querying and rendering without re-parsing Djot), but it is
+set by the ingestion tool, not by the author.</p>
+<h3 id="Inline-markup">Inline markup</h3>
+<p>Djot inline syntax is used within block content:</p>
+<table>
+<thead>
+<tr>
+<th><p>Djot syntax</p></th>
+<th><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p><code>_italic_</code></p></td>
+<td><p>Emphasis</p></td>
+</tr>
+<tr>
+<td><p><code>*bold*</code></p></td>
+<td><p>Strong emphasis</p></td>
+</tr>
+<tr>
+<td><p><code>`code`</code></p></td>
+<td><p>Inline code</p></td>
+</tr>
+<tr>
+<td><p><code>[text](url)</code></p></td>
+<td><p>Link</p></td>
+</tr>
+<tr>
+<td><p><code>{-deleted-}</code></p></td>
+<td><p>Strikethrough/deletion</p></td>
+</tr>
+<tr>
+<td><p><code>{+inserted+}</code></p></td>
+<td><p>Insertion</p></td>
+</tr>
+<tr>
+<td><p><code>{=highlighted=}</code></p></td>
+<td><p>Highlight</p></td>
+</tr>
+<tr>
+<td><p><code>^superscript^</code></p></td>
+<td><p>Superscript</p></td>
+</tr>
+<tr>
+<td><p><code>~subscript~</code></p></td>
+<td><p>Subscript</p></td>
+</tr>
+</tbody>
+</table>
+<p>Inline markup is stored as-is in the block’s <code>text</code> field.
+It is parsed into HTML at render time by pandoc. No custom inline parser
+is needed.</p>
+<h3 id="Djot-for-conversation-messages">Djot for conversation
+messages</h3>
+<p>Message bodies in conversations also use Djot inline markup. When a
+human or agent writes a conversation message, the body is a
+Djot-formatted string. It is stored as-is and rendered to HTML when
+conversations are displayed.</p>
+<h2 id="8-Blocks">8. Blocks</h2>
+<p>A block is a versioned content unit. Its type and content are derived
+from Djot during ingestion.</p>
+<section id="Block-identity-model">
+<h3>Block identity model</h3>
+<p>A block has a <strong>stable ID</strong> that persists across all
+versions. When a block is mutated, the ID stays the same and a new
+version is created. All previous versions are retained.</p>
+<ul>
+<li><strong>Structural references</strong> (page <code>root</code>
+arrays) use bare block IDs and always resolve to the latest
+version.</li>
+<li><strong>Historical references</strong> (conversation message
+attachments) include the block version at time of reference, creating an
+exact snapshot.</li>
+</ul>
+<h3 id="Block-schema">Block schema</h3>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;blk_456&quot;</span><span class="fu">,</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;block.v1&quot;</span><span class="fu">,</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;paragraph&quot;</span><span class="fu">,</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;content&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;The cache is invalidated when the source document changes.&quot;</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_by&quot;</span><span class="fu">:</span> <span class="st">&quot;human:istvan&quot;</span><span class="fu">,</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-05-06T12:00:00Z&quot;</span><span class="fu">,</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;hash&quot;</span><span class="fu">:</span> <span class="st">&quot;sha256:abc123...&quot;</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>After mutation (as part of an operation):</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;blk_456&quot;</span><span class="fu">,</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="dv">2</span><span class="fu">,</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;block.v1&quot;</span><span class="fu">,</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;paragraph&quot;</span><span class="fu">,</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;content&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;The cache is invalidated when the source document or any declared dependency changes.&quot;</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_by&quot;</span><span class="fu">:</span> <span class="st">&quot;agent:writer&quot;</span><span class="fu">,</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-05-06T12:10:00Z&quot;</span><span class="fu">,</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;hash&quot;</span><span class="fu">:</span> <span class="st">&quot;sha256:def789...&quot;</span><span class="fu">,</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parent_version&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;mutation_context&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;operation_id&quot;</span><span class="fu">:</span> <span class="st">&quot;op_001&quot;</span><span class="fu">,</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;conversation_id&quot;</span><span class="fu">:</span> <span class="st">&quot;conv_002&quot;</span><span class="fu">,</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;message_id&quot;</span><span class="fu">:</span> <span class="st">&quot;msg_004&quot;</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+</section>
+<h3 id="Key-fields">Key fields</h3>
+<table>
+<thead>
+<tr>
+<th><p>Field</p></th>
+<th><p>Purpose</p></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p><code>id</code></p></td>
+<td><p>Stable block identity. Never changes across versions. Corresponds
+to Djot <code>{#id}</code> attribute.</p></td>
+</tr>
+<tr>
+<td><p><code>version</code></p></td>
+<td><p>Integer, monotonically increasing per block ID.</p></td>
+</tr>
+<tr>
+<td><p><code>schema</code></p></td>
+<td><p>Always <code>"block.v1"</code> in v1. Exists for future format
+evolution.</p></td>
+</tr>
+<tr>
+<td><p><code>type</code></p></td>
+<td><p>Derived from Djot AST: <code>paragraph</code>,
+<code>heading</code>, <code>code</code>, <code>list_item</code>,
+<code>quote</code>, <code>image</code>, <code>table</code>,
+<code>math</code>, <code>div</code>.</p></td>
+</tr>
+<tr>
+<td><p><code>content</code></p></td>
+<td><p>Type-specific payload. The <code>text</code> field stores Djot
+inline markup as-is.</p></td>
+</tr>
+<tr>
+<td><p><code>created_by</code></p></td>
+<td><p>Author identifier in <code>namespace:name</code> format.</p></td>
+</tr>
+<tr>
+<td><p><code>created_at</code></p></td>
+<td><p>ISO 8601 timestamp.</p></td>
+</tr>
+<tr>
+<td><p><code>hash</code></p></td>
+<td><p>SHA-256 of serialized <code>content</code>. Computed at creation,
+used for change detection and integrity.</p></td>
+</tr>
+<tr>
+<td><p><code>parent_version</code></p></td>
+<td><p>Version this was derived from. Absent on version 1.</p></td>
+</tr>
+<tr>
+<td><p><code>rollback_to</code></p></td>
+<td><p>Present only on rollback versions.</p></td>
+</tr>
+<tr>
+<td><p><code>mutation_context</code></p></td>
+<td><p>Optional. Links to the operation, conversation, and message that
+caused this version.</p></td>
+</tr>
+</tbody>
+</table>
+<h3 id="Why-versioned-blocks-with-stable-IDs?">Why versioned blocks with
+stable IDs?</h3>
+<p>The alternative — generating a new block ID on every mutation and
+remapping all references — was rejected because:</p>
+<ul>
+<li>remapping is risky (missed references become dangling
+pointers);</li>
+<li>conversation attachments to blocks would break;</li>
+<li>every mutation would require updating pages and potentially many
+conversations;</li>
+<li>the stable-ID model is more intuitive.</li>
+</ul>
+<p>The tradeoff (a bare ID refers to a lineage, not an exact snapshot)
+is resolved by the <strong>two-reference-pattern</strong>: pages use
+bare IDs (always latest), conversation attachments include the version
+(exact snapshot).</p>
+<h3 id="Content-types">Content types</h3>
+<p>Block content schemas are type-specific. The <code>type</code> is
+derived from the Djot AST, and the <code>content</code> structure
+matches what pandoc extracts:</p>
+<table>
+<thead>
+<tr>
+<th><p>Djot construct</p></th>
+<th><p>Block type</p></th>
+<th><p>Content fields</p></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p>Paragraph</p></td>
+<td><p><code>paragraph</code></p></td>
+<td><p><code>text</code></p></td>
+</tr>
+<tr>
+<td><p><code># Heading</code></p></td>
+<td><p><code>heading</code></p></td>
+<td><p><code>text</code>, <code>level</code></p></td>
+</tr>
+<tr>
+<td><p>Code fence</p></td>
+<td><p><code>code</code></p></td>
+<td><p><code>text</code>, <code>language</code></p></td>
+</tr>
+<tr>
+<td><p><code>- list item</code></p></td>
+<td><p><code>list_item</code></p></td>
+<td><p><code>text</code>, <code>style</code>
+(ordered/unordered)</p></td>
+</tr>
+<tr>
+<td><p><code>&gt; blockquote</code></p></td>
+<td><p><code>quote</code></p></td>
+<td><p><code>text</code></p></td>
+</tr>
+<tr>
+<td><p><code>![alt](src)</code></p></td>
+<td><p><code>image</code></p></td>
+<td><p><code>src</code>, <code>alt</code>, <code>caption</code></p></td>
+</tr>
+<tr>
+<td><p>Pipe table</p></td>
+<td><p><code>table</code></p></td>
+<td><p><code>headers</code>, <code>rows</code>,
+<code>alignments</code></p></td>
+</tr>
+<tr>
+<td><p><code>$$</code> math</p></td>
+<td><p><code>math</code></p></td>
+<td><p><code>tex</code>, <code>display</code></p></td>
+</tr>
+<tr>
+<td><p><code>::: div</code></p></td>
+<td><p><code>div</code></p></td>
+<td><p><code>children</code> (list of block IDs),
+<code>class</code></p></td>
+</tr>
+</tbody>
+</table>
+<p>The Djot <code>div</code> container (<code>::: name ... :::</code>)
+maps to a block that can contain other blocks, providing grouping when
+needed. This addresses the document structure question without requiring
+a tree in the page’s <code>root</code> array.</p>
+<h2 id="9-Page-documents">9. Page documents</h2>
+<p>A page document is an ordered list of block references.</p>
+<h3 id="Page-schema">Page schema</h3>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;doc_001&quot;</span><span class="fu">,</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;page.v1&quot;</span><span class="fu">,</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;Cache invalidation&quot;</span><span class="fu">,</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;root&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;blk_001&quot;</span><span class="ot">,</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;blk_002&quot;</span><span class="ot">,</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;blk_003&quot;</span><span class="ot">,</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;blk_004&quot;</span><span class="ot">,</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;blk_005&quot;</span><span class="ot">,</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;blk_006&quot;</span><span class="ot">,</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;blk_007&quot;</span><span class="ot">,</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;blk_008&quot;</span><span class="ot">,</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;blk_009&quot;</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_by&quot;</span><span class="fu">:</span> <span class="st">&quot;human:istvan&quot;</span><span class="fu">,</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-05-06T12:00:00Z&quot;</span><span class="fu">,</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;updated_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-05-06T12:00:00Z&quot;</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>The <code>root</code> field is a flat ordered list of block IDs.
+Hierarchy is implicit in heading levels, consistent with how Djot and
+Markdown documents work. The renderer resolves each block ID to its
+latest version.</p>
+<h3 id="Pages-are-rendered-not-edited-in-the-browser">Pages are
+rendered, not edited in the browser</h3>
+<p>The browser is a reading surface. Each block displays a copyable
+unique identifier. The human authors and edits through
+<code>.djot</code> files and CLI tools.</p>
+<h3 id="Pre-rendered-HTML">Pre-rendered HTML</h3>
+<p>Generated HTML is a projection. It can be deleted and regenerated.
+The rendering pipeline uses pandoc or a custom renderer that:</p>
+<ol type="1">
+<li>Reads the page’s <code>root</code> array.</li>
+<li>Resolves each block ID to its latest version.</li>
+<li>Renders the Djot inline markup in each block’s <code>text</code>
+field to HTML.</li>
+<li>Wraps each block in a <code>&lt;section&gt;</code> with the block
+ID, version, and conversation count.</li>
+<li>Writes the HTML file to <code>site/generated/</code>.</li>
+</ol>
+<p>Each rendered block includes:</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode html"><code class="sourceCode html"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">section</span><span class="ot"> class</span><span class="op">=</span><span class="st">&quot;doc-block&quot;</span><span class="ot"> data-doc-id</span><span class="op">=</span><span class="st">&quot;doc_001&quot;</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="ot">         data-block-id</span><span class="op">=</span><span class="st">&quot;blk_456&quot;</span><span class="ot"> data-block-version</span><span class="op">=</span><span class="st">&quot;3&quot;</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="ot">         id</span><span class="op">=</span><span class="st">&quot;blk_456&quot;</span><span class="dt">&gt;</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="dt">&gt;</span>The cache is invalidated when the source document changes.<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> class</span><span class="op">=</span><span class="st">&quot;block-id&quot;</span><span class="ot"> title</span><span class="op">=</span><span class="st">&quot;Click to copy&quot;</span><span class="dt">&gt;</span>blk_456<span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> class</span><span class="op">=</span><span class="st">&quot;block-version&quot;</span><span class="dt">&gt;</span>v3<span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> class</span><span class="op">=</span><span class="st">&quot;block-conversations&quot;</span><span class="dt">&gt;</span>💬 2<span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">section</span><span class="dt">&gt;</span></span></code></pre></div>
+<h2 id="10-Conversations">10. Conversations</h2>
+<p>Conversation is the primary interaction primitive. There is no
+separate data model for comments, threads, chats, or agent
+discussions.</p>
+<h3 id="Conversation-schema">Conversation schema</h3>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;conv_001&quot;</span><span class="fu">,</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;conversation.v1&quot;</span><span class="fu">,</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;Architecture discussion&quot;</span><span class="fu">,</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;open&quot;</span><span class="fu">,</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-05-06T12:00:00Z&quot;</span><span class="fu">,</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;updated_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-05-06T12:00:00Z&quot;</span><span class="fu">,</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;messages&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;msg_001&quot;</span><span class="fu">,</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;author&quot;</span><span class="fu">:</span> <span class="st">&quot;human:istvan&quot;</span><span class="fu">,</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-05-06T12:00:00Z&quot;</span><span class="fu">,</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;body&quot;</span><span class="fu">:</span> <span class="st">&quot;Help me think through the architecture.&quot;</span><span class="fu">,</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;attachments&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;mentions&quot;</span><span class="fu">:</span> <span class="ot">[]</span></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="How-conversations-are-authored">How conversations are
+authored</h3>
+<p>The human writes a <code>.djot</code> file with YAML frontmatter for
+the message envelope:</p>
+<pre><code>---
+conversation: conv_001
+author: human:istvan
+attachments:
+  - type: block
+    doc_id: doc_001
+    block_id: blk_456
+    version: 2
+mentions:
+  - agent:writer
+---
+
+This paragraph needs a concrete example. The current text is too
+abstract for someone encountering cache invalidation for the first
+time.
+</code></pre>
+<p>The CLI tool reads this file, parses the frontmatter as message
+metadata, treats the Djot body as the message text, and appends the
+message to the conversation in <code>conversations.jsonl</code>.</p>
+<p>For new conversations, the frontmatter omits the
+<code>conversation</code> field (or uses
+<code>conversation: new</code>), and the tool creates a new conversation
+record.</p>
+<h3 id="Message-body-format">Message body format</h3>
+<p>Message bodies are Djot-formatted strings. They support the full Djot
+inline markup vocabulary. They are stored as-is and rendered to HTML
+when displayed.</p>
+<h3 id="Message-attachments">Message attachments</h3>
+<p>A message may attach references to:</p>
+<ul>
+<li>a block (with version):
+<code>{ "type": "block", "doc_id": "doc_001", "block_id": "blk_456", "version": 2 }</code></li>
+<li>a page: <code>{ "type": "page", "doc_id": "doc_001" }</code></li>
+<li>another conversation:
+<code>{ "type": "conversation", "conversation_id": "conv_002" }</code></li>
+</ul>
+<p>Block attachments <strong>require</strong> a <code>version</code>
+field to preserve exactly which content the author was looking at.</p>
+<h3 id="Agent-mentions">Agent mentions</h3>
+<p>Messages may include mentions to signal that a specific agent’s input
+is requested. The <code>mentions</code> field is a list of identifiers
+in <code>namespace:name</code> format.</p>
+<p>Mentions are the signaling mechanism for agent invocation. An
+external agent process monitors for its own mentions (via the SQLite
+index or by scanning JSONL) and responds by appending messages or
+mutating blocks.</p>
+<p>The invocation mechanism (how the agent process runs or is triggered)
+is outside the scope of this design.</p>
+<h3 id="Free-standing-conversations">Free-standing conversations</h3>
+<p>A free-standing conversation has no block or page attachments on its
+first message. It is used for brainstorming, design discussions,
+agent-assisted research, and work not yet tied to a specific
+document.</p>
+<h3 id="Comments-as-conversations">Comments as conversations</h3>
+<p>A “comment” is a conversation whose first message is attached to a
+block. There is no separate comment model. This unification was a
+deliberate design decision: a comment frequently evolves into a
+multi-turn discussion, and maintaining separate models would require
+migration between them or duplicated behavior.</p>
+<h3 id="How-conversations-for-a-block-are-found">How conversations for a
+block are found</h3>
+<p>Query the attachment index for entries matching a block ID. Used
+during rendering to show conversation counts per block.</p>
+<section id="Conversation-status">
+<h3>Conversation status</h3>
+<ul>
+<li><code>open</code> — active.</li>
+<li><code>resolved</code> — addressed, no further input expected.</li>
+<li><code>archived</code> — removed from active views.</li>
+</ul>
+<h2 id="11-Operations-and-mutations">11. Operations and mutations</h2>
+<h3 id="Mutations">Mutations</h3>
+<p>A mutation is a new version of an existing block. The block version
+history <strong>is</strong> the mutation log.</p>
+<h3 id="Operations">Operations</h3>
+<p>An operation groups related mutations into a single logical change.
+When an agent rewrites several blocks as part of one task, those
+mutations share an <code>operation_id</code> for batch understanding and
+rollback.</p>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;op_001&quot;</span><span class="fu">,</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;operation.v1&quot;</span><span class="fu">,</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;description&quot;</span><span class="fu">:</span> <span class="st">&quot;Rewrite cache invalidation section for clarity&quot;</span><span class="fu">,</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_by&quot;</span><span class="fu">:</span> <span class="st">&quot;agent:writer&quot;</span><span class="fu">,</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-05-06T12:10:00Z&quot;</span><span class="fu">,</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;conversation_id&quot;</span><span class="fu">:</span> <span class="st">&quot;conv_002&quot;</span><span class="fu">,</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;message_id&quot;</span><span class="fu">:</span> <span class="st">&quot;msg_004&quot;</span><span class="fu">,</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;active&quot;</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="Who-can-mutate?">Who can mutate?</h3>
+<p>Both humans and agents. The safety model is immutability +
+traceability + rollback, not pre-approval.</p>
+<h3 id="Rollback">Rollback</h3>
+<p>Single block rollback creates a new version with the content of a
+specified earlier version. Operation rollback does this for all blocks
+in the operation and marks the operation as
+<code>rolled_back</code>.</p>
+</section>
+<h2 id="12-CLI-tool-interface">12. CLI tool interface</h2>
+<p>In v1, all system operations are performed through CLI tools. There
+is no API server.</p>
+<section id="Design-principle:-tools-as-a-library-with-CLI-wrappers">
+<h3>Design principle: tools as a library with CLI wrappers</h3>
+<p>Each operation is implemented as a Python function in a shared
+library. CLI wrappers invoke these functions. This design ensures:</p>
+<ul>
+<li>agents can call the same functions directly (as Python imports or
+subprocess calls);</li>
+<li>a future editor plugin (e.g., neovim) can call the same
+functions;</li>
+<li>a future API server can wrap the same functions in HTTP routes;</li>
+<li>no operation logic lives only in a CLI script.</li>
+</ul>
+<h3 id="Core-operations">Core operations</h3>
+<p><strong>Ingestion:</strong> -
+<code>ingest_page(djot_path, author)</code> — parse a .djot file into
+blocks + page, write to JSONL. -
+<code>ingest_block(djot_text, block_id, author, operation_id)</code> —
+parse Djot text as a single block update.</p>
+<p><strong>Conversations:</strong> -
+<code>new_conversation(title, author)</code> — create a new
+conversation. -
+<code>add_message(conversation_id, djot_path_or_text, author, attachments, mentions)</code>
+— append a message.</p>
+<p><strong>Querying:</strong> -
+<code>query_conversations(block_id, mention, status, author)</code> —
+search conversations by various criteria. -
+<code>block_history(block_id)</code> — show version history for a block.
+- <code>search(text_query)</code> — full-text search across blocks and
+conversations.</p>
+<p><strong>Mutation and rollback:</strong> -
+<code>new_operation(description, author, conversation_id)</code> —
+create an operation. - <code>rollback(block_id, target_version)</code> —
+roll back a single block. -
+<code>rollback_operation(operation_id)</code> — roll back all mutations
+in an operation.</p>
+<p><strong>Rendering:</strong> - <code>render()</code> — regenerate all
+HTML pages and rebuild SQLite indexes. -
+<code>render_page(page_id)</code> — regenerate a single page.</p>
+<p><strong>Serving (convenience):</strong> - <code>serve()</code> —
+start a minimal static file server for <code>site/generated/</code>
+(equivalent to <code>python -m http.server</code>).</p>
+</section>
+<h3 id="Write-coordination">Write coordination</h3>
+<p>All write operations use file locking (e.g.,
+<code>fcntl.flock</code>) to serialize appends to JSONL files. This
+prevents corruption when multiple agents or the human invoke tools
+concurrently. At v1 scale (single user, few agents), this is
+sufficient.</p>
+<h3 id="Designed-for-editor-integration">Designed for editor
+integration</h3>
+<p>The CLI tools are deliberately structured so that a future editor
+plugin can provide:</p>
+<ul>
+<li>a command to append a message to a conversation from within the
+editor;</li>
+<li>a template system for new conversations and messages;</li>
+<li>a side panel listing conversations (especially valuable for finding
+older conversations);</li>
+<li>inline display of parse errors with suggestions for fixing
+them;</li>
+<li>quick-copy of block IDs from rendered views into message
+attachments.</li>
+</ul>
+<p>These are not v1 features. But the underlying functions are the same
+ones the CLI tools use, so the integration path is straightforward.</p>
+<h2 id="13-Indexes">13. Indexes</h2>
+<h3 id="Required-indexes">Required indexes</h3>
+<table>
+<thead>
+<tr>
+<th><p>Index</p></th>
+<th><p>Purpose</p></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p><code>attachment_index</code></p></td>
+<td><p>Maps block/page references in message attachments to conversation
+IDs. Used for conversation counts per block.</p></td>
+</tr>
+<tr>
+<td><p><code>block_latest</code></p></td>
+<td><p>Maps block IDs to their latest version number. Used during
+rendering.</p></td>
+</tr>
+<tr>
+<td><p><code>mention_index</code></p></td>
+<td><p>Maps agent/human identifiers to conversations where they are
+mentioned. Used by agents to find pending work.</p></td>
+</tr>
+<tr>
+<td><p><code>conversation_participants</code></p></td>
+<td><p>Derived from message authors. Useful for filtering conversations
+by participant.</p></td>
+</tr>
+</tbody>
+</table>
+<h3 id="Implementation">Implementation</h3>
+<p>SQLite tables rebuilt from JSONL during rendering:</p>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode sql"><code class="sourceCode sql"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">TABLE</span> attachment_index (</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    conversation_id TEXT, message_id TEXT,</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    target_type TEXT, target_doc_id TEXT,</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    target_block_id TEXT, target_version <span class="dt">INTEGER</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>);</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">TABLE</span> block_latest (</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>    block_id TEXT <span class="kw">PRIMARY</span> <span class="kw">KEY</span>, latest_version <span class="dt">INTEGER</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>);</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">TABLE</span> mention_index (</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>    conversation_id TEXT, message_id TEXT, mentioned_id TEXT</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>);</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">TABLE</span> conversation_participants (</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>    conversation_id TEXT, participant_id TEXT</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>);</span></code></pre></div>
+<p>Indexes are projections. They can be deleted and rebuilt from
+canonical JSONL.</p>
+<h2 id="14-Rendering">14. Rendering</h2>
+<h3 id="Pipeline">Pipeline</h3>
+<pre class="text"><code>blocks.jsonl + pages.jsonl + conversations.jsonl + index.sqlite
+    ↓
+render.py
+    ↓
+site/generated/*.html
+</code></pre>
+<p>Rendering resolves each page’s block references to the latest
+version, converts Djot inline markup to HTML (using pandoc), wraps each
+block with identity metadata, adds conversation counts, and writes
+static HTML files.</p>
+<h3 id="Serving">Serving</h3>
+<p>Generated HTML is opened directly in a browser:</p>
+<ul>
+<li>As <code>file://</code> URLs (simplest, no process needed).</li>
+<li>Or via <code>python -m http.server</code> pointed at
+<code>site/generated/</code> (for proper URL routing).</li>
+</ul>
+<p>No application server is required.</p>
+<h2 id="15-Minimal-v1-user-flows">15. Minimal v1 user flows</h2>
+<section id="Flow-1:-Read-a-page">
+<h3>Flow 1: Read a page</h3>
+<ol type="1">
+<li>Run <code>render</code> to regenerate HTML and indexes.</li>
+<li>Open the generated HTML file in a browser.</li>
+<li>Each block has a visible, copyable block ID and version
+indicator.</li>
+</ol>
+<section id="Flow-2:-Author-a-new-page">
+<h3>Flow 2: Author a new page</h3>
+<ol type="1">
+<li>Write a <code>.djot</code> file in <code>authoring/pages/</code>
+with <code>{#block_id}</code> attributes on each block.</li>
+<li>Run <code>ingest_page</code> to parse the Djot into blocks and a
+page record.</li>
+<li>Run <code>render</code> to generate HTML.</li>
+</ol>
+<section id="Flow-3:-Start-a-free-standing-conversation">
+<h3>Flow 3: Start a free-standing conversation</h3>
+<ol type="1">
+<li>Write a <code>.djot</code> message file with YAML frontmatter (no
+attachments).</li>
+<li>Run <code>new_conversation</code> or <code>add_message</code> with
+<code>conversation: new</code>.</li>
+<li>Mention an agent if desired.</li>
+</ol>
+<section id="Flow-4:-Comment-on-a-block">
+<h3>Flow 4: Comment on a block</h3>
+<ol type="1">
+<li>Copy the block ID from the rendered page.</li>
+<li>Write a <code>.djot</code> message file with the block ID in the
+frontmatter attachments.</li>
+<li>Run <code>add_message</code> to append it to a new or existing
+conversation.</li>
+</ol>
+<section id="Flow-5:-Agent-mutates-blocks">
+<h3>Flow 5: Agent mutates blocks</h3>
+<ol type="1">
+<li>Agent detects a mention via the mention index.</li>
+<li>Agent reads the referenced blocks (from JSONL or via the query
+library).</li>
+<li>Agent creates an operation.</li>
+<li>Agent writes updated Djot content for each block, preserving the
+<code>{#block_id}</code>.</li>
+<li>Agent runs ingestion, which creates new block versions linked to the
+operation.</li>
+<li>Next <code>render</code> shows the updated content.</li>
+</ol>
+<section id="Flow-6:-Roll-back-an-operation">
+<h3>Flow 6: Roll back an operation</h3>
+<ol type="1">
+<li>Human notices bad agent edits in the rendered page.</li>
+<li>Human identifies the operation ID (from block history or the
+operations JSONL).</li>
+<li>Human runs <code>rollback_operation</code>.</li>
+<li>New block versions are created restoring pre-operation content.</li>
+<li>Next <code>render</code> shows the rolled-back content.</li>
+</ol>
+<h2 id="16-Key-dependencies">16. Key dependencies</h2>
+<table>
+<thead>
+<tr>
+<th><p>Dependency</p></th>
+<th><p>Role</p></th>
+<th><p>Maturity</p></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p>Pandoc</p></td>
+<td><p>Djot parsing, AST generation, HTML rendering</p></td>
+<td><p>Very high. Maintained by Djot’s creator. Supports Djot natively
+as input and output format.</p></td>
+</tr>
+<tr>
+<td><p>Python</p></td>
+<td><p>CLI tools, ingestion, JSONL manipulation, SQLite
+indexing</p></td>
+<td><p>Very high.</p></td>
+</tr>
+<tr>
+<td><p>SQLite</p></td>
+<td><p>Derived indexes for efficient querying</p></td>
+<td><p>Very high.</p></td>
+</tr>
+<tr>
+<td><p>Djot</p></td>
+<td><p>Authoring format</p></td>
+<td><p>Young but formally specified. Created by the author of Pandoc and
+CommonMark. Multiple implementations exist (JS, Lua, Rust, Go, Haskell,
+PHP). Treesitter grammar available for editor support.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+</section>
+</section>
+</section>
+</section>
+<h2 id="17-Risks-and-mitigations">17. Risks and mitigations</h2>
+<h3 id="Risk:-Djot-is-a-young-format-with-a-small-ecosystem">Risk: Djot
+is a young format with a small ecosystem</h3>
+<p>Mitigation: Djot is designed by John MacFarlane, who also created
+Pandoc and co-created CommonMark. Pandoc provides native Djot support as
+both input and output. Djot’s formal specification and multiple
+implementations reduce bus-factor risk. If Djot were abandoned, the
+format is simple enough that existing parsers would continue to work,
+and migration to CommonMark would be straightforward.</p>
+<h3 id="Risk:-LLMs-produce-malformed-Djot">Risk: LLMs produce malformed
+Djot</h3>
+<p>Mitigation: Djot is close enough to Markdown that agents produce
+valid output most of the time. When they don’t, Djot’s linear parser
+produces localized, useful error messages. A parse-feedback-retry loop
+handles the remaining cases.</p>
+<h3 id="Risk:-JSONL-files-grow-large">Risk: JSONL files grow large</h3>
+<p>Mitigation: at expected v1 scale (hundreds of pages, thousands of
+block versions), JSONL files remain manageable. Migration to a document
+database is planned for when file size becomes a concern.</p>
+<h3 id="Risk:-conversations-become-noisy">Risk: conversations become
+noisy</h3>
+<p>Mitigation: the <code>status</code> field allows filtering. The query
+tools support searching by block, mention, author, and status.</p>
+<h3 id="Risk:-rendered-pages-become-stale">Risk: rendered pages become
+stale</h3>
+<p>Mitigation: regeneration is an explicit step. A future version may
+add file-watching.</p>
+<h3 id="Risk:-agents-create-low-quality-content">Risk: agents create
+low-quality content</h3>
+<p>Mitigation: all changes are traceable and rollbackable (individually
+or by operation).</p>
+<h3 id="Risk:-concurrent-writes-corrupt-JSONL-files">Risk: concurrent
+writes corrupt JSONL files</h3>
+<p>Mitigation: all write operations use file locking. At v1 scale,
+contention is rare.</p>
+<h3 id="Risk:-hand-editing-JSONL-is-needed-for-edge-cases">Risk:
+hand-editing JSONL is needed for edge cases</h3>
+<p>Mitigation: JSONL is human-readable and editable with standard tools
+(<code>jq</code>, text editors). This is a fallback, not the primary
+workflow.</p>
+<section id="18-Non-negotiable-v1-invariants">
+<h2>18. Non-negotiable v1 invariants</h2>
+<ol type="1">
+<li>Canonical data is stored as JSON (JSONL files in v1).</li>
+<li>Rendered HTML and SQLite indexes are regenerable projections.</li>
+<li>Every rendered block has a stable, copyable block ID and version
+indicator.</li>
+<li>Blocks are versioned with stable IDs — no content is ever
+destroyed.</li>
+<li>All block versions record their author and timestamp.</li>
+<li>Related mutations are grouped by operations for batch rollback.</li>
+<li>Comments are conversations with block attachments (including
+version), not separate objects.</li>
+<li>Free-standing conversations are a primary working mode.</li>
+<li>Context is attached to messages, not conversations. Block
+attachments include the version.</li>
+<li>Mentions are the signaling mechanism for agent invocation.</li>
+<li>The browser is a reader, not a writer.</li>
+<li>The system is local-first — no internet, no auth, no
+multi-user.</li>
+<li>Both humans and agents author content in Djot.</li>
+<li>There is no server process in v1. All operations are CLI tools /
+library functions.</li>
+</ol>
+<h2 id="19-Deliberately-deferred-features">19. Deliberately deferred
+features</h2>
+<h3 id="API-server">API server</h3>
+<p>Deferred because v1 operates through CLI tools and a Python library.
+A future version may add an API layer by wrapping the same library
+functions in HTTP routes. The library-first design ensures no operation
+logic is lost when the API is added.</p>
+<h3 id="Editor-integration-neovim-plugin">Editor integration (neovim
+plugin)</h3>
+<p>Deferred but explicitly anticipated. The CLI tools and Python library
+are designed so that an editor plugin can call the same functions to:
+append messages, display conversations, show parse errors, manage
+templates, and search older conversations. This is a high-value future
+addition.</p>
+<h3 id="Browser-side-writing">Browser-side writing</h3>
+<p>Deferred because v1 uses a text editor for authoring.</p>
+<h3 id="Proposal-review-workflow">Proposal/review workflow</h3>
+<p>Deferred because mutation + operation + rollback provides equivalent
+safety with less ceremony.</p>
+<h3 id="Rich-document-editing-WYSIWYG">Rich document editing /
+WYSIWYG</h3>
+<p>Deferred because v1 focuses on reading in the browser, authoring in
+Djot.</p>
+<h3 id="Automatic-regeneration">Automatic regeneration</h3>
+<p>Deferred. V1 uses manual rendering.</p>
+<h3 id="DuckDB-MongoDB-backend">DuckDB / MongoDB backend</h3>
+<p>Deferred. JSONL is the v1 backend.</p>
+<h3 id="CRDTs-remote-sync-multi-user-public-deployment">CRDTs, remote
+sync, multi-user, public deployment</h3>
+<p>Deferred. Not needed for local-first single-user operation.</p>
+<h3 id="Page-versioning">Page versioning</h3>
+<p>Deferred. Block content is versioned. Page structural changes are not
+versioned in v1.</p>
+</section>
+<h2 id="20-Schema-summary">20. Schema summary</h2>
+<h3 id="block-v1">block.v1</h3>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;string, stable across versions, matches Djot {#id}&quot;</span><span class="fu">,</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="st">&quot;integer, monotonically increasing per id&quot;</span><span class="fu">,</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;block.v1&quot;</span><span class="fu">,</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;paragraph | heading | code | list_item | quote | image | table | math | div&quot;</span><span class="fu">,</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;content&quot;</span><span class="fu">:</span> <span class="st">&quot;object, type-specific, text fields contain Djot inline markup&quot;</span><span class="fu">,</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_by&quot;</span><span class="fu">:</span> <span class="st">&quot;string, namespace:name&quot;</span><span class="fu">,</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;string, ISO 8601&quot;</span><span class="fu">,</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;hash&quot;</span><span class="fu">:</span> <span class="st">&quot;string, sha256 of serialized content&quot;</span><span class="fu">,</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;parent_version&quot;</span><span class="fu">:</span> <span class="st">&quot;integer, optional&quot;</span><span class="fu">,</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;rollback_to&quot;</span><span class="fu">:</span> <span class="st">&quot;integer, optional&quot;</span><span class="fu">,</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;mutation_context&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;operation_id&quot;</span><span class="fu">:</span> <span class="st">&quot;string, optional&quot;</span><span class="fu">,</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;conversation_id&quot;</span><span class="fu">:</span> <span class="st">&quot;string, optional&quot;</span><span class="fu">,</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;message_id&quot;</span><span class="fu">:</span> <span class="st">&quot;string, optional&quot;</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="page-v1">page.v1</h3>
+<div class="sourceCode" id="cb16"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;page.v1&quot;</span><span class="fu">,</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;root&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;array of block ID strings, ordered&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_by&quot;</span><span class="fu">:</span> <span class="st">&quot;string, namespace:name&quot;</span><span class="fu">,</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;string, ISO 8601&quot;</span><span class="fu">,</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;updated_at&quot;</span><span class="fu">:</span> <span class="st">&quot;string, ISO 8601&quot;</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="conversation-v1">conversation.v1</h3>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;conversation.v1&quot;</span><span class="fu">,</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;open | resolved | archived&quot;</span><span class="fu">,</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;string, ISO 8601&quot;</span><span class="fu">,</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;updated_at&quot;</span><span class="fu">:</span> <span class="st">&quot;string, ISO 8601&quot;</span><span class="fu">,</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;messages&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;author&quot;</span><span class="fu">:</span> <span class="st">&quot;string, namespace:name&quot;</span><span class="fu">,</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;string, ISO 8601&quot;</span><span class="fu">,</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;body&quot;</span><span class="fu">:</span> <span class="st">&quot;string, Djot inline markup&quot;</span><span class="fu">,</span></span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;attachments&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;block | page | conversation&quot;</span><span class="fu">,</span></span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;doc_id&quot;</span><span class="fu">:</span> <span class="st">&quot;string, for block and page&quot;</span><span class="fu">,</span></span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;block_id&quot;</span><span class="fu">:</span> <span class="st">&quot;string, for block&quot;</span><span class="fu">,</span></span>
+<span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="st">&quot;integer, required for block&quot;</span><span class="fu">,</span></span>
+<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;conversation_id&quot;</span><span class="fu">:</span> <span class="st">&quot;string, for conversation&quot;</span></span>
+<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb17-22"><a href="#cb17-22" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb17-23"><a href="#cb17-23" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;mentions&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;array of namespace:name strings&quot;</span><span class="ot">]</span></span>
+<span id="cb17-24"><a href="#cb17-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb17-25"><a href="#cb17-25" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb17-26"><a href="#cb17-26" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="operation-v1">operation.v1</h3>
+<div class="sourceCode" id="cb18"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;operation.v1&quot;</span><span class="fu">,</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;description&quot;</span><span class="fu">:</span> <span class="st">&quot;string&quot;</span><span class="fu">,</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_by&quot;</span><span class="fu">:</span> <span class="st">&quot;string, namespace:name&quot;</span><span class="fu">,</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;created_at&quot;</span><span class="fu">:</span> <span class="st">&quot;string, ISO 8601&quot;</span><span class="fu">,</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;conversation_id&quot;</span><span class="fu">:</span> <span class="st">&quot;string, optional&quot;</span><span class="fu">,</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;message_id&quot;</span><span class="fu">:</span> <span class="st">&quot;string, optional&quot;</span><span class="fu">,</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;status&quot;</span><span class="fu">:</span> <span class="st">&quot;active | rolled_back&quot;</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="Indexes-SQLite-rebuilt-from-JSONL">Indexes (SQLite, rebuilt from
+JSONL)</h3>
+<div class="sourceCode" id="cb19"><pre
+class="sourceCode sql"><code class="sourceCode sql"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>attachment_index(conversation_id, message_id, target_type, target_doc_id, target_block_id, target_version)</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>block_latest(block_id, latest_version)</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>mention_index(conversation_id, message_id, mentioned_id)</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>conversation_participants(conversation_id, participant_id)</span></code></pre></div>
+<h2 id="21-Summary">21. Summary</h2>
+<p>The v1 system is a deliberately narrow local knowledge substrate with
+four object kinds: <strong>blocks</strong>, <strong>pages</strong>,
+<strong>conversations</strong>, and <strong>operations</strong>.</p>
+<p>Both humans and agents author content in <strong>Djot</strong>, a
+formally parseable light markup language that feels like Markdown but
+can be deterministically converted to and from structured data. Block
+IDs are native Djot attributes (<code>{#id}</code>), not a bolted-on
+convention.</p>
+<p>Canonical data is stored as <strong>JSONL</strong>. Rendered HTML and
+SQLite indexes are <strong>regenerable projections</strong>. The browser
+is a reader with copyable block IDs, not a writer.</p>
+<p>Blocks are <strong>versioned with stable IDs</strong>. No content is
+ever destroyed. All changes are traceable to an author, a time, an
+operation, and optionally a conversation. Related mutations are grouped
+by <strong>operations</strong> for batch rollback.</p>
+<p>Conversations are the <strong>single interaction primitive</strong>.
+Free-standing discussions, block comments, and agent requests are all
+conversations, differing only in whether messages carry attachments and
+mentions.</p>
+<p>There is <strong>no server process</strong>. All operations are
+performed through a Python library with CLI wrappers, designed for
+future integration with an editor plugin, an API server, or other
+tooling.</p>
+<p>The system is <strong>local-first</strong>, authored in a text
+editor, read in a browser, and stored as JSONL files designed for future
+migration to a document database.</p>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Find all elements with an id attribute
+  const elements = document.querySelectorAll('[id]');
+  
+  elements.forEach(el => {
+    const id = el.id;
+    if (!id) return;
+    
+    // Skip some internal elements
+    if (id.startsWith('cb') || id.startsWith('fn')) return;
+    
+    // Create badge
+    const badge = document.createElement('span');
+    badge.className = 'block-id-badge';
+    badge.textContent = id;
+    badge.title = 'Click to copy: ' + id;
+    
+    badge.addEventListener('click', function(e) {
+      e.stopPropagation();
+      navigator.clipboard.writeText(id).then(() => {
+        badge.classList.add('copied');
+        badge.textContent = '✓ ' + id;
+        setTimeout(() => {
+          badge.classList.remove('copied');
+          badge.textContent = id;
+        }, 1500);
+      });
+    });
+    
+    // Insert as first child
+    el.style.position = 'relative';
+    el.insertBefore(badge, el.firstChild);
+  });
+});
+</script>
+
+</body>
+</html>
