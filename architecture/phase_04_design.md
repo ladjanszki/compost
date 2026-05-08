@@ -71,7 +71,7 @@ Three sets in `tests/test_04/fixtures/`:
 ## 6. Integration with the pipeline
 
 ```
-.md files → convert_directory() → .dj files → ingest_page() → blocks.jsonl → build_index() → Kuzu
+.md files → convert_directory() → .dj files → ingest_page() → Parquet → Kuzu
 ```
 
 The integration test confirms: converted files ingest without error AND pass the Phase 03 roundtrip test.

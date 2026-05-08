@@ -776,15 +776,15 @@ import json
 from src.tools.query_page import run as query_page_run
 djot_output = query_page_run('page-danube')
 
-# Load same blocks as JSON
-with open('workspace/store/blocks.jsonl') as f:
-    all_blocks = [json.loads(l) for l in f]
-with open('workspace/store/pages.jsonl') as f:
-    pages = [json.loads(l) for l in f]
+# Get raw blocks for comparison via Kuzu
+import kuzu
+db = kuzu.Database('workspace/store/kuzu/db')
+conn = kuzu.Connection(db)
+res = conn.execute("MATCH (p:Page {id: 'page-danube'})-[r:HAS_BLOCK]->(b:Block) RETURN b ORDER BY r.position")
+page_blocks = []
+while res.has_next():
+    page_blocks.append(res.get_next()[0])
 
-danube_page = next(p for p in pages if p['id'] == 'page-danube')
-block_idx = {b['id']: b for b in all_blocks}
-page_blocks = [block_idx[bid] for bid in danube_page['root'] if bid in block_idx]
 json_output = json.dumps(page_blocks, indent=2)
 
 print(f'JSON size: {len(json_output)} chars')

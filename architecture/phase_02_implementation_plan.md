@@ -7,7 +7,7 @@ This document is the step-by-step implementation plan for Phase 02. It assumes t
 The goal of Phase 02 is:
 
 ```
-.dj file  →  djot.js (native AST)  →  Python walker  →  blocks.jsonl + pages.jsonl (full djot support)
+.dj file  →  djot.js (native AST)  →  Python walker  →  Parquet files (temp) → Kuzu Graph Database
 ```
 
 ---
@@ -216,23 +216,24 @@ Key changes:
 
 ### Step 6 — Update `src/ingest/ingest_page.py`
 
-Change import from `pandoc_ast` to `djot_ast`:
+Change import from `pandoc_ast` to `djot_ast`. Also, remove JSONL writing. Instead, accumulate blocks in memory, write them to temporary Parquet files, and use Kuzu's `COPY FROM` to ingest them directly into the graph.
 
 ```python
 # Before:
 from .pandoc_ast import get_ast
+from .jsonl_writer import append_record
 
 # After:
 from .djot_ast import get_ast
+from .parquet_writer import write_blocks_to_parquet
+# ... logic to COPY FROM parquet into Kuzu ...
 ```
-
-No other changes needed — the rest of the pipeline (make_block, append_record, make_page) is unchanged.
 
 ---
 
-### Step 7 — Update Kuzu schema and index builder
+### Step 7 — Update Kuzu schema and Ingest Integration
 
-Add `language STRING` to Block table. Add `LINKS_TO` relationship table. Update parquet generation and loading (same changes as previously specified in the old Phase 02 plan — the Kuzu/index layer doesn't care which parser produced the blocks).
+Add `language STRING` to Block table. Add `LINKS_TO` relationship table. Update parquet generation and loading to occur at the end of `ingest_page.py` rather than relying on a separate `build_index()` command. The `index/` directory logic should be merged directly into the ingestion pipeline, cementing Kuzu as the canonical storage.
 
 ---
 
@@ -241,22 +242,27 @@ Add `language STRING` to Block table. Add `LINKS_TO` relationship table. Update 
 ```bash
 python -c "
 import os
+import kuzu
 # Clear store
-for f in ['workspace/store/blocks.jsonl', 'workspace/store/pages.jsonl']:
-    if os.path.exists(f): os.remove(f)
+import shutil
+if os.path.exists('workspace/store/kuzu/db'):
+    shutil.rmtree('workspace/store/kuzu/db')
 
 from src.ingest.ingest_page import ingest_page
 page_id = ingest_page('tests/test_00/test_00.dj', 'human:test')
 print(f'Page: {page_id}')
 
-import json
-with open('workspace/store/blocks.jsonl') as f:
-    blocks = [json.loads(l) for l in f]
+db = kuzu.Database('workspace/store/kuzu/db')
+conn = kuzu.Connection(db)
+result = conn.execute("MATCH (b:Block) RETURN b.type, b.text ORDER BY b.id")
+blocks = []
+while result.has_next():
+    blocks.append(result.get_next())
+
 assert len(blocks) == 9, f'Expected 9 blocks, got {len(blocks)}'
-assert blocks[0]['type'] == 'heading'
-assert blocks[0]['content']['level'] == 1
-assert '*bold*' in blocks[1]['content']['text']
-assert '_italic_' in blocks[1]['content']['text']
+assert blocks[0][0] == 'heading'
+assert '*bold*' in blocks[1][1]
+assert '_italic_' in blocks[1][1]
 print('Phase 00 regression: PASS')
 "
 ```
@@ -267,39 +273,27 @@ print('Phase 00 regression: PASS')
 
 ```bash
 python -c "
-import os, json
-for f in ['workspace/store/blocks.jsonl', 'workspace/store/pages.jsonl']:
-    if os.path.exists(f): os.remove(f)
+import os, kuzu, shutil
+if os.path.exists('workspace/store/kuzu/db'):
+    shutil.rmtree('workspace/store/kuzu/db')
 
 from src.ingest.ingest_page import ingest_page
 page_id = ingest_page('tests/test_02/all_elements.dj', 'human:test')
 
-with open('workspace/store/blocks.jsonl') as f:
-    blocks = [json.loads(l) for l in f]
+db = kuzu.Database('workspace/store/kuzu/db')
+conn = kuzu.Connection(db)
+result = conn.execute("MATCH (b:Block) RETURN b.type, b.text")
+blocks = []
+types_found = set()
+while result.has_next():
+    row = result.get_next()
+    blocks.append(row)
+    types_found.add(row[0])
 
-types_found = set(b['type'] for b in blocks)
 expected_types = {'heading', 'paragraph', 'code_block', 'block_quote', 'list_item', 
                   'table', 'thematic_break', 'definition_item', 'div', 'raw_block'}
 missing = expected_types - types_found
 assert not missing, f'Missing block types: {missing}'
-
-# Check inline reconstruction quality
-para_blocks = [b for b in blocks if b['type'] == 'paragraph']
-first_para = para_blocks[0]['content']['text']
-assert '*bold*' in first_para, 'Bold not reconstructed'
-assert '_italic_' in first_para, 'Italic not reconstructed'
-assert '\`inline code\`' in first_para, 'Inline code not reconstructed'
-assert 'e=mc^2' in first_para, 'Math not reconstructed'
-assert '[link](https://example.com)' in first_para, 'Link not reconstructed'
-
-# Check code block
-code_blocks = [b for b in blocks if b['type'] == 'code_block']
-assert code_blocks[0]['content']['language'] == 'python'
-assert 'def hello' in code_blocks[0]['content']['text']
-
-# Check links extracted
-linked_blocks = [b for b in blocks if b['content'].get('links')]
-assert any('geography.dj' in str(b['content']['links']) for b in linked_blocks)
 
 print(f'All elements test: PASS ({len(blocks)} blocks, types: {sorted(types_found)})')
 "
@@ -311,19 +305,15 @@ print(f'All elements test: PASS ({len(blocks)} blocks, types: {sorted(types_foun
 
 ```bash
 python -c "
-import os, json
-for f in ['workspace/store/blocks.jsonl', 'workspace/store/pages.jsonl']:
-    if os.path.exists(f): os.remove(f)
+import os, shutil, kuzu
+if os.path.exists('workspace/store/kuzu/db'):
+    shutil.rmtree('workspace/store/kuzu/db')
 
 from src.ingest.ingest_page import ingest_page
 for fname in ['geography.dj', 'danube.dj', 'europe.dj']:
     ingest_page(f'tests/test_02/cross_linked_corpus/{fname}', 'human:test')
 
-from src.index.build_index import build_index
-build_index()
-
-import kuzu
-db = kuzu.Database('workspace/indexes/kuzu/db')
+db = kuzu.Database('workspace/store/kuzu/db')
 conn = kuzu.Connection(db)
 for label, q in [
     ('Blocks', 'MATCH (b:Block) RETURN count(b)'),

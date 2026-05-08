@@ -35,7 +35,7 @@ This is useful but limited. Mentions of entities without explicit links are invi
 - Define `Entity` node table, `MENTIONS` and `RELATES_TO` relationship tables in Kuzu.
 - Implement LLM-based extraction (configurable model).
 - Implement mock extractor for cost-free pipeline testing.
-- Store extraction results in `entities.jsonl`, `relations.jsonl`, `mentions.jsonl`.
+- Store extraction results directly via Parquet load into Kuzu.
 - Process blocks in batches with rate limiting.
 - Test with 5-page geography corpus.
 - Naive entity deduplication (normalized name matching).
@@ -100,7 +100,7 @@ CREATE REL TABLE RELATES_TO(FROM Entity TO Entity, predicate STRING,
 ## 6. Extraction pipeline
 
 ```
-blocks.jsonl → filter eligible blocks → LLM extraction per block → entities.jsonl + relations.jsonl + mentions.jsonl → Parquet → Kuzu
+Kuzu blocks → filter eligible blocks → LLM extraction per block → memory → Parquet → Kuzu entities + relations + mentions
 ```
 
 - Skip `code_block`, `raw_block`, `thematic_break` (no natural language).
@@ -138,9 +138,7 @@ knowledge-graph/
       enrich_blocks.py
   workspace/
     store/
-      entities.jsonl
-      relations.jsonl
-      mentions.jsonl
+      kuzu/
   tests/
     test_05/
       corpus/

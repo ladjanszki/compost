@@ -7,7 +7,7 @@ This document is the step-by-step implementation plan for Phase 05. It assumes t
 The goal of Phase 05 is:
 
 ```
-blocks.jsonl  →  LLM extraction  →  entities.jsonl + relations.jsonl + mentions.jsonl  →  Kuzu
+Kuzu Blocks  →  LLM extraction  →  Parquet files  →  Kuzu (Entities + Relations + Mentions)
 ```
 
 ---

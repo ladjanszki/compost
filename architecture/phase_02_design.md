@@ -4,7 +4,7 @@
 
 This document describes the design for **Phase 02**: switching from Pandoc to the djot.js reference parser and implementing full Djot ingestion (all block and inline element types).
 
-After Phase 02, any valid Djot document ingests without data loss. The parser is the djot reference implementation, and every djot construct maps to a block or inline representation in the knowledge store.
+After Phase 02, any valid Djot document ingests without data loss. The parser is the djot reference implementation, and every djot construct maps to a block or inline representation flattened to Parquet and loaded directly into the Kuzu graph database.
 
 ---
 
@@ -46,7 +46,7 @@ Compare: in Pandoc, inline code is `{"t": "Code", "c": [["",[], []], "text"]}`. 
 - Handle nested list items (multi-paragraph, nested sub-lists).
 - Handle `section` nodes (transparent, same as Pandoc's Div-section).
 - Extract links for `LINKS_TO` edges (internal link detection).
-- Update Kuzu schema: add `language` column, add `LINKS_TO` table.
+- Remove `blocks.jsonl` / `pages.jsonl` logic entirely. The target is Kuzu via temporary Parquet files.
 - Add Node.js/npx as a system dependency.
 - Create comprehensive test files exercising all element types.
 
@@ -332,13 +332,9 @@ knowledge-graph/
       ast_walker.py           ← REWRITTEN: walks djot.js AST
       inline_reconstruct.py   ← REWRITTEN: handles all djot inline types
       block_schema.py         ← unchanged
-      jsonl_writer.py         ← unchanged
-      ingest_page.py          ← MODIFIED: calls djot_ast instead of pandoc_ast
-    index/
-      kuzu_schema.py          ← MODIFIED: adds language, LINKS_TO
-      jsonl_to_parquet.py     ← MODIFIED: adds language, links_to parquet
-      kuzu_loader.py          ← MODIFIED: loads LINKS_TO
-      build_index.py          ← MODIFIED: orchestrates link loading
+      parquet_writer.py       ← NEW: writes AST output to Parquet
+      ingest_page.py          ← MODIFIED: calls djot_ast, writes parquet, copies to Kuzu
+    index/                    ← DEPRECATED (merged into ingest pipeline)
   tests/
     test_02/
       all_elements.dj         ← comprehensive test file
@@ -377,5 +373,4 @@ Phase 02 is passing when:
 
 - The `reconstruct()` return type changes from `str` to `(str, links)` — breaking change, same as before.
 - `pandoc_ast.py` is kept for Phase 04 (markdown → djot conversion).
-- Block content schema is unchanged (`block.v1`). Existing blocks in JSONL are still valid.
-- The Kuzu schema adds columns/tables but `build_index()` always rebuilds from scratch.
+- Block content schema is unchanged (`block.v1`), but it is stored directly in Kuzu. JSONL is deprecated.
