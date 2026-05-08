@@ -6,3 +6,5 @@ dependencies:
   - pip
   - pip:
     - uuid6
+    - kuzu
+    - pyarrow

@@ -27,33 +27,22 @@ Goal: ingest a single Djot document into `blocks.jsonl` and `pages.jsonl`.
 
 ## Test 01 — JSONL → Kuzu ingestion
 
-Goal: load the JSONL output of Test 00 into a Kuzu graph database as a derived index.
+Goal: load the JSONL output from ingestion into a Kuzu graph database as a derived index.
 
-### Setup
-
-- [ ] Add `kuzu` to `environment.yml` and recreate the environment
-- [ ] Verify Kuzu installation: `python -c "import kuzu; print(kuzu.__version__)"`
-
-### Schema design
-
-- [ ] Write a Kuzu schema design doc (`architecture/design-docs/test_01_design.md`) covering:
-  - Node tables: `Block`, `Page`
-  - Relationship tables: `Page` → `HAS_BLOCK` → `Block`, `Block` → `NEXT` → `Block`
-  - Property mapping from `block.v1` JSON fields to Kuzu column types
-  - Bulk `COPY FROM` strategy (Parquet or CSV intermediate, not row-by-row INSERT)
-
-### Implementation
-
-- [ ] Implement `src/index/kuzu_schema.py` — create node and relationship tables in a Kuzu database
-- [ ] Implement `src/index/jsonl_to_parquet.py` — flatten `blocks.jsonl` and `pages.jsonl` to Parquet files suitable for Kuzu `COPY FROM`
-- [ ] Implement `src/index/kuzu_loader.py` — run `COPY FROM` to load Parquet into Kuzu
-- [ ] Implement `src/index/build_index.py` — top-level function: `workspace/store/*.jsonl` → `workspace/indexes/kuzu/`
-
-### Verification
-
-- [ ] After loading, run a Cypher query that returns all blocks for `page-test_00` in document order
-- [ ] Verify block count matches `blocks.jsonl` (9 blocks)
-- [ ] Verify block properties (type, content text, hash) match the JSONL source
+- [x] Write Test 01 design doc (`architecture/design-docs/test_01_design.md`)
+- [x] Write Test 01 implementation plan (`architecture/design-docs/test_01_implementation_plan.md`)
+- [x] Review Test 01 docs and resolve all issues (`architecture/design-docs/test_01_review.md`)
+- [x] Add 6 extra test Djot files in `tests/test_00/extra_inputs/` (created by reviewer)
+- [x] Add `kuzu` and `pyarrow` to `environment.yml` and update conda environment
+- [x] Create `src/index/` directory structure
+- [x] Implement `src/index/kuzu_schema.py` — create `Block`, `Page`, `HAS_BLOCK` tables
+- [x] Implement `src/index/jsonl_to_parquet.py` — flatten JSONL to Parquet for `COPY FROM`
+- [x] Implement `src/index/kuzu_loader.py` — bulk load Parquet into Kuzu
+- [x] Implement `src/index/build_index.py` — top-level pipeline: JSONL → Parquet → Kuzu
+- [x] Ingest all 7 test files (47 blocks, 7 pages)
+- [x] End-to-end verification: 47 Block nodes, 7 Page nodes, 47 HAS_BLOCK edges
+- [x] Spot-check: ordered list items have `style="ordered"` in Kuzu
+- [x] Spot-check: multi-section page (`deep_headings`) returns blocks in correct positional order
 
 ---
 
