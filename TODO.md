@@ -1,57 +1,121 @@
 # TODO
 
-Tasks are grouped by test. Each test builds on the previous one.
+Phases are implemented sequentially. Each phase builds on the previous one.
 
 ---
 
-## Test 00 — Djot → JSONL ingestion pipeline
+## Phase 00 — Djot → JSONL ingestion pipeline ✓
 
-Goal: ingest a single Djot document into `blocks.jsonl` and `pages.jsonl`.
-
-- [x] Write v1 system design doc (`architecture/design-docs/agentic_local_knowledge_store_v1_design_v4.dj`)
-- [x] Write Test 00 design doc (`architecture/design-docs/test_00_design.md`)
-- [x] Write Test 00 implementation plan (`architecture/design-docs/test_00_implementation_plan.md`)
-- [x] Review Test 00 docs and resolve all issues (`architecture/design-docs/test_00_review.md`)
-- [x] Create repo directory structure (`src/ingest/`, `tests/test_00/`, `workspace/store/`)
-- [x] Create `environment.yml` and `knowledge-graph` conda environment
-- [x] Save corrected test input (`tests/test_00/test_00.dj`)
-- [x] Implement `src/ingest/pandoc_ast.py` — run pandoc, return AST dict
-- [x] Implement `src/ingest/inline_reconstruct.py` — reconstruct Djot inline markup from AST nodes
-- [x] Implement `src/ingest/block_schema.py` — build `block.v1` and `page.v1` records, UUIDv7 IDs, SHA-256 hash
-- [x] Implement `src/ingest/jsonl_writer.py` — append records to JSONL with `fcntl.flock`
-- [x] Implement `src/ingest/ast_walker.py` — walk Pandoc AST, emit `(type, content)` tuples
-- [x] Implement `src/ingest/ingest_page.py` — top-level pipeline function
-- [x] End-to-end verification: 9 blocks, correct types and content, valid `page.v1` record
+- [x] Design doc and implementation plan written and reviewed
+- [x] Conda environment created (`knowledge-graph`)
+- [x] `src/ingest/` implemented (pandoc-based, subset of djot)
+- [x] End-to-end verification: 9 blocks from `test_00.dj`
+- [x] 6 additional test files created in `tests/test_00/extra_inputs/`
 
 ---
 
-## Test 01 — JSONL → Kuzu ingestion
+## Phase 01 — JSONL → Kuzu graph index ✓
 
-Goal: load the JSONL output from ingestion into a Kuzu graph database as a derived index.
-
-- [x] Write Test 01 design doc (`architecture/design-docs/test_01_design.md`)
-- [x] Write Test 01 implementation plan (`architecture/design-docs/test_01_implementation_plan.md`)
-- [x] Review Test 01 docs and resolve all issues (`architecture/design-docs/test_01_review.md`)
-- [x] Add 6 extra test Djot files in `tests/test_00/extra_inputs/` (created by reviewer)
-- [x] Add `kuzu` and `pyarrow` to `environment.yml` and update conda environment
-- [x] Create `src/index/` directory structure
-- [x] Implement `src/index/kuzu_schema.py` — create `Block`, `Page`, `HAS_BLOCK` tables
-- [x] Implement `src/index/jsonl_to_parquet.py` — flatten JSONL to Parquet for `COPY FROM`
-- [x] Implement `src/index/kuzu_loader.py` — bulk load Parquet into Kuzu
-- [x] Implement `src/index/build_index.py` — top-level pipeline: JSONL → Parquet → Kuzu
-- [x] Ingest all 7 test files (47 blocks, 7 pages)
+- [x] Design doc and implementation plan written and reviewed
+- [x] `src/index/` implemented: kuzu_schema, jsonl_to_parquet, kuzu_loader, build_index
 - [x] End-to-end verification: 47 Block nodes, 7 Page nodes, 47 HAS_BLOCK edges
-- [x] Spot-check: ordered list items have `style="ordered"` in Kuzu
-- [x] Spot-check: multi-section page (`deep_headings`) returns blocks in correct positional order
 
 ---
 
-## Backlog (future tests, not yet planned)
+## Phase 02 — Switch to djot.js + full Djot support + LINKS_TO
 
-- [ ] Test 02 — Explicit `{#id}` handling: ingest a Djot file with explicit block IDs; verify IDs are preserved from Djot attributes, not auto-generated
-- [ ] Test 03 — Block versioning and change detection: re-ingest a modified Djot file; verify new versions are created for changed blocks and unchanged blocks are skipped (hash match)
-- [ ] Test 04 — Additional block types: `code`, `quote`, `table`, `image`, `math`, `div` (Djot `:::`)
-- [ ] Test 05 — Conversation ingestion: parse a conversation `.dj` file with YAML frontmatter into `conversations.jsonl`
-- [ ] Test 06 — SQLite index: build `block_latest`, `attachment_index`, `mention_index` from JSONL
-- [ ] Test 07 — HTML rendering: generate a static HTML page from a page record, with block IDs embedded in the output
-- [ ] Test 08 — CLI tool wrappers: `ingest_page`, `new_conversation`, `add_message`, `render`, `rollback` as CLI commands
+- [x] Design doc: `architecture/design-docs/phase_02_design.md`
+- [x] Implementation plan: `architecture/design-docs/phase_02_implementation_plan.md`
+- [ ] Verify Node.js and djot.js availability (`npx @djot/djot --version`)
+- [ ] Implement `src/ingest/djot_ast.py` — call djot.js, return native AST
+- [ ] Rewrite `src/ingest/inline_reconstruct.py` — all djot inline types (verbatim, math, link, image, sub/super, delete, insert, mark, span, footnote_ref, raw_inline)
+- [ ] Rewrite `src/ingest/ast_walker.py` — all djot block types (code_block, block_quote, table, definition_list, thematic_break, div, raw_block, nested list items)
+- [ ] Update `src/ingest/ingest_page.py` — use djot_ast instead of pandoc_ast
+- [ ] Handle `{#id}` attributes from source (section.attributes.id, node.attributes.id)
+- [ ] Extract links for LINKS_TO edges (internal link classification)
+- [ ] Update Kuzu schema: add `language` column, add `LINKS_TO` table
+- [ ] Create `tests/test_02/all_elements.dj` (every djot element type)
+- [ ] Create `tests/test_02/cross_linked_corpus/` (3 interlinked pages)
+- [ ] Phase 00 regression test passes with new parser
+- [ ] All-elements test: every block type present, inline markup lossless
+- [ ] Cross-linked corpus: LINKS_TO edges in Kuzu
+
+---
+
+## Phase 03 — Block → Djot renderer + roundtrip verification
+
+- [x] Design doc: `architecture/design-docs/phase_03_design.md`
+- [x] Implementation plan: `architecture/design-docs/phase_03_implementation_plan.md`
+- [ ] Implement `src/render/blocks_to_djot.py` — render_blocks, render_page, render_context
+- [ ] Handle all block types (heading, paragraph, code_block, block_quote, list_item, table, definition_item, thematic_break, div, raw_block)
+- [ ] Block IDs emitted as `{#id}` attributes (toggleable)
+- [ ] Roundtrip test: `all_elements.dj` → blocks → render → re-parse → compare = PASS
+- [ ] Roundtrip test: `test_00.dj` + all extra_inputs = PASS
+- [ ] Token efficiency confirmed: 3-5x reduction vs raw JSON
+
+---
+
+## Phase 04 — Markdown → Djot conversion (preprocessing)
+
+- [x] Design doc: `architecture/design-docs/phase_04_design.md`
+- [x] Implementation plan: `architecture/design-docs/phase_04_implementation_plan.md`
+- [ ] Add `beautifulsoup4` to environment
+- [ ] Implement `src/convert/md_to_djot.py` — pandoc wrapper, raw HTML detection
+- [ ] Implement `src/convert/html_roundtrip.py` — HTML normalization + comparison
+- [ ] Implement `src/convert/batch_convert.py` — directory-level conversion
+- [ ] Create test fixtures in `tests/test_04/fixtures/` (clean, gfm, edge_cases)
+- [ ] Clean fixtures: external HTML roundtrip passes
+- [ ] Clean fixtures: internal Phase 03 roundtrip passes on converted files
+- [ ] Integration: converted files ingest into Kuzu without error
+
+---
+
+## Phase 05 — Semantic enrichment (entities + relations)
+
+- [x] Design doc: `architecture/design-docs/phase_05_design.md`
+- [x] Implementation plan: `architecture/design-docs/phase_05_implementation_plan.md`
+- [ ] Add `openai` to environment
+- [ ] Implement `src/enrich/` (entity_schema, mock_extractor, extractor, enrich_blocks)
+- [ ] Create geography corpus in `tests/test_05/corpus/` (5 pages)
+- [ ] Update Kuzu schema: Entity node, MENTIONS edge, RELATES_TO edge
+- [ ] Mock enrichment: entities loaded into Kuzu
+- [ ] LLM enrichment: relations extracted, cross-document queries work
+
+---
+
+## Phase 06 — Template query tools (LLM-callable interface)
+
+- [x] Design doc: `architecture/design-docs/phase_06_design.md`
+- [x] Implementation plan: `architecture/design-docs/phase_06_implementation_plan.md`
+- [ ] Implement `src/tools/` (registry, query_entity, query_connection, query_page, search_mentions, query_cypher)
+- [ ] All tools return rendered Djot text (via Phase 03 renderer)
+- [ ] TOOLS registry importable with JSON Schema parameter definitions
+- [ ] `dispatch()` function routes tool calls by name
+- [ ] End-to-end: all tools work against Phase 05 geography corpus
+
+---
+
+## Phase 07 — LLM-to-Cypher (open-ended queries)
+
+- [x] Design doc: `architecture/design-docs/phase_07_design.md`
+- [x] Implementation plan: `architecture/design-docs/phase_07_implementation_plan.md`
+- [ ] Implement `src/tools/schema_describer.py` — schema from Kuzu metadata
+- [ ] Implement `src/tools/ask_graph.py` — LLM Cypher generation + retry
+- [ ] Add `ask_graph` to tool registry
+- [ ] Test battery: ≥6/8 natural language questions correct
+
+---
+
+## Implementation order
+
+```
+Phase 02 (djot.js + full djot) → Phase 03 (renderer + roundtrip)
+                                       ↓
+                                 Phase 04 (md → djot)
+                                       ↓
+                                 Phase 05 (enrichment)
+                                       ↓
+                                 Phase 06 (tools) → Phase 07 (LLM Cypher)
+```
+
+Phases are strictly sequential. Each depends on the previous.

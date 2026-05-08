@@ -2,158 +2,88 @@
 
 ## What this project is
 
-This is a local-first, block-based knowledge store designed for safe human and agent interaction. It is built incrementally through a series of numbered tests, each adding one layer of the system.
+A local-first, block-based knowledge store with semantic enrichment and LLM-facing tool interface. Documents are ingested as versioned blocks, linked in a graph database, enriched with entity and relation extraction, and queried through tool functions that return readable Djot text.
 
-The goal is a substrate where:
+The system is designed to serve as a context provider for LLM agents — the graph handles retrieval, the tools return token-efficient readable text, and the LLM reasons over the assembled context.
 
-- documents can be read locally in a browser;
-- conversations can happen over those documents;
-- agents can participate in conversations and mutate content;
-- all changes are traceable and rollbackable;
-- the canonical format is JSON, readable without any editor or application;
-- both humans and agents author content in Djot.
+### Core loop
 
-This is **not** a general-purpose note-taking app, a rich editor, or an Obsidian/Anytype replacement.
+```
+Source documents (.md/.dj)  →  blocks (JSONL)  →  Kuzu graph (structural + semantic edges)
+                                                           ↓
+                      LLM answer  ←  Djot context  ←  tool call  ←  LLM question
+```
+
+### Design principles
+
+- **Canonical storage is JSONL** — human-readable, append-only, git-friendly. Everything else is a derived projection.
+- **Djot as authoring and reading format** — formally parseable, close to Markdown, native block-level `{#id}` attributes.
+- **Graph index is derived** — Kuzu can be deleted and rebuilt from JSONL at any time.
+- **Tools return Djot, not JSON** — token-efficient, attention-friendly, LLMs parse it natively.
+- **Flat block list with implicit hierarchy** — heading levels encode structure, no tree in storage.
+
+---
+
+## Project status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 00 | Djot → blocks → JSONL (subset of djot) | Done |
+| 01 | JSONL → Kuzu structural index | Done |
+| 02 | Switch to djot.js parser + full Djot support + LINKS_TO edges | Designed |
+| 03 | Block → Djot renderer + internal roundtrip verification | Designed |
+| 04 | Markdown → Djot conversion via pandoc (preprocessing) | Designed |
+| 05 | Semantic enrichment (entities, relations via LLM) | Designed |
+| 06 | Template query tools (LLM-callable functions) | Designed |
+| 07 | LLM-to-Cypher (open-ended graph queries) | Designed |
+
+**Usable system milestone**: after Phase 06. At that point, tools return rendered Djot context from the enriched graph.
 
 ---
 
 ## Architecture overview
 
-### Layers
+### Storage layers
 
 ```
 Djot (.dj files)        — authoring surface for humans and agents
 JSONL files             — canonical storage (source of truth)
-Kuzu graph database     — derived index for graph queries (rebuild with build_index)
-SQLite index            — derived, rebuilt on demand (planned)
-HTML (generated pages)  — rendered reading surface (planned)
+Kuzu graph database     — derived index for structural + semantic queries
 ```
 
-The canonical data lives in `workspace/store/*.jsonl`. Everything else is a projection that can be deleted and rebuilt.
+The canonical data lives in `workspace/store/*.jsonl`. The Kuzu index is rebuilt by `build_index()`.
 
-### Four object kinds
+### Object kinds
 
-| Kind | Description |
-|------|-------------|
-| `block` | Versioned content unit. Atomic. Has a stable ID, type, content, hash, author, timestamp. |
-| `page` | Renderable document — an ordered flat list of block IDs. |
-| `conversation` | Ordered sequence of messages with optional block attachments. |
-| `operation` | Groups related block mutations for batch rollback. |
+| Kind | Storage | Description |
+|------|---------|-------------|
+| `block.v1` | `blocks.jsonl` | Versioned content unit. Has stable ID, type, content, hash, author, timestamp. |
+| `page.v1` | `pages.jsonl` | Document — ordered flat list of block IDs. |
+| `entity.v1` | `entities.jsonl` | Canonical concept (person, place, etc.) extracted from text. (Phase 04) |
+| `relation.v1` | `relations.jsonl` | Semantic triple between entities. (Phase 04) |
 
-### Block schema (`block.v1`)
-
-```json
-{
-  "id": "019e085d-5062-7ca2-8ac1-e448c3d0299b",
-  "version": 1,
-  "schema": "block.v1",
-  "type": "paragraph",
-  "content": {
-    "text": "The cache is invalidated when the source document changes."
-  },
-  "created_by": "human:istvan",
-  "created_at": "2026-05-08T10:00:00+00:00",
-  "hash": "sha256:abc123..."
-}
-```
-
-Block types derived from Djot AST: `heading`, `paragraph`, `list_item`, `code`, `quote`, `image`, `table`, `math`, `div`.
-
-Content fields by type:
-
-| Type | Content fields |
-|------|---------------|
-| `heading` | `text` (Djot inline), `level` (1–6) |
-| `paragraph` | `text` (Djot inline) |
-| `list_item` | `text` (Djot inline), `style` (`unordered` or `ordered`) |
-| `code` | `text`, `language` |
-| `quote` | `text` |
-| `image` | `src`, `alt`, `caption` |
-| `table` | `headers`, `rows`, `alignments` |
-| `math` | `tex`, `display` |
-| `div` | `children` (list of block IDs), `class` |
-
-`text` fields always store Djot inline markup as-is (e.g. `*bold*`, `_italic_`). Inline markup is parsed to HTML at render time by pandoc, never stored as sub-nodes.
-
-### Block ID
-
-UUIDv7. Embeds a millisecond-precision creation timestamp — IDs are sortable by creation time. When a Djot block has an explicit `{#id}` attribute, that named ID takes precedence over auto-generation.
-
-### Hash
-
-SHA-256 of the JSON-serialized `content` object (keys sorted, compact). Prefixed `sha256:`. Used for change detection: if the hash of incoming content matches the stored hash, no new version is created.
-
-### Page schema (`page.v1`)
-
-```json
-{
-  "id": "page-test_00",
-  "schema": "page.v1",
-  "title": "Example heading",
-  "root": ["019e...", "019f...", "019g..."],
-  "created_by": "human:istvan",
-  "created_at": "2026-05-08T10:00:00+00:00",
-  "updated_at": "2026-05-08T10:00:00+00:00"
-}
-```
-
-`root` is a flat ordered list of block IDs. Hierarchy is implicit in heading levels, not encoded in the page structure.
-
-### Authoring format: Djot
-
-Djot is a formally parseable light markup language by John MacFarlane (creator of Pandoc and CommonMark). It looks like Markdown but is unambiguous and parses in linear time with no backtracking.
-
-Key Djot features used here:
-
-- `{#blk_001}` before any block assigns a stable ID to that block — native Djot syntax, not a custom extension.
-- `*bold*` for strong, `_italic_` for emphasis (reversed from Markdown).
-- Blank lines required after headings to terminate them.
-
-Blocks without an explicit `{#id}` get an auto-generated UUIDv7 during ingestion.
-
-Example well-formed Djot page:
-
-```djot
-{#blk_001}
-# Cache invalidation
-
-{#blk_002}
-The cache is invalidated when the source document changes.
-
-{#blk_003}
-- Concurrent writes may cause stale reads.
-
-{#blk_004}
-- Circular dependencies must be detected.
-```
-
-### Pandoc AST and the ingestion pipeline
-
-Ingestion uses Pandoc to parse Djot into a typed JSON AST, then walks the AST to extract blocks.
+### Kuzu graph schema (full, after Phase 04)
 
 ```
-.dj file  →  pandoc -f djot -t json  →  Pandoc AST  →  Python walker  →  block.v1 records  →  blocks.jsonl
-                                                                        →  page.v1 record   →  pages.jsonl
+Nodes:  Block, Page, Entity
+Edges:  HAS_BLOCK (Page→Block), LINKS_TO (Block→Page),
+        MENTIONS (Block→Entity), RELATES_TO (Entity→Entity)
 ```
 
-Key AST facts:
+### Tool interface (Phase 06)
 
-- A `{#id}` attribute wraps the block in a `Div` node that carries the ID. The `Div` is transparent — the ID is extracted from it, and the real block type is determined by the child element (`Header`, `Para`, `BulletList`, etc.).
-- A `{#id}` on a heading → `Div` with class `section` containing the `Header` and all following sibling content until the next same-level heading.
-- A `{#id}` on any other block → `Div` with attribute `wrapper: 1` containing that one element.
-- Each `- list item` with its own `{#id}` becomes a separate single-item `BulletList` in its own `Div`.
+Six tool functions, callable by any LLM via tool/function calling:
 
-### Inline reconstruction
+| Tool | Purpose | Returns |
+|------|---------|---------|
+| `query_entity` | Entity page: mentions, relationships, context | Djot |
+| `query_connection` | How two entities relate | Djot |
+| `query_page` | Full page content | Djot |
+| `search_mentions` | Find blocks mentioning a term | Djot |
+| `query_cypher` | Run raw Cypher | JSON table or Djot |
+| `ask_graph` | Natural language → auto-generated Cypher | Djot |
 
-Pandoc AST inline nodes are reconstructed back to Djot markup:
-
-| AST node | Djot output |
-|----------|-------------|
-| `Str` | literal string |
-| `Space` | `" "` |
-| `SoftBreak` | `"\n"` |
-| `Strong` → children | `*...*` |
-| `Emph` → children | `_..._` |
+Tools are plain Python functions with JSON Schema parameter definitions. Serve them over MCP, OpenAI function calling, or any protocol.
 
 ---
 
@@ -161,61 +91,48 @@ Pandoc AST inline nodes are reconstructed back to Djot markup:
 
 ```
 knowledge-graph/
-  README.md                    ← this file
-  TODO.md                      ← task tracking
-  environment.yml              ← conda environment definition
+  README.md
+  TODO.md
+  environment.yml
 
   architecture/
-    prompt.md                  ← original project brief
-    design-docs/
-      agentic_local_knowledge_store_v1_design_v4.dj   ← full v1 system design
-      test_00_design.md        ← design doc for Test 00
-      test_00_implementation_plan.md  ← implementation plan for Test 00
-      test_00_review.md        ← review of Test 00 docs (resolved)
-      test_01_design.md        ← design doc for Test 01
-      test_01_implementation_plan.md  ← implementation plan for Test 01
-      test_01_review.md        ← review of Test 01 docs (resolved)
+    phase_02_design.md + phase_02_implementation_plan.md
+    phase_03_design.md + phase_03_implementation_plan.md
+    phase_04_design.md + phase_04_implementation_plan.md
+    phase_05_design.md + phase_05_implementation_plan.md
+    phase_06_design.md + phase_06_implementation_plan.md
+    phase_07_design.md + phase_07_implementation_plan.md
+    ARCHITECT_REVIEW.md
 
   src/
-    ingest/
-      pandoc_ast.py            ← run pandoc, return AST dict
-      inline_reconstruct.py    ← reconstruct Djot inline markup from AST nodes
-      ast_walker.py            ← walk AST, emit (type, content) tuples
-      block_schema.py          ← build block.v1 and page.v1 dicts, compute hash+id
-      jsonl_writer.py          ← append records to JSONL files with file locking
-      ingest_page.py           ← top-level function: .dj path → blocks.jsonl + pages.jsonl
-    index/
-      kuzu_schema.py           ← create Block, Page, HAS_BLOCK tables in Kuzu
-      jsonl_to_parquet.py      ← flatten JSONL to Parquet files for COPY FROM
-      kuzu_loader.py           ← COPY FROM Parquet into Kuzu
-      build_index.py           ← top-level function: JSONL → Kuzu (clears and rebuilds)
+    ingest/          ← Phase 00+02: Djot → blocks → JSONL (djot.js parser from Phase 02)
+    index/           ← Phase 01: JSONL → Kuzu
+    render/          ← Phase 03: Blocks → Djot text (roundtrip verified)
+    convert/         ← Phase 04: Markdown → Djot via pandoc (planned)
+    enrich/          ← Phase 05: Entity/relation extraction (planned)
+    tools/           ← Phase 06: LLM-callable query functions (planned)
 
   tests/
-    test_00/
-      test_00.dj               ← original test input: minimal Djot document
-      extra_inputs/            ← 6 additional Djot files added during Test 01 review
-        consecutive_paragraphs.dj
-        deep_headings.dj
-        minimal.dj
-        mixed_lists.dj
-        nested_inline.dj
-        ordered_list.dj
+    test_00/         ← Phase 00 test fixtures (Djot input files)
+      test_00.dj
+      extra_inputs/
 
   workspace/
-    store/
-      blocks.jsonl             ← canonical block storage (appended by ingestion)
-      pages.jsonl              ← canonical page storage (appended by ingestion)
+    store/           ← Canonical JSONL storage
+      blocks.jsonl
+      pages.jsonl
     indexes/
-      kuzu/
-        db/                    ← Kuzu database directory (excluded from git, rebuilt by build_index)
-        parquet/               ← Parquet intermediate files (excluded from git)
+      kuzu/          ← Derived graph index (excluded from git)
 ```
 
 ---
 
 ## Environment setup
 
-Requires: `conda` (miniconda or anaconda), `pandoc` (system install).
+Requires:
+- `conda` (miniconda or anaconda)
+- `pandoc` 3.x (system install — used for markdown → djot conversion in Phase 04)
+- `node` v18+ and `npx` (system install — used for djot.js parser from Phase 02 onward)
 
 ```bash
 conda env create -f environment.yml
@@ -223,30 +140,25 @@ conda activate knowledge-graph
 ```
 
 Verify:
-
 ```bash
 python -c "import uuid6; print(uuid6.uuid7())"
 python -c "import kuzu; print(kuzu.__version__)"
-python -c "import pyarrow; print(pyarrow.__version__)"
 pandoc --version
+node --version
+npx @djot/djot --version
 ```
 
-Pandoc is **not** installed inside the conda env — it is expected as a system binary. The `pandoc_ast.py` module uses `shutil.which` to locate it, with fallbacks to `/path/to/home/miniconda3/bin/pandoc`, `/usr/local/bin/pandoc`, and `/opt/homebrew/bin/pandoc`.
-
-If pandoc is not found, install it system-wide or via conda base:
-
+If djot.js is not available, install it globally:
 ```bash
-conda install -c conda-forge pandoc   # in base env, or add to environment.yml
+npm install -g @djot/djot
 ```
 
 ---
 
-## Running Test 00 (Djot → JSONL)
+## Running Phase 00 (Djot → JSONL)
 
 ```bash
 conda activate knowledge-graph
-
-# Ingest all test files
 python -c "
 import glob
 from src.ingest.ingest_page import ingest_page
@@ -257,205 +169,263 @@ for f in files:
 "
 ```
 
-Expected: 7 page IDs printed. `workspace/store/blocks.jsonl` has 47 lines, `pages.jsonl` has 7.
-
----
-
-## Running Test 01 (JSONL → Kuzu)
+## Running Phase 01 (JSONL → Kuzu)
 
 ```bash
-conda activate knowledge-graph
 python -c "
 from src.index.build_index import build_index
 build_index()
 "
 ```
 
-Expected output:
-```
-Parquet written: 47 blocks, 7 pages, 47 HAS_BLOCK rows
-Kuzu index built at: workspace/indexes/kuzu/db
-```
-
-Verify with a query:
-
-```bash
-python -c "
-import kuzu
-db = kuzu.Database('workspace/indexes/kuzu/db')
-conn = kuzu.Connection(db)
-result = conn.execute('''
-    MATCH (p:Page {id: \"page-test_00\"})-[r:HAS_BLOCK]->(b:Block)
-    RETURN b.type, b.text, b.level, r.position
-    ORDER BY r.position
-''')
-while result.has_next():
-    print(result.get_next())
-"
-```
-
-Note: `build_index()` always clears and rebuilds the Kuzu database. Run ingestion first to populate the JSONL files.
-
 ---
 
-## Source module reference
+## Development workflow
 
-### `src/ingest/pandoc_ast.py`
+1. Read the design doc for the next phase (`architecture/phase_XX_design.md`).
+2. Follow the implementation plan step by step (`phase_XX_implementation_plan.md`).
+3. Each step has a verification check — confirm it passes before moving to the next.
+4. **Commit after each step.** Each step in an implementation plan should result in a git commit. The commit message should reference the phase and step (e.g. `phase-02: step 3 — rewrite inline_reconstruct`).
+5. **Commit at minimum after each phase.** If step-level commits feel too granular, at minimum commit after completing an entire phase with all verifications passing.
+6. Test fixtures are added incrementally in `tests/` as each phase introduces new capabilities.
+7. After implementation, `build_index()` rebuilds the full Kuzu graph from JSONL.
+8. **Update CHANGELOG.md** after completing each phase. Record what was implemented, what changed, and any deviations from the design doc.
 
-```python
-get_ast(djot_path: str) -> dict
-```
+### CHANGELOG policy
 
-Runs `pandoc -f djot -t json` on the given file. Returns the parsed AST as a Python dict. Raises `RuntimeError` if pandoc is not found or exits non-zero.
+`CHANGELOG.md` is maintained at the repo root. After each phase is complete:
+- Add a dated entry with the phase number and a 2-3 sentence summary.
+- List any deviations from the design doc (decisions made during implementation).
+- List any new system dependencies introduced.
 
-### `src/ingest/inline_reconstruct.py`
-
-```python
-reconstruct(inlines: list) -> str
-```
-
-Walks a list of Pandoc AST inline nodes and returns Djot inline markup as a plain string. Handles `Str`, `Space`, `SoftBreak`, `Strong`, `Emph`. Unknown nodes with list children are recursed into silently.
-
-### `src/ingest/ast_walker.py`
-
-```python
-walk(ast: dict) -> list[dict]
-```
-
-Walks the Pandoc AST and returns an ordered list of `{"type": ..., "content": {...}}` dicts. Does not assign IDs or compute hashes. Currently handles: `heading`, `paragraph`, `list_item` (ordered and unordered). `Div` nodes (section and wrapper) are transparent — the walker recurses into their children.
-
-### `src/ingest/block_schema.py`
-
-```python
-make_block(block_type: str, content: dict, author: str) -> dict
-make_page(page_id: str, title: str, block_ids: list, author: str) -> dict
-```
-
-`make_block` generates a UUIDv7 ID, computes SHA-256 of serialized content, and returns a complete `block.v1` dict at version 1.
-
-`make_page` returns a complete `page.v1` dict. The caller is responsible for constructing the full `page_id` (e.g. `"page-" + stem`).
-
-### `src/ingest/jsonl_writer.py`
-
-```python
-append_record(jsonl_path: str, record: dict) -> None
-```
-
-Appends a JSON record as a single line to a JSONL file. Creates the file and parent directories if needed. Uses `fcntl.flock` for write serialization.
-
-### `src/ingest/ingest_page.py`
-
-```python
-ingest_page(
-    djot_path: str,
-    author: str,
-    blocks_jsonl: str = "workspace/store/blocks.jsonl",
-    pages_jsonl: str = "workspace/store/pages.jsonl",
-) -> str
-```
-
-Top-level pipeline function. Calls `get_ast` → `walk` → `make_block` (per block) → `append_record` (per block) → `make_page` → `append_record`. Returns the page ID.
-
----
-
-## `src/index` — Kuzu index builder
-
-### `src/index/kuzu_schema.py`
-
-```python
-create_schema(db_path: str) -> None
-```
-
-Opens (or creates) a Kuzu database at `db_path` and creates the `Block`, `Page`, and `HAS_BLOCK` tables. The caller must ensure `db_path` does not already exist as a directory — Kuzu creates it itself.
-
-### `src/index/jsonl_to_parquet.py`
-
-```python
-blocks_to_parquet(blocks_jsonl: str, output_path: str) -> int
-pages_to_parquet(pages_jsonl: str, output_path: str) -> int
-has_block_to_parquet(pages_jsonl: str, output_path: str) -> int
-```
-
-Flatten JSONL store files to Parquet for Kuzu `COPY FROM`. `blocks_to_parquet` flattens `content.text`, `content.level`, and `content.style` into top-level nullable columns. `has_block_to_parquet` iterates each page's `root` array to produce `(from, to, position)` rows. All return row count.
-
-### `src/index/kuzu_loader.py`
-
-```python
-load_from_parquet(db_path, blocks_parquet, pages_parquet, has_block_parquet) -> None
-```
-
-Runs `COPY FROM` on all three Parquet files. Loads `Block` and `Page` nodes before `HAS_BLOCK` edges. Uses `os.path.abspath()` on all paths — Kuzu `COPY FROM` requires absolute paths.
-
-### `src/index/build_index.py`
-
-```python
-build_index(
-    blocks_jsonl: str = "workspace/store/blocks.jsonl",
-    pages_jsonl: str = "workspace/store/pages.jsonl",
-    db_path: str = "workspace/indexes/kuzu/db",
-    parquet_dir: str = "workspace/indexes/kuzu/parquet",
-) -> None
-```
-
-Top-level pipeline. Clears and rebuilds the Kuzu database on every run. Does not modify JSONL source files.
+The CHANGELOG serves as a human-readable history for someone picking up the project. It is NOT auto-generated — it is written by the implementor after each phase.
 
 ---
 
 ## Design decisions log
 
-These are the key decisions made during design. An agent working on this project should not relitigate them without strong reason.
-
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Authoring format | Djot | Formally parseable, unambiguous, native block-level `{#id}` attributes, close to Markdown for agents |
-| Canonical storage | JSONL | Append-friendly, inspectable, git-friendly, migratable to DuckDB/MongoDB later |
-| Graph index | Kuzu | Embeddable, no server, SQLite-of-graphs, Cypher queries, fast bulk COPY |
-| Kuzu load strategy | Parquet + COPY FROM | Bulk C++ load path, type-safe, avoids slow row-by-row Python inserts |
-| Kuzu db dir | Caller removes, Kuzu creates | Kuzu errors if db_path exists as a directory; build_index does `shutil.rmtree` before calling create_schema |
-| Block identity | UUIDv7 | Sortable by creation time, globally unique, timestamp embedded |
-| Change detection | SHA-256 of content | Deterministic, fast, collision-resistant |
-| Page structure | Flat `root` array | Hierarchy is implicit in heading levels, no tree in storage |
-| Inline markup storage | Djot as-is | Parsed to HTML at render time by pandoc, never stored as sub-nodes |
-| Pandoc's role | Djot parser only | Pandoc AST is an implementation detail of ingestion, not exposed in storage |
-| `Div` nodes in AST | Transparent | Divs carry `{#id}` attributes; real block type is always the child element |
-| Page ID prefix | Caller's responsibility | `ingest_page` constructs `"page-" + stem`; `make_page` stores whatever it receives |
-| `fcntl.flock` for writes | Yes | Serializes concurrent agent writes to JSONL at v1 scale |
-
----
-
-## What is explicitly out of scope for v1
-
-- API server or web application framework
-- Browser-side writing (browser is a reader only)
-- WYSIWYG editor
-- Real-time collaboration, CRDTs, multi-user
-- Remote sync or public deployment
-- Plugin system
-- Automatic page regeneration (manual `render` call required)
-- Page versioning (block content is versioned; page structure is not)
+| Authoring format | Djot | Formally parseable, native `{#id}` attributes, unambiguous |
+| Canonical storage | JSONL | Append-friendly, inspectable, git-friendly |
+| Graph index | Kuzu | Embeddable, Cypher, fast COPY FROM, no server |
+| Block identity | UUIDv7 | Sortable by creation time, globally unique |
+| Page structure | Flat `root` array | Heading levels encode hierarchy, no tree needed |
+| LLM context format | Rendered Djot | ~5x fewer tokens than JSON, LLMs parse natively |
+| Tool interface | Plain Python functions | Protocol-agnostic, serve over MCP/OpenAI/etc. |
+| Enrichment | LLM-based extraction | Entity + relation extraction per block |
 
 ---
 
 ## Key dependencies
 
-| Dependency | Role |
-|------------|------|
-| `pandoc` | Djot parsing, AST generation, HTML rendering |
-| `python 3.12` | All tooling |
-| `uuid6` | UUIDv7 generation |
-| `kuzu` | Embedded graph database index |
-| `pyarrow` | Parquet read/write for Kuzu COPY FROM |
-| `sqlite3` | Derived indexes (stdlib, planned) |
+| Dependency | Role | Phase |
+|------------|------|-------|
+| `pandoc` 3.x | Djot/Markdown parsing, AST generation | 00+ |
+| `python 3.12` | All tooling | 00+ |
+| `uuid6` | UUIDv7 generation | 00+ |
+| `kuzu` | Embedded graph database | 01+ |
+| `pyarrow` | Parquet for Kuzu COPY FROM | 01+ |
+| `beautifulsoup4` | HTML normalization for roundtrip verification | 03 |
+| `openai` | LLM extraction + Cypher generation | 04, 07 |
 
 ---
 
 ## Full design reference
 
-The complete v1 system design is in:
-`architecture/design-docs/agentic_local_knowledge_store_v1_design_v4.dj`
+- Phase docs: `architecture/phase_XX_design.md` + `phase_XX_implementation_plan.md`
+- Open questions: (See end of this file)
+# Open Questions and Discussion Items (v4)
 
-Test-specific design and implementation docs are in:
-`architecture/design-docs/test_00_design.md`
-`architecture/design-docs/test_00_implementation_plan.md`
-`architecture/design-docs/test_01_design.md`
-`architecture/design-docs/test_01_implementation_plan.md`
+Items that surfaced during the v1 design review and revision process.
+
+---
+
+## Resolved
+
+**Block identity model** — Stable IDs with version numbers. Two-reference-pattern: pages use bare IDs (latest), conversation attachments include version (exact snapshot).
+
+**Inline markup / authoring format** — Djot. Both humans and agents author in Djot. Parsed by pandoc. No custom parser. Block-level structure comes from the AST; inline markup is stored as-is in text fields.
+
+**Operation IDs for batch mutations** — `operations.jsonl` with `operation.v1` schema. Batch rollback targets an operation ID.
+
+**Conversation participants** — Derived index in SQLite, not a canonical field.
+
+**Index storage** — Single SQLite database file, rebuilt from JSONL on demand.
+
+**Human authoring format** — Djot. The `{#block_id}` attribute syntax provides native block-level identity. Ingestion parses `.djot` files into canonical JSONL blocks.
+
+**Agent writing format** — Djot for content generation. Tool calls (Python functions) for structural operations. Djot is close enough to Markdown that agents write it fluently; parser feedback handles errors.
+
+**API server** — Cut from v1. All operations through Python library + CLI wrappers. API can be added later by wrapping the same functions.
+
+**Block content types** — Derived from Djot AST during ingestion, not hand-specified by the author. The `type` field in the block schema is set by the ingestion tool.
+
+**Page document structure (flat vs tree)** — Flat list + heading levels for page `root`. Djot `div` containers (`::: ... :::`) provide explicit grouping when needed, mapped to a `div` block type with `children`.
+
+**List representation** — Djot's list syntax handles this naturally. The Djot parser produces list items as distinct AST nodes. Each becomes a block. Grouping is handled by the AST structure, not a custom `list_group` field.
+
+---
+
+## Open
+
+### Q1: Ingestion behavior for existing pages
+
+**Context:** When the human or agent re-ingests a `.djot` file for a page that already exists:
+
+- Blocks with existing IDs and unchanged content: no action (detected via hash).
+- Blocks with existing IDs and changed content: create new version.
+- Blocks with new IDs: create new block (version 1).
+- Blocks that existed in the page but are absent from the new `.djot` file: ???
+
+**The question:** What happens to blocks that are removed from the page structure? The block itself should not be deleted (nothing is ever destroyed). But should it be removed from the page's `root` array? If so, orphaned blocks need to be handled somehow.
+
+**Recommendation to discuss:** Remove absent blocks from the page's `root` array. The block records remain in `blocks.jsonl` (they are never deleted). Any conversations referencing those blocks remain valid because attachments reference blocks by ID + version. An "orphaned blocks" view or query could list blocks not referenced by any page.
+
+---
+
+### Q2: Page versioning
+
+**Status:** Deferred in design doc, but still open for discussion.
+
+If agents restructure pages (add/remove/reorder blocks in `root`), page versioning may be needed for rollback. Clarify: will agents modify page structure in v1, or only block content?
+
+---
+
+### Q3: ID generation strategy
+
+**Context:** Block IDs can be human-assigned (`{#blk_001}`) in Djot or auto-generated during ingestion.
+
+**The question:** What format for auto-generated IDs?
+
+**Options:**
+- Prefixed ULIDs (`blk_01HX9QZ8...`): sortable, no collision risk, but long.
+- Prefixed short random (`blk_x7k9m2`): shorter, low collision risk at v1 scale.
+- Sequential with a counter in the SQLite index (`blk_001`, `blk_002`): human-friendly, requires coordination.
+
+**Recommendation:** Prefixed ULIDs for auto-generated IDs. Human-authored IDs can be any string — the system treats IDs as opaque.
+
+---
+
+### Q4: Conversation message immutability
+
+**Context:** Are conversation messages immutable like block versions?
+
+**Recommendation:** Yes. Corrections are new messages. Retractions are new messages with a `retraction_of` field. This keeps conversations as reliable timelines.
+
+---
+
+### Q5: Block ID display UX in rendered HTML
+
+**Questions:**
+- Always visible or hover-only?
+- Click to copy just the ID, or also the version?
+- Any convenience for copying a formatted attachment reference?
+
+**Recommendation:** Small monospaced badge in the right margin, always visible. Click copies the block ID. Version shown as a separate badge. Formatted attachment copying is a nice-to-have for a future editor plugin.
+
+---
+
+### Q6: Scale assumptions
+
+**Recommendation:** Document explicitly:
+- Pages: 10–200
+- Blocks per page: 10–100
+- Total block versions: 1,000–50,000
+- Conversations: 50–1,000
+- Messages per conversation: 5–50
+- Operations: 50–500
+- Active agents: 1–5
+
+---
+
+### Q7: Positioning and prior art document
+
+Create a separate `positioning_and_prior_art.md` tracking the relationship to Obsidian, Anytype, Notion, etc. Serves as a living sanity check.
+
+---
+
+### Q8: Djot-to-block mapping details
+
+**Context:** The ingestion tool walks the pandoc AST and produces block records. The exact mapping needs to be defined for edge cases:
+
+- How are nested lists represented? (Each item is a block, but what about sub-lists?)
+- How are multi-paragraph list items handled?
+- How are footnotes handled (if at all in v1)?
+- How are definition lists handled?
+- How does the Djot `div` container map to blocks with children?
+
+**Recommendation:** Define the mapping by example during implementation. Start with the common cases (paragraphs, headings, code, lists, quotes, tables, math, images) and handle edge cases as they arise. Document the mapping as it stabilizes.
+
+---
+
+### Q9: Djot file retention after ingestion
+
+**Context:** After a `.djot` file is ingested into JSONL blocks, is the `.djot` file kept or discarded?
+
+**Options:**
+- Keep it as a source record (useful for re-editing, git history).
+- Discard it (canonical data is in JSONL; the `.djot` file is input, not truth).
+- Keep it but mark it as "ingested" (e.g., move to an archive directory).
+
+**Recommendation to discuss:** Keep the `.djot` files in the `authoring/` directory. They are not canonical, but they are useful for re-editing and for git history. The ingestion tool could add a comment or frontmatter noting the ingestion timestamp.
+
+---
+
+### Q10: Conversation authoring — frontmatter format details
+
+**Context:** The design proposes YAML frontmatter + Djot body for conversation messages. The exact frontmatter schema needs to be pinned down:
+
+- Required fields vs optional fields.
+- How to indicate "new conversation" vs "append to existing."
+- How to specify the conversation title (for new conversations).
+- Whether the tool auto-fills fields (timestamp, message ID, author from config).
+
+**Recommendation:** Define a minimal required set:
+```yaml
+---
+conversation: conv_001    # or "new" for a new conversation
+author: human:istvan      # could be auto-filled from config
+title: "Optional title"   # only for new conversations
+attachments: []           # optional
+mentions: []              # optional
+---
+```
+Everything else (message ID, timestamp) is auto-generated by the tool.
+
+---
+
+### Q11: Agent reading format
+
+**Context:** When an agent needs to read a page or block before deciding what to do, what format is it given?
+
+**Options:**
+- Raw JSON from JSONL (verbose, token-expensive).
+- Djot rendered from internal blocks (token-efficient, includes block IDs, agents read it fluently).
+- Plain text summary.
+
+**Recommendation:** Render internal blocks back to Djot for agent consumption. This is token-efficient, includes `{#block_id}` attributes, and agents can read it as naturally as Markdown. The `query` library should have a function like `render_page_as_djot(page_id)` that produces this output. Pandoc supports `json → djot` conversion natively.
+
+---
+
+### Q12: Write Concurrency and File Locking (JSONL vs Kuzu)
+
+**Context:** The current design (`v4`) explicitly states that JSONL is the long-term canonical source of truth and that *all writes* hit `blocks.jsonl` / `conversations.jsonl` using file locks (`fcntl.flock`). Kuzu (and SQLite) are documented purely as *derived, regenerable projections*. However, there is confusion about whether Kuzu is supposed to mitigate write concurrency, or if JSONL storage is actually meant to be deprecated.
+
+**The Problem:**
+If JSONL remains the canonical write target, Kuzu does *not* solve write concurrency. Every agent making an edit or adding a message must lock the `.jsonl` files. Under heavy agent collaboration, this file-level locking will create bottlenecks and timeouts. If Kuzu *is* intended to handle concurrent writes, the entire "JSONL as canonical truth" premise of v1 is violated.
+
+**Solution Options:**
+1. **Option A: Keep JSONL as Canonical (Status Quo)**
+   - *Pros:* Git-friendly, heavily append-based, zero vendor lock-in, incredibly robust.
+   - *Cons:* OS-level file locking (`fcntl`) doesn't scale to high-throughput concurrent agent processes.
+   - *Mitigation:* Implement a proper local write-queue or background worker to serialize writes safely rather than raw file locking.
+
+2. **Option B: Make Kuzu or SQLite the Canonical Write Target**
+   - *Pros:* Native database-level concurrency and ACID transactions. Solves concurrent agent writes instantly.
+   - *Cons:* Violates the "text/JSON canonical format" design principle. Makes the repo less git-diffable (binary db blobs). You lose the "inspectable with standard command-line tools" benefit.
+
+3. **Option C: Hybrid (JSONL as Event Log)**
+   - *Pros:* Agents write concurrent operations as separate small JSON files (or a robust queue), and a single background reconciler appends them to the canonical JSONL.
+
+**Recommendation to discuss:** Clarify the architectural intent. If JSONL is truly canonical, we must document how we handle high-throughput agent write concurrency beyond basic file locks, or explicitly state that agent operations are strictly synchronous/sequential in v1.
