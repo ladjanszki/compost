@@ -1,1 +1,11 @@
 djot/djot-repo*
+
+# Generated runtime data — not source
+workspace/store/*.jsonl
+workspace/indexes/
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
