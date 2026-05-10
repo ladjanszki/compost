@@ -29,7 +29,10 @@ def build_index(
     # 1. Clear the LadybugDB database directory for a clean rebuild.
     # LadybugDB creates the directory itself — we must not pre-create it.
     if os.path.exists(db_path):
-        shutil.rmtree(db_path)
+        if os.path.isdir(db_path):
+            shutil.rmtree(db_path)
+        else:
+            os.remove(db_path)
     os.makedirs(parquet_dir, exist_ok=True)
 
     # 2. Create the schema.
