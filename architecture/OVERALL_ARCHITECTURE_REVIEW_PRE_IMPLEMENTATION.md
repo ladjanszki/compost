@@ -10,7 +10,7 @@ This review assesses the soundness of this new graph-first vision, identifies hi
 
 ## 2. Assessment of Architectural Soundness (The LadybugDB Pivot)
 
-LadybugDB is the community fork of Kuzu, continued after Apple's acquisition and archiving of the original Kuzu repository in October 2025.
+LadybugDB is the community fork of the original database, continued after Apple's acquisition and archiving of the original repository in October 2025.
 
 The decision to abandon JSONL as the primary read/write backend and SQLite as the relational index in favor of **LadybugDB** is a massive architectural upgrade for this specific use case.
 
