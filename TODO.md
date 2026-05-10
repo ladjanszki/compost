@@ -14,10 +14,10 @@ Phases are implemented sequentially. Each phase builds on the previous one.
 
 ---
 
-## Phase 01 — JSONL → Kuzu graph index ✓
+## Phase 01 — JSONL → LadybugDB graph index ✓
 
 - [x] Design doc and implementation plan written and reviewed
-- [x] `src/index/` implemented: kuzu_schema, jsonl_to_parquet, kuzu_loader, build_index
+- [x] `src/index/` implemented: ladybug_schema, jsonl_to_parquet, ladybug_loader, build_index
 - [x] End-to-end verification: 47 Block nodes, 7 Page nodes, 47 HAS_BLOCK edges
 
 ---
@@ -33,12 +33,12 @@ Phases are implemented sequentially. Each phase builds on the previous one.
 - [ ] Update `src/ingest/ingest_page.py` — use djot_ast instead of pandoc_ast
 - [ ] Handle `{#id}` attributes from source (section.attributes.id, node.attributes.id)
 - [ ] Extract links for LINKS_TO edges (internal link classification)
-- [ ] Update Kuzu schema: add `language` column, add `LINKS_TO` table
+- [ ] Update LadybugDB schema: add `language` column, add `LINKS_TO` table
 - [ ] Create `tests/test_02/all_elements.dj` (every djot element type)
 - [ ] Create `tests/test_02/cross_linked_corpus/` (3 interlinked pages)
 - [ ] Phase 00 regression test passes with new parser
 - [ ] All-elements test: every block type present, inline markup lossless
-- [ ] Cross-linked corpus: LINKS_TO edges in Kuzu
+- [ ] Cross-linked corpus: LINKS_TO edges in LadybugDB
 
 ---
 
@@ -66,7 +66,7 @@ Phases are implemented sequentially. Each phase builds on the previous one.
 - [ ] Create test fixtures in `tests/test_04/fixtures/` (clean, gfm, edge_cases)
 - [ ] Clean fixtures: external HTML roundtrip passes
 - [ ] Clean fixtures: internal Phase 03 roundtrip passes on converted files
-- [ ] Integration: converted files ingest into Kuzu without error
+- [ ] Integration: converted files ingest into LadybugDB without error
 
 ---
 
@@ -77,8 +77,8 @@ Phases are implemented sequentially. Each phase builds on the previous one.
 - [ ] Add `openai` to environment
 - [ ] Implement `src/enrich/` (entity_schema, mock_extractor, extractor, enrich_blocks)
 - [ ] Create geography corpus in `tests/test_05/corpus/` (5 pages)
-- [ ] Update Kuzu schema: Entity node, MENTIONS edge, RELATES_TO edge
-- [ ] Mock enrichment: entities loaded into Kuzu
+- [ ] Update LadybugDB schema: Entity node, MENTIONS edge, RELATES_TO edge
+- [ ] Mock enrichment: entities loaded into LadybugDB
 - [ ] LLM enrichment: relations extracted, cross-document queries work
 
 ---
@@ -99,7 +99,7 @@ Phases are implemented sequentially. Each phase builds on the previous one.
 
 - [x] Design doc: `architecture/design-docs/phase_07_design.md`
 - [x] Implementation plan: `architecture/design-docs/phase_07_implementation_plan.md`
-- [ ] Implement `src/tools/schema_describer.py` — schema from Kuzu metadata
+- [ ] Implement `src/tools/schema_describer.py` — schema from LadybugDB metadata
 - [ ] Implement `src/tools/ask_graph.py` — LLM Cypher generation + retry
 - [ ] Add `ask_graph` to tool registry
 - [ ] Test battery: ≥6/8 natural language questions correct

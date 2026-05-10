@@ -2,7 +2,7 @@
 
 This document captures the in-depth history, debates, and technical assessments of visionary product features that were discussed during the conceptualization of the Agentic Local Knowledge Store. 
 
-While the current codebase strictly implements a headless `Djot → Parquet → Kuzu` pipeline, the topics below outline the broader "LLM Wiki" product vision. They are structured as Architectural Decision Records (ADRs) to preserve the original reasoning and evaluate their feasibility against today's technical reality.
+While the current codebase strictly implements a headless `Djot → Parquet → LadybugDB` pipeline, the topics below outline the broader "LLM Wiki" product vision. They are structured as Architectural Decision Records (ADRs) to preserve the original reasoning and evaluate their feasibility against today's technical reality.
 
 ---
 
@@ -19,7 +19,7 @@ The project explicitly rejected the WYSIWYG editor approach. The decision was to
 
 **Technical Assessment (Relevance Today):**
 *Status: Highly Relevant & Feasible*
-This decision perfectly aligns with the current `djot.js` implementation. Djot natively supports block IDs, and pandoc/djot parsers can trivially render these documents into static HTML with `<div id="block_id">` tags. Because the current Kuzu database acts purely as a headless backend, an independent script (e.g., `render.py`) could easily read the `.dj` files and output a static site without disrupting the core ingestion pipeline.
+This decision perfectly aligns with the current `djot.js` implementation. Djot natively supports block IDs, and pandoc/djot parsers can trivially render these documents into static HTML with `<div id="block_id">` tags. Because the current LadybugDB database acts purely as a headless backend, an independent script (e.g., `render.py`) could easily read the `.dj` files and output a static site without disrupting the core ingestion pipeline.
 
 ---
 
@@ -37,18 +37,18 @@ Crucially, these comments do *not* instantly mutate the document. They are proce
 
 **Technical Assessment (Relevance Today):**
 *Status: Relevant, but technically blocked by Block ID Lifecycle (Risk #11)*
-The workflow is conceptually brilliant for AI-assisted workspaces. However, the current Kuzu/Djot implementation does not explicitly manage Block ID stability upon edits. If an LLM or user manually edits a Djot file and the parser generates a *new* block ID for that paragraph during the next ingestion, any pending asynchronous comments pointing to the *old* ID will become orphaned ("dangling references"). Implementing this requires solving the block versioning problem first.
+The workflow is conceptually brilliant for AI-assisted workspaces. However, the current LadybugDB/Djot implementation does not explicitly manage Block ID stability upon edits. If an LLM or user manually edits a Djot file and the parser generates a *new* block ID for that paragraph during the next ingestion, any pending asynchronous comments pointing to the *old* ID will become orphaned ("dangling references"). Implementing this requires solving the block versioning problem first.
 
 ---
 
 ## 3. Expanded Graph Schema (Annotations & Temporal Quadruplets)
 
 **Context:**
-The current Kuzu schema is structural (`Page -> HAS_BLOCK -> Block`) and minimally semantic (`Block -> MENTIONS -> Entity`). To support the async workflow and rich historical analysis, the graph needs to hold more complex data.
+The current LadybugDB schema is structural (`Page -> HAS_BLOCK -> Block`) and minimally semantic (`Block -> MENTIONS -> Entity`). To support the async workflow and rich historical analysis, the graph needs to hold more complex data.
 
 **The Debate (Triplets vs. Quadruplets & Edge Properties vs. Reified Nodes):**
 1. *Annotations:* Should comments just be appended to the source text, or treated as graph entities?
-2. *Time:* Standard semantic extraction creates triplets (`Subject - Predicate -> Object`). But knowledge changes over time. The debate centered on how to store time: as a simple timestamp property on the edge, or by upgrading triplets to "Quadruplets" (`Subject, Predicate, Object, Time`). Furthermore, should complex relationships be stored as properties on Kuzu edges, or as distinct "Reified Statement Nodes" (RDF-star style) so that other nodes can point *to the relationship itself*?
+2. *Time:* Standard semantic extraction creates triplets (`Subject - Predicate -> Object`). But knowledge changes over time. The debate centered on how to store time: as a simple timestamp property on the edge, or by upgrading triplets to "Quadruplets" (`Subject, Predicate, Object, Time`). Furthermore, should complex relationships be stored as properties on LadybugDB edges, or as distinct "Reified Statement Nodes" (RDF-star style) so that other nodes can point *to the relationship itself*?
 
 **The Historical Decision:**
 1. Comments must be first-class `Annotation` nodes in the graph, linked to `Block` nodes, carrying provenance (author, timestamp, source channel).
@@ -56,15 +56,15 @@ The current Kuzu schema is structural (`Page -> HAS_BLOCK -> Block`) and minimal
 
 **Technical Assessment (Relevance Today):**
 *Status: Partially Feasible, Requires Schema Upgrades*
-Adding an `Annotation` node to Kuzu is trivial; it just requires a schema migration script. 
-However, implementing Temporal Quadruplets requires careful design in Kuzu's strict property graph model. Kuzu does not natively support edges pointing to other edges (reification). Therefore, complex time-bound relationships might need to be modeled as intermediate nodes (e.g., an `Employment` node connecting a `Person` and a `Company` with `start_date` and `end_date` properties), rather than simple edges. This will significantly complicate the Cypher queries planned for Phase 06/07.
+Adding an `Annotation` node to LadybugDB is trivial; it just requires a schema migration script. 
+However, implementing Temporal Quadruplets requires careful design in LadybugDB's strict property graph model. LadybugDB does not natively support edges pointing to other edges (reification). Therefore, complex time-bound relationships might need to be modeled as intermediate nodes (e.g., an `Employment` node connecting a `Person` and a `Company` with `start_date` and `end_date` properties), rather than simple edges. This will significantly complicate the Cypher queries planned for Phase 06/07.
 
 ---
 
 ## 4. Advanced Data Lifecycle & Ingestion
 
 **Context:**
-Currently, when a Djot file is updated, the entire Kuzu database is wiped and rebuilt from scratch via bulk Parquet loading. 
+Currently, when a Djot file is updated, the entire LadybugDB database is wiped and rebuilt from scratch via bulk Parquet loading. 
 
 **The Debate (Wipe-and-Rebuild vs. Incremental Deltas):**
 In the early proof-of-concept phase, wipe-and-rebuild was acceptable because structural parsing is fast. However, as the project planned for Phase 05 (Semantic Extraction via LLMs), it became obvious that re-extracting entities for thousands of unchanged blocks on every file save would be prohibitively expensive in terms of API costs and rate limits. 
@@ -74,10 +74,10 @@ The system *must* eventually support incremental delta ingestion. The database s
 
 **Technical Assessment (Relevance Today):**
 *Status: Critical Tech Debt (Risks #7 and #11)*
-This is the most pressing technical friction in the current architecture. Kuzu's embedded, single-writer nature makes complex incremental upserts (`MERGE` statements) much slower than bulk `COPY FROM` operations. 
+This is the most pressing technical friction in the current architecture. LadybugDB's embedded, single-writer nature makes complex incremental upserts (`MERGE` statements) much slower than bulk `COPY FROM` operations. 
 To implement delta detection, the ingestion script (`ingest_page.py`) must be upgraded to:
 1. Hash the incoming Djot block content.
-2. Query Kuzu to see if a block with that ID and hash already exists.
+2. Query LadybugDB to see if a block with that ID and hash already exists.
 3. If it exists, skip it. If it changed, insert the new block and either delete the old one or mark it as `superseded_by`.
 This logic must be built in Python *before* Phase 05 is operationalized at scale.
 

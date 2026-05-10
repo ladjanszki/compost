@@ -6,12 +6,12 @@ Let me tell you the current main idea with timeline then what we have to do to t
 - in the beginning to reduce complexity we stored the ingested documents in jsonl files and this was the storage "backend"
 - When this was the case it seemed like a sound future possibility that if we'll have so many jsonl files at least we have to index them for retrieval
 - After discussing and weighing the situation with several agents we decided to make the first version work with JSONL files and as soon as possible we are switching to a graphdb which is basically a specified database for our use case
-- After the initial version works with the files and Kuzu gets implemented the workflow changes
+- After the initial version works with the files and LadybugDB gets implemented the workflow changes
 - We take the djot files, then flatten tehem to parquiet for batch ingestions
     - This step MIGHT uses jsonl as an intermedier step but it is definitely just caching (and I think we dont even need this because we can easily write the parquet from a list flattened in the memory)
     - So no JSONL is justified bsides re-generation (which is in a later phase if I remember correctly)
-- We feed the parser the djot documents -> parquet files -> Kuzu -> jsonl -> djot render
-    - This is the new workflow and in Phase 2 I think we only implement the pipeline until it ingest the files into Kuzu by COPY
+- We feed the parser the djot documents -> parquet files -> LadybugDB -> jsonl -> djot render
+    - This is the new workflow and in Phase 2 I think we only implement the pipeline until it ingest the files into LadybugDB by COPY
 
 > [!warning] Based on the above mentioned we definitely don't need the jsonl in large quantities (debug and export only) and we wont use SQLite at all
 > Based on this we have to clear out the timeline and the documentation
