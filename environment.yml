@@ -6,5 +6,5 @@ dependencies:
   - pip
   - pip:
     - uuid6
-    - kuzu
+    - real-ladybug==0.15.3
     - pyarrow
