@@ -1,6 +1,6 @@
 # Kuzu to LadybugDB Migration Plan
 ## Status
-**Pending** — This plan has not been executed yet.
+**Completed — 2026-05-10**
 ---
 ## 1. Context and Intention
 Following the acquisition of Kuzu by Apple (October 2025) and the subsequent archiving of the Kuzu repository, the open-source community forked and continued the project under the name **LadybugDB**.
