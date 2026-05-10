@@ -1,19 +1,19 @@
 """
-kuzu_schema.py — create node and relationship tables in a Kuzu database.
+ladybug_schema.py — create node and relationship tables in a LadybugDB database.
 """
-import kuzu
+import real_ladybug as lb
 
 
 def create_schema(db_path: str) -> None:
     """
-    Open (or create) a Kuzu database at db_path and create all node and
+    Open (or create) a LadybugDB database at db_path and create all node and
     relationship tables.
 
     Safe to call on a freshly created empty database. The caller is
     responsible for clearing the database before rebuilding (see build_index).
     """
-    db = kuzu.Database(db_path)
-    conn = kuzu.Connection(db)
+    db = lb.Database(db_path)
+    conn = lb.Connection(db)
 
     conn.execute("""
         CREATE NODE TABLE Block(

@@ -1,5 +1,5 @@
 """
-jsonl_to_parquet.py — flatten JSONL store files to Parquet for Kuzu COPY FROM.
+jsonl_to_parquet.py — flatten JSONL store files to Parquet for LadybugDB COPY FROM.
 """
 import json
 import os

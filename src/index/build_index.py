@@ -1,17 +1,17 @@
 """
-build_index.py — top-level pipeline: JSONL store → Parquet → Kuzu index.
+build_index.py — top-level pipeline: JSONL store → Parquet → LadybugDB index.
 """
 import os
 import shutil
 
 from .jsonl_to_parquet import blocks_to_parquet, has_block_to_parquet, pages_to_parquet
-from .kuzu_loader import load_from_parquet
-from .kuzu_schema import create_schema
+from .ladybug_loader import load_from_parquet
+from .ladybug_schema import create_schema
 
 DEFAULT_BLOCKS_JSONL = "workspace/store/blocks.jsonl"
 DEFAULT_PAGES_JSONL  = "workspace/store/pages.jsonl"
-DEFAULT_DB_PATH      = "workspace/indexes/kuzu/db"
-DEFAULT_PARQUET_DIR  = "workspace/indexes/kuzu/parquet"
+DEFAULT_DB_PATH      = "workspace/indexes/ladybug/db"
+DEFAULT_PARQUET_DIR  = "workspace/indexes/ladybug/parquet"
 
 
 def build_index(
@@ -21,13 +21,13 @@ def build_index(
     parquet_dir:  str = DEFAULT_PARQUET_DIR,
 ) -> None:
     """
-    Full pipeline: JSONL files → Parquet intermediate files → Kuzu graph index.
+    Full pipeline: JSONL files → Parquet intermediate files → LadybugDB graph index.
 
-    Clears and rebuilds the Kuzu database on every run.
+    Clears and rebuilds the LadybugDB database on every run.
     The JSONL source files are never modified.
     """
-    # 1. Clear the Kuzu database directory for a clean rebuild.
-    # Kuzu creates the directory itself — we must not pre-create it.
+    # 1. Clear the LadybugDB database directory for a clean rebuild.
+    # LadybugDB creates the directory itself — we must not pre-create it.
     if os.path.exists(db_path):
         shutil.rmtree(db_path)
     os.makedirs(parquet_dir, exist_ok=True)
@@ -46,7 +46,7 @@ def build_index(
 
     print(f"Parquet written: {n_blocks} blocks, {n_pages} pages, {n_has_block} HAS_BLOCK rows")
 
-    # 4. Load Parquet files into Kuzu.
+    # 4. Load Parquet files into LadybugDB.
     load_from_parquet(db_path, blocks_parquet, pages_parquet, has_block_parquet)
 
-    print(f"Kuzu index built at: {db_path}")
+    print(f"LadybugDB index built at: {db_path}")
