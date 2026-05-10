@@ -71,7 +71,7 @@ Three sets in `tests/test_04/fixtures/`:
 ## 6. Integration with the pipeline
 
 ```
-.md files → convert_directory() → .dj files → ingest_page() → Parquet → Kuzu
+.md files → convert_directory() → .dj files → ingest_page() → Parquet → LadybugDB
 ```
 
 The integration test confirms: converted files ingest without error AND pass the Phase 03 roundtrip test.
@@ -116,4 +116,4 @@ Phase 04 is passing when:
 
 1. All "clean" fixtures convert and pass both external (HTML) and internal (Phase 03) roundtrip.
 2. GFM fixtures convert with documented warnings and pass after normalization.
-3. Integration test: converted files ingest through Phase 02 pipeline into Kuzu without error.
+3. Integration test: converted files ingest through Phase 02 pipeline into LadybugDB without error.

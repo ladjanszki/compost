@@ -44,7 +44,7 @@ Directory-level conversion with optional verification per file.
 
 ### Step 6 — Integration test
 
-Convert clean fixtures → ingest through Phase 02 → run Phase 03 roundtrip on the result → build Kuzu index → verify.
+Convert clean fixtures → ingest through Phase 02 → run Phase 03 roundtrip on the result → build LadybugDB index → verify.
 
 ### Step 7 — GFM and edge case verification
 

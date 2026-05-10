@@ -39,7 +39,7 @@ The renderer also serves as the output format for LLM tools (Phases 06-07). Rend
 
 ### Out of scope for Phase 03
 
-- Rendering from Kuzu queries (Phase 06 uses the renderer but queries are not in scope here).
+- Rendering from LadybugDB queries (Phase 06 uses the renderer but queries are not in scope here).
 - Markdown conversion (Phase 04).
 - LLM tool interface (Phase 06).
 - Annotations, metadata rendering (nice-to-have, deferred).

@@ -7,14 +7,14 @@ This document is the step-by-step implementation plan for Phase 06. It assumes t
 The goal of Phase 06 is to implement and verify:
 
 ```
-Tool call (name, params)  →  Cypher query  →  Kuzu results  →  rendered Djot text
+Tool call (name, params)  →  Cypher query  →  LadybugDB results  →  rendered Djot text
 ```
 
 ---
 
 ## 2. Prerequisites
 
-- [ ] Phase 05 has been implemented: Kuzu has Entity, MENTIONS, RELATES_TO data.
+- [ ] Phase 05 has been implemented: LadybugDB has Entity, MENTIONS, RELATES_TO data.
 - [ ] Phase 03 has been implemented: `render_blocks()` works correctly.
 - [ ] The Phase 05 geography corpus (5 pages) is ingested and indexed, with enrichment run.
 - [ ] The `knowledge-graph` conda environment is active.
@@ -50,7 +50,7 @@ Tool registry — defines all available tools with their schemas.
 Import TOOLS to get the list of tool definitions for any serving protocol.
 """
 
-DB_PATH = "workspace/indexes/kuzu/db"
+DB_PATH = "workspace/indexes/ladybug/db"
 
 TOOLS = [
     {
@@ -116,10 +116,10 @@ TOOLS = [
 
 
 def get_connection():
-    """Open a Kuzu database connection. Caller is responsible for usage."""
-    import kuzu
-    db = kuzu.Database(DB_PATH)
-    return kuzu.Connection(db)
+    """Open a LadybugDB database connection. Caller is responsible for usage."""
+    import real_ladybug as lb
+    db = lb.Database(DB_PATH)
+    return lb.Connection(db)
 
 
 def dispatch(tool_name: str, params: dict) -> str:
@@ -198,7 +198,7 @@ def run(page_id: str) -> str:
 
 
 def _row_to_block_dict(row) -> dict:
-    """Convert a Kuzu result row to a block dict suitable for render_blocks."""
+    """Convert a LadybugDB result row to a block dict suitable for render_blocks."""
     block_id, block_type, text, level, style, language, position = row
     content = {}
     if text is not None:
@@ -776,10 +776,10 @@ import json
 from src.tools.query_page import run as query_page_run
 djot_output = query_page_run('page-danube')
 
-# Get raw blocks for comparison via Kuzu
-import kuzu
-db = kuzu.Database('workspace/store/kuzu/db')
-conn = kuzu.Connection(db)
+# Get raw blocks for comparison via LadybugDB
+import real_ladybug as lb
+db = lb.Database('workspace/store/ladybug/db')
+conn = lb.Connection(db)
 res = conn.execute("MATCH (p:Page {id: 'page-danube'})-[r:HAS_BLOCK]->(b:Block) RETURN b ORDER BY r.position")
 page_blocks = []
 while res.has_next():

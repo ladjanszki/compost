@@ -354,6 +354,6 @@ The following are explicitly deferred and will be addressed in later tests:
 - **Explicit `{#id}` handling**: the test file has no block IDs. The `Div`-as-ID-carrier pattern is understood (confirmed by AST inspection) but not exercised here.
 - **Change detection**: no existing blocks to compare hashes against.
 - **Block versioning**: all blocks are version 1.
-- **Kuzu ingestion**: planned for Test 01.
+- **LadybugDB ingestion**: planned for Test 01.
 - **SQLite index**: planned for later.
 - **Other block types**: code, table, quote, image, math, div.

@@ -71,7 +71,7 @@ Natural language question
                │
                ▼
 ┌──────────────────────────────┐
-│  Execute Cypher against Kuzu  │
+│  Execute Cypher against LadybugDB  │
 │  (via query_cypher tool)      │
 └──────────────┬───────────────┘
                │
@@ -118,7 +118,7 @@ Notes:
   - Entity.id format: "entity-{lowercase-name}" (e.g. "entity-danube", "entity-germany")
 ```
 
-This schema description is generated programmatically from the Kuzu metadata (not hardcoded), so it stays accurate as the schema evolves.
+This schema description is generated programmatically from the LadybugDB metadata (not hardcoded), so it stays accurate as the schema evolves.
 
 ---
 
@@ -133,7 +133,7 @@ that retrieves the answer.
 
 Rules:
 - Use only the node and relationship tables listed above.
-- Kuzu uses the Cypher query language (similar to Neo4j but not identical).
+- LadybugDB uses the Cypher query language (similar to Neo4j but not identical).
 - Property access: node.property (e.g. b.text, e.name)
 - String matching: use CONTAINS for substring, = for exact match.
 - Variable-length paths: -[:REL_TYPE*1..3]->
@@ -141,7 +141,7 @@ Rules:
 - If the question asks for content/text, include b.text in the return.
 - If the question asks "which pages", return p.title.
 - ORDER BY and LIMIT when appropriate.
-- Do NOT use OPTIONAL MATCH (Kuzu does not support it).
+- LadybugDB still differs from Neo4j in certain ways. Retain warnings about: variable-length path walk semantics, the default upper bound of 30 for variable paths, and the lack of `FOREACH` or inline pattern `WHERE` clauses. See: https://docs.ladybugdb.com/cypher/difference/
 - Do NOT use MERGE, CREATE, SET, or DELETE (read-only queries only).
 
 Respond with ONLY the Cypher query. No explanation, no markdown fencing.
@@ -174,7 +174,7 @@ A: MATCH (p:Page {id: 'page-danube'})-[:HAS_BLOCK]->(b:Block)-[:MENTIONS]->(e:En
 
 When generated Cypher fails to execute:
 
-1. Capture the error message from Kuzu.
+1. Capture the error message from LadybugDB.
 2. Send a follow-up prompt to the LLM:
 
 ```
@@ -245,7 +245,7 @@ knowledge-graph/
     tools/
       registry.py           ← MODIFIED: adds ask_graph tool definition
       ask_graph.py          ← NEW: generate_cypher + execute + retry
-      schema_describer.py   ← NEW: generates schema description from Kuzu metadata
+      schema_describer.py   ← NEW: generates schema description from LadybugDB metadata
       query_cypher.py       ← unchanged
       ... (other tools unchanged)
   tests/
@@ -270,7 +270,7 @@ The following questions test increasing complexity against the geography corpus:
 | 7 | "Which page has the most entity mentions?" | Medium | Aggregation + ordering |
 | 8 | "What predicates connect river entities to country entities?" | Medium | Type-filtered relation scan |
 
-Expected: questions 1-5 should generate working Cypher on the first attempt. Questions 6-8 may require 1-2 retries due to Kuzu-specific syntax differences from Neo4j.
+Expected: questions 1-5 should generate working Cypher on the first attempt. Questions 6-8 may require 1-2 retries due to LadybugDB-specific syntax differences from Neo4j.
 
 ---
 
@@ -279,7 +279,7 @@ Expected: questions 1-5 should generate working Cypher on the first attempt. Que
 - `ask_graph("What countries does the Danube flow through?")` returns a rendered answer containing Germany, Austria, Hungary.
 - At least 6/8 test questions produce correct results within 3 attempts.
 - Failed generations return useful error messages (not crashes).
-- The schema description is generated dynamically from Kuzu metadata.
+- The schema description is generated dynamically from LadybugDB metadata.
 - Total system: 6 tools available (query_entity, query_connection, query_page, search_mentions, query_cypher, ask_graph).
 
 ---
@@ -294,7 +294,7 @@ Source (.md/.dj files)
   → Phase 02: djot.js AST → blocks (full djot support)
   → Phase 00: blocks → JSONL (canonical store)
   → Phase 05: enrich with entities + relations (LLM)
-  → Phase 01: load into Kuzu (structural edges)
+  → Phase 01: load into LadybugDB (structural edges)
   → Phase 02: LINKS_TO edges
   → Phase 05: MENTIONS + RELATES_TO edges
   → Phase 03: render blocks → Djot (verified roundtrip)
@@ -302,7 +302,7 @@ Source (.md/.dj files)
   → Phase 07: open-ended Cypher generation tool
 
 LLM interaction:
-  Question → tool call → Kuzu query → blocks → Djot → LLM context → answer
+  Question → tool call → LadybugDB query → blocks → Djot → LLM context → answer
 ```
 
 The knowledge graph is usable: ingest documents, enrich semantically, query via tools, get readable context for LLM reasoning.

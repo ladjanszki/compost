@@ -32,10 +32,10 @@ This is useful but limited. Mentions of entities without explicit links are invi
 
 ### In scope
 
-- Define `Entity` node table, `MENTIONS` and `RELATES_TO` relationship tables in Kuzu.
+- Define `Entity` node table, `MENTIONS` and `RELATES_TO` relationship tables in LadybugDB.
 - Implement LLM-based extraction (configurable model).
 - Implement mock extractor for cost-free pipeline testing.
-- Store extraction results directly via Parquet load into Kuzu.
+- Store extraction results directly via Parquet load into LadybugDB.
 - Process blocks in batches with rate limiting.
 - Test with 5-page geography corpus.
 - Naive entity deduplication (normalized name matching).
@@ -83,7 +83,7 @@ This is useful but limited. Mentions of entities without explicit links are invi
 
 ---
 
-## 5. Kuzu schema additions
+## 5. LadybugDB schema additions
 
 ```cypher
 CREATE NODE TABLE Entity(id STRING, schema STRING, name STRING, type STRING,
@@ -100,7 +100,7 @@ CREATE REL TABLE RELATES_TO(FROM Entity TO Entity, predicate STRING,
 ## 6. Extraction pipeline
 
 ```
-Kuzu blocks → filter eligible blocks → LLM extraction per block → memory → Parquet → Kuzu entities + relations + mentions
+LadybugDB blocks → filter eligible blocks → LLM extraction per block → memory → Parquet → LadybugDB entities + relations + mentions
 ```
 
 - Skip `code_block`, `raw_block`, `thematic_break` (no natural language).
@@ -138,7 +138,7 @@ knowledge-graph/
       enrich_blocks.py
   workspace/
     store/
-      kuzu/
+      ladybug/
   tests/
     test_05/
       corpus/
@@ -148,6 +148,6 @@ knowledge-graph/
 
 ## 10. Verification
 
-- Mock enrichment: entities extracted, loaded into Kuzu.
+- Mock enrichment: entities extracted, loaded into LadybugDB.
 - LLM enrichment: relations extracted for geography corpus.
 - Cross-document query works: "which pages mention the Danube?" returns 4+ pages.

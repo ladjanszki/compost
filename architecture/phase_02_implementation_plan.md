@@ -7,7 +7,7 @@ This document is the step-by-step implementation plan for Phase 02. It assumes t
 The goal of Phase 02 is:
 
 ```
-.dj file  →  djot.js (native AST)  →  Python walker  →  Parquet files (temp) → Kuzu Graph Database
+.dj file  →  djot.js (native AST)  →  Python walker  →  Parquet files (temp) → LadybugDB Graph Database
 ```
 
 ---
@@ -216,7 +216,7 @@ Key changes:
 
 ### Step 6 — Update `src/ingest/ingest_page.py`
 
-Change import from `pandoc_ast` to `djot_ast`. Also, remove JSONL writing. Instead, accumulate blocks in memory, write them to temporary Parquet files, and use Kuzu's `COPY FROM` to ingest them directly into the graph.
+Change import from `pandoc_ast` to `djot_ast`. Also, remove JSONL writing. Instead, accumulate blocks in memory, write them to temporary Parquet files, and use LadybugDB's `COPY FROM` to ingest them directly into the graph.
 
 ```python
 # Before:
@@ -226,14 +226,14 @@ from .jsonl_writer import append_record
 # After:
 from .djot_ast import get_ast
 from .parquet_writer import write_blocks_to_parquet
-# ... logic to COPY FROM parquet into Kuzu ...
+# ... logic to COPY FROM parquet into LadybugDB ...
 ```
 
 ---
 
-### Step 7 — Update Kuzu schema and Ingest Integration
+### Step 7 — Update LadybugDB schema and Ingest Integration
 
-Add `language STRING` to Block table. Add `LINKS_TO` relationship table. Update parquet generation and loading to occur at the end of `ingest_page.py` rather than relying on a separate `build_index()` command. The `index/` directory logic should be merged directly into the ingestion pipeline, cementing Kuzu as the canonical storage.
+Add `language STRING` to Block table. Add `LINKS_TO` relationship table. Update parquet generation and loading to occur at the end of `ingest_page.py` rather than relying on a separate `build_index()` command. The `index/` directory logic should be merged directly into the ingestion pipeline, cementing LadybugDB as the canonical storage.
 
 ---
 
@@ -242,18 +242,18 @@ Add `language STRING` to Block table. Add `LINKS_TO` relationship table. Update 
 ```bash
 python -c "
 import os
-import kuzu
+import real_ladybug as lb
 # Clear store
 import shutil
-if os.path.exists('workspace/store/kuzu/db'):
-    shutil.rmtree('workspace/store/kuzu/db')
+if os.path.exists('workspace/store/ladybug/db'):
+    shutil.rmtree('workspace/store/ladybug/db')
 
 from src.ingest.ingest_page import ingest_page
 page_id = ingest_page('tests/test_00/test_00.dj', 'human:test')
 print(f'Page: {page_id}')
 
-db = kuzu.Database('workspace/store/kuzu/db')
-conn = kuzu.Connection(db)
+db = lb.Database('workspace/store/ladybug/db')
+conn = lb.Connection(db)
 result = conn.execute("MATCH (b:Block) RETURN b.type, b.text ORDER BY b.id")
 blocks = []
 while result.has_next():
@@ -273,15 +273,16 @@ print('Phase 00 regression: PASS')
 
 ```bash
 python -c "
-import os, kuzu, shutil
-if os.path.exists('workspace/store/kuzu/db'):
-    shutil.rmtree('workspace/store/kuzu/db')
+import os, shutil
+import real_ladybug as lb
+if os.path.exists('workspace/store/ladybug/db'):
+    shutil.rmtree('workspace/store/ladybug/db')
 
 from src.ingest.ingest_page import ingest_page
 page_id = ingest_page('tests/test_02/all_elements.dj', 'human:test')
 
-db = kuzu.Database('workspace/store/kuzu/db')
-conn = kuzu.Connection(db)
+db = lb.Database('workspace/store/ladybug/db')
+conn = lb.Connection(db)
 result = conn.execute("MATCH (b:Block) RETURN b.type, b.text")
 blocks = []
 types_found = set()
@@ -305,16 +306,17 @@ print(f'All elements test: PASS ({len(blocks)} blocks, types: {sorted(types_foun
 
 ```bash
 python -c "
-import os, shutil, kuzu
-if os.path.exists('workspace/store/kuzu/db'):
-    shutil.rmtree('workspace/store/kuzu/db')
+import os, shutil
+import real_ladybug as lb
+if os.path.exists('workspace/store/ladybug/db'):
+    shutil.rmtree('workspace/store/ladybug/db')
 
 from src.ingest.ingest_page import ingest_page
 for fname in ['geography.dj', 'danube.dj', 'europe.dj']:
     ingest_page(f'tests/test_02/cross_linked_corpus/{fname}', 'human:test')
 
-db = kuzu.Database('workspace/store/kuzu/db')
-conn = kuzu.Connection(db)
+db = lb.Database('workspace/store/ladybug/db')
+conn = lb.Connection(db)
 for label, q in [
     ('Blocks', 'MATCH (b:Block) RETURN count(b)'),
     ('Pages', 'MATCH (p:Page) RETURN count(p)'),
@@ -338,7 +340,7 @@ Step 3  (djot_ast.py)        — no code dependency
 Step 4  (inline_reconstruct) — no code dependency
 Step 5  (ast_walker)         — depends on Step 4
 Step 6  (ingest_page)        — depends on Steps 3, 5
-Step 7  (kuzu schema)        — independent of Steps 3-6
+Step 7  (ladybug schema)        — independent of Steps 3-6
 Step 8  (regression)         — depends on Steps 3-6
 Step 9  (full element test)  — depends on Steps 3-6
 Step 10 (links test)         — depends on Steps 3-7

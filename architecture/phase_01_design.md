@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document describes the design for **Test 01**: loading the JSONL output of Test 00 into a Kuzu graph database as a derived index.
+This document describes the design for **Test 01**: loading the JSONL output of Test 00 into a LadybugDB graph database as a derived index.
 
 It is self-contained and intended for review before implementation begins. A reviewer does not need to have read earlier documents, but references are provided for traceability.
 
@@ -40,9 +40,9 @@ The JSONL files are authoritative but not queryable beyond sequential scan. A gr
 - traversing block sequences (next/previous)
 - future: cross-document entity links, conversation-to-block attachments, mention queries
 
-**Kuzu** is chosen as the graph index because it is embeddable (no server), zero-config, uses Cypher, and supports high-speed bulk `COPY FROM` for Parquet files. It is the "SQLite of graph databases."
+**LadybugDB** is chosen as the graph index because it is embeddable (no server), zero-config, uses Cypher, and supports high-speed bulk `COPY FROM` for Parquet files. It is the "SQLite of graph databases."
 
-The Kuzu database is a **derived index** — it can be deleted and rebuilt from JSONL at any time. It is never the source of truth.
+The LadybugDB database is a **derived index** — it can be deleted and rebuilt from JSONL at any time. It is never the source of truth.
 
 ---
 
@@ -50,11 +50,11 @@ The Kuzu database is a **derived index** — it can be deleted and rebuilt from 
 
 ### In scope
 
-- Add `kuzu` and `pyarrow` to the conda environment.
-- Define the Kuzu schema: node tables and relationship tables.
-- Flatten `blocks.jsonl` → Parquet file suitable for Kuzu `COPY FROM`.
+- Add `ladybug` and `pyarrow` to the conda environment.
+- Define the LadybugDB schema: node tables and relationship tables.
+- Flatten `blocks.jsonl` → Parquet file suitable for LadybugDB `COPY FROM`.
 - Flatten `pages.jsonl` + `blocks.jsonl` → Parquet files for relationships.
-- Load all Parquet files into Kuzu using `COPY FROM`.
+- Load all Parquet files into LadybugDB using `COPY FROM`.
 - Verify the loaded data with a Cypher query.
 
 ### Out of scope for Test 01
@@ -68,7 +68,7 @@ The Kuzu database is a **derived index** — it can be deleted and rebuilt from 
 
 ---
 
-## 4. Kuzu schema
+## 4. LadybugDB schema
 
 ### Design principles
 
@@ -83,7 +83,7 @@ The Kuzu database is a **derived index** — it can be deleted and rebuilt from 
 
 Maps directly from `block.v1` records in `blocks.jsonl`.
 
-| Column | Kuzu type | Source field | Notes |
+| Column | LadybugDB type | Source field | Notes |
 |--------|-----------|--------------|-------|
 | `id` | `STRING` | `block.id` | Primary key. UUIDv7 string. |
 | `version` | `INT64` | `block.version` | Always 1 in Test 01. |
@@ -96,13 +96,13 @@ Maps directly from `block.v1` records in `blocks.jsonl`.
 | `created_at` | `STRING` | `block.created_at` | ISO 8601 timestamp string. |
 | `hash` | `STRING` | `block.hash` | `sha256:...` content fingerprint. |
 
-The `content` object is not stored as a nested JSON blob in Kuzu. Its fields are flattened into top-level columns. This makes the columns directly queryable without JSON path expressions.
+The `content` object is not stored as a nested JSON blob in LadybugDB. Its fields are flattened into top-level columns. This makes the columns directly queryable without JSON path expressions.
 
 #### `Page`
 
 Maps from `page.v1` records in `pages.jsonl`.
 
-| Column | Kuzu type | Source field | Notes |
+| Column | LadybugDB type | Source field | Notes |
 |--------|-----------|--------------|-------|
 | `id` | `STRING` | `page.id` | Primary key. |
 | `schema` | `STRING` | `page.schema` | Always `"page.v1"`. |
@@ -119,7 +119,7 @@ Maps from `page.v1` records in `pages.jsonl`.
 
 Represents membership: this block belongs to this page at this position.
 
-| Column | Kuzu type | Notes |
+| Column | LadybugDB type | Notes |
 |--------|-----------|-------|
 | `position` | `INT64` | 0-indexed position in the page's `root` array. Enables ordered retrieval. |
 
@@ -162,11 +162,11 @@ CREATE REL TABLE HAS_BLOCK(
 
 ## 5. Parquet intermediate files
 
-Kuzu's `COPY FROM` command is the high-performance bulk load path. It reads Parquet files directly in C++, bypassing Python row-by-row insertion. PyArrow is used to write the Parquet files.
+LadybugDB's `COPY FROM` command is the high-performance bulk load path. It reads Parquet files directly in C++, bypassing Python row-by-row insertion. PyArrow is used to write the Parquet files.
 
 ### Three Parquet files
 
-**`workspace/indexes/kuzu/parquet/blocks.parquet`**
+**`workspace/indexes/ladybug/parquet/blocks.parquet`**
 
 One row per block. Columns match the `Block` node table exactly:
 
@@ -179,7 +179,7 @@ Derived by reading each line of `blocks.jsonl` and flattening `content`:
 - `level` ← `content.get("level")` (None if absent)
 - `style` ← `content.get("style")` (None if absent)
 
-**`workspace/indexes/kuzu/parquet/pages.parquet`**
+**`workspace/indexes/ladybug/parquet/pages.parquet`**
 
 One row per page. Columns match the `Page` node table:
 
@@ -187,7 +187,7 @@ One row per page. Columns match the `Page` node table:
 id, schema, title, created_by, created_at, updated_at
 ```
 
-**`workspace/indexes/kuzu/parquet/has_block.parquet`**
+**`workspace/indexes/ladybug/parquet/has_block.parquet`**
 
 One row per `(page, block)` membership. Three columns:
 
@@ -200,18 +200,18 @@ Where `from` is `page.id`, `to` is the block ID at that position, and `position`
 ### `COPY FROM` commands
 
 ```cypher
-COPY Block FROM 'workspace/indexes/kuzu/parquet/blocks.parquet';
-COPY Page FROM 'workspace/indexes/kuzu/parquet/pages.parquet';
-COPY HAS_BLOCK FROM 'workspace/indexes/kuzu/parquet/has_block.parquet';
+COPY Block FROM 'workspace/indexes/ladybug/parquet/blocks.parquet';
+COPY Page FROM 'workspace/indexes/ladybug/parquet/pages.parquet';
+COPY HAS_BLOCK FROM 'workspace/indexes/ladybug/parquet/has_block.parquet';
 ```
 
 ---
 
 ## 6. Database location
 
-The Kuzu database is stored at `workspace/indexes/kuzu/db/`. This directory is created by Kuzu on first use. It is excluded from git (covered by `workspace/indexes/` in `.gitignore`).
+The LadybugDB database is stored at `workspace/indexes/ladybug/db/`. This directory is created by LadybugDB on first use. It is excluded from git (covered by `workspace/indexes/` in `.gitignore`).
 
-The Parquet intermediate files are stored at `workspace/indexes/kuzu/parquet/`. These are also excluded from git as derived data.
+The Parquet intermediate files are stored at `workspace/indexes/ladybug/parquet/`. These are also excluded from git as derived data.
 
 ---
 
@@ -227,7 +227,7 @@ A `(Block)-[:NEXT]->(Block)` relationship expressing sequential order within a p
 
 ## 8. Expected state after Test 01
 
-Six additional Djot test files were created and validated during review (`tests/test_00/extra_inputs/`). All 7 files are ingested before the Kuzu index is built.
+Six additional Djot test files were created and validated during review (`tests/test_00/extra_inputs/`). All 7 files are ingested before the LadybugDB index is built.
 
 | Object | Count | Notes |
 |--------|-------|-------|
@@ -254,18 +254,18 @@ knowledge-graph/
   src/
     index/
       __init__.py
-      kuzu_schema.py      ← create node and relationship tables in Kuzu
+      ladybug_schema.py      ← create node and relationship tables in LadybugDB
       jsonl_to_parquet.py ← flatten JSONL files to Parquet
-      kuzu_loader.py      ← COPY FROM Parquet into Kuzu
-      build_index.py      ← top-level function: JSONL → Kuzu
+      ladybug_loader.py      ← COPY FROM Parquet into LadybugDB
+      build_index.py      ← top-level function: JSONL → LadybugDB
 
   workspace/
     store/
       blocks.jsonl        ← unchanged canonical source
       pages.jsonl         ← unchanged canonical source
     indexes/
-      kuzu/
-        db/               ← Kuzu database directory (excluded from git)
+      ladybug/
+        db/               ← LadybugDB database directory (excluded from git)
         parquet/          ← intermediate Parquet files (excluded from git)
 ```
 
@@ -278,9 +278,9 @@ Two new dependencies are added to `environment.yml`:
 ```yaml
 - pip:
   - uuid6
-  - kuzu
+  - real-ladybug==0.15.3
   - pyarrow
 ```
 
-`kuzu` provides the embedded graph database and Python API.
+`ladybug` provides the embedded graph database and Python API.
 `pyarrow` provides Parquet read/write.

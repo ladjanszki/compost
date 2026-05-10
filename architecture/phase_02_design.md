@@ -4,7 +4,7 @@
 
 This document describes the design for **Phase 02**: switching from Pandoc to the djot.js reference parser and implementing full Djot ingestion (all block and inline element types).
 
-After Phase 02, any valid Djot document ingests without data loss. The parser is the djot reference implementation, and every djot construct maps to a block or inline representation flattened to Parquet and loaded directly into the Kuzu graph database.
+After Phase 02, any valid Djot document ingests without data loss. The parser is the djot reference implementation, and every djot construct maps to a block or inline representation flattened to Parquet and loaded directly into the LadybugDB graph database.
 
 ---
 
@@ -46,7 +46,7 @@ Compare: in Pandoc, inline code is `{"t": "Code", "c": [["",[], []], "text"]}`. 
 - Handle nested list items (multi-paragraph, nested sub-lists).
 - Handle `section` nodes (transparent, same as Pandoc's Div-section).
 - Extract links for `LINKS_TO` edges (internal link detection).
-- Remove `blocks.jsonl` / `pages.jsonl` logic entirely. The target is Kuzu via temporary Parquet files.
+- Remove `blocks.jsonl` / `pages.jsonl` logic entirely. The target is LadybugDB via temporary Parquet files.
 - Add Node.js/npx as a system dependency.
 - Create comprehensive test files exercising all element types.
 
@@ -299,11 +299,11 @@ The walker extracts `attributes.id` when present and passes it to `emit()`. If n
 
 ## 8. Link extraction
 
-Same design as before: links are collected during inline reconstruction. A link is **internal** if its destination doesn't start with `http://`/`https://` and doesn't start with `#`. Internal links produce `LINKS_TO` edges in Kuzu.
+Same design as before: links are collected during inline reconstruction. A link is **internal** if its destination doesn't start with `http://`/`https://` and doesn't start with `#`. Internal links produce `LINKS_TO` edges in LadybugDB.
 
 ---
 
-## 9. Extended Kuzu schema
+## 9. Extended LadybugDB schema
 
 Same as previously designed:
 - `Block` node gets `language STRING` column.
@@ -333,7 +333,7 @@ knowledge-graph/
       inline_reconstruct.py   ← REWRITTEN: handles all djot inline types
       block_schema.py         ← unchanged
       parquet_writer.py       ← NEW: writes AST output to Parquet
-      ingest_page.py          ← MODIFIED: calls djot_ast, writes parquet, copies to Kuzu
+      ingest_page.py          ← MODIFIED: calls djot_ast, writes parquet, copies to LadybugDB
     index/                    ← DEPRECATED (merged into ingest pipeline)
   tests/
     test_02/
@@ -364,7 +364,7 @@ Phase 02 is passing when:
 2. Every element type in the test file produces a block with the correct `type`.
 3. Inline markup is losslessly reconstructed (inline code, math, links, subscript, etc. all present in `content.text`).
 4. Explicit `{#id}` attributes are captured as block IDs.
-5. Cross-linked corpus produces `LINKS_TO` edges in Kuzu.
+5. Cross-linked corpus produces `LINKS_TO` edges in LadybugDB.
 6. Phase 00 regression: `test_00.dj` still produces 9 blocks with identical content text.
 
 ---
@@ -373,4 +373,4 @@ Phase 02 is passing when:
 
 - The `reconstruct()` return type changes from `str` to `(str, links)` — breaking change, same as before.
 - `pandoc_ast.py` is kept for Phase 04 (markdown → djot conversion).
-- Block content schema is unchanged (`block.v1`), but it is stored directly in Kuzu. JSONL is deprecated.
+- Block content schema is unchanged (`block.v1`), but it is stored directly in LadybugDB. JSONL is deprecated.

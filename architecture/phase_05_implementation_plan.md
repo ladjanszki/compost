@@ -7,7 +7,7 @@ This document is the step-by-step implementation plan for Phase 05. It assumes t
 The goal of Phase 05 is:
 
 ```
-Kuzu Blocks  →  LLM extraction  →  Parquet files  →  Kuzu (Entities + Relations + Mentions)
+LadybugDB Blocks  →  LLM extraction  →  Parquet files  →  LadybugDB (Entities + Relations + Mentions)
 ```
 
 ---
@@ -50,13 +50,13 @@ LLM-based: structured JSON output. Entity + relation extraction per block.
 
 Top-level pipeline: iterate blocks, call extractor, write JSONL, handle dedup.
 
-### Step 8 — Update Kuzu schema and index builder
+### Step 8 — Update LadybugDB schema and index builder
 
 Add Entity node, MENTIONS edge, RELATES_TO edge. Update parquet generation and loading.
 
 ### Step 9 — Mock verification
 
-Enrich with mock → build index → count entities and mentions in Kuzu.
+Enrich with mock → build index → count entities and mentions in LadybugDB.
 
 ### Step 10 — LLM verification
 
@@ -71,7 +71,7 @@ Steps 1-3  (setup + corpus)       — independent
 Steps 4-5  (schema + mock)        — independent
 Step 6     (LLM extractor)        — depends on Step 4
 Step 7     (pipeline)             — depends on Steps 4, 5, 6
-Step 8     (Kuzu updates)         — independent of Steps 4-7
+Step 8     (LadybugDB updates)         — independent of Steps 4-7
 Steps 9-10 (verification)        — depends on Steps 7, 8
 ```
 

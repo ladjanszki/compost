@@ -7,10 +7,10 @@ This document is the step-by-step implementation plan for Test 01. It assumes th
 The goal of Test 01 is to implement and verify the pipeline:
 
 ```
-blocks.jsonl + pages.jsonl  →  Parquet files  →  Kuzu graph database
+blocks.jsonl + pages.jsonl  →  Parquet files  →  LadybugDB graph database
 ```
 
-This loads the JSONL output of Test 00 into a Kuzu derived index. The JSONL files remain the canonical source of truth and are not modified.
+This loads the JSONL output of Test 00 into a LadybugDB derived index. The JSONL files remain the canonical source of truth and are not modified.
 
 ---
 
@@ -25,7 +25,7 @@ This loads the JSONL output of Test 00 into a Kuzu derived index. The JSONL file
 
 ### Step 1 — Update `environment.yml`
 
-Add `kuzu` and `pyarrow` to the pip dependencies section:
+Add `ladybug` and `pyarrow` to the pip dependencies section:
 
 ```yaml
 name: knowledge-graph
@@ -36,7 +36,7 @@ dependencies:
   - pip
   - pip:
     - uuid6
-    - kuzu
+    - real-ladybug==0.15.3
     - pyarrow
 ```
 
@@ -49,7 +49,7 @@ conda env update -f environment.yml --prune
 **Verification**:
 
 ```bash
-conda run -n knowledge-graph python -c "import kuzu; print(kuzu.__version__)"
+conda run -n knowledge-graph python -c "import real_ladybug as lb; print(ladybug.__version__)"
 conda run -n knowledge-graph python -c "import pyarrow; print(pyarrow.__version__)"
 ```
 
@@ -61,12 +61,12 @@ Both should print a version string without error.
 
 ```bash
 mkdir -p src/index
-mkdir -p workspace/indexes/kuzu/db
-mkdir -p workspace/indexes/kuzu/parquet
+mkdir -p workspace/indexes/ladybug/db
+mkdir -p workspace/indexes/ladybug/parquet
 touch src/index/__init__.py
-touch src/index/kuzu_schema.py
+touch src/index/ladybug_schema.py
 touch src/index/jsonl_to_parquet.py
-touch src/index/kuzu_loader.py
+touch src/index/ladybug_loader.py
 touch src/index/build_index.py
 ```
 
@@ -74,14 +74,14 @@ touch src/index/build_index.py
 
 ---
 
-### Step 3 — `kuzu_schema.py`
+### Step 3 — `ladybug_schema.py`
 
 Implement one function:
 
 ```python
 def create_schema(db_path: str) -> None:
     """
-    Open (or create) a Kuzu database at db_path and create all node and
+    Open (or create) a LadybugDB database at db_path and create all node and
     relationship tables. Safe to call on an existing empty database.
     Raises if tables already exist (caller must clear the db before rebuilding).
     """
@@ -121,10 +121,10 @@ CREATE REL TABLE HAS_BLOCK(
 ```
 
 Implementation notes:
-- Open the database with `kuzu.Database(db_path)` and get a connection with `kuzu.Connection(db)`.
+- Open the database with `lb.Database(db_path)` and get a connection with `lb.Connection(db)`.
 - Execute each `CREATE` statement separately via `conn.execute(...)`.
 
-**Verification**: call `create_schema("workspace/indexes/kuzu/db")`, then open the database and run `CALL show_tables() RETURN *` — expect three tables: `Block`, `Page`, `HAS_BLOCK`.
+**Verification**: call `create_schema("workspace/indexes/ladybug/db")`, then open the database and run `CALL show_tables() RETURN *` — expect three tables: `Block`, `Page`, `HAS_BLOCK`.
 
 ---
 
@@ -174,7 +174,7 @@ Implementation notes for `has_block_to_parquet`:
 
 ---
 
-### Step 5 — `kuzu_loader.py`
+### Step 5 — `ladybug_loader.py`
 
 Implement one function:
 
@@ -186,8 +186,8 @@ def load_from_parquet(
     has_block_parquet: str,
 ) -> None:
     """
-    Run COPY FROM on all three Parquet files to load data into Kuzu.
-    Assumes the schema already exists (kuzu_schema.create_schema was called first).
+    Run COPY FROM on all three Parquet files to load data into LadybugDB.
+    Assumes the schema already exists (ladybug_schema.create_schema was called first).
     """
 ```
 
@@ -201,7 +201,7 @@ COPY HAS_BLOCK FROM '{has_block_parquet}';
 
 Order matters: `Block` and `Page` nodes must exist before `HAS_BLOCK` edges can reference them.
 
-Implementation note: Kuzu's `COPY FROM` command requires an **absolute path** to the Parquet file. Use `os.path.abspath(...)` on each path before interpolating into the Cypher string.
+Implementation note: LadybugDB's `COPY FROM` command requires an **absolute path** to the Parquet file. Use `os.path.abspath(...)` on each path before interpolating into the Cypher string.
 
 **Verification**: after loading, run a count query and confirm expected numbers.
 
@@ -215,13 +215,13 @@ Implement the top-level function:
 def build_index(
     blocks_jsonl: str = "workspace/store/blocks.jsonl",
     pages_jsonl: str = "workspace/store/pages.jsonl",
-    db_path: str = "workspace/indexes/kuzu/db",
-    parquet_dir: str = "workspace/indexes/kuzu/parquet",
+    db_path: str = "workspace/indexes/ladybug/db",
+    parquet_dir: str = "workspace/indexes/ladybug/parquet",
 ) -> None:
     """
-    Full pipeline: JSONL files → Parquet → Kuzu.
+    Full pipeline: JSONL files → Parquet → LadybugDB.
 
-    Clears and rebuilds the Kuzu database on each run.
+    Clears and rebuilds the LadybugDB database on each run.
     The JSONL source files are never modified.
     """
 ```
@@ -292,9 +292,9 @@ Run node and edge counts:
 
 ```bash
 python -c "
-import kuzu
-db = kuzu.Database('workspace/indexes/kuzu/db')
-conn = kuzu.Connection(db)
+import real_ladybug as lb
+db = lb.Database('workspace/indexes/ladybug/db')
+conn = lb.Connection(db)
 for label, q in [
     ('Block nodes',     'MATCH (b:Block) RETURN count(b)'),
     ('Page nodes',      'MATCH (p:Page)  RETURN count(p)'),
@@ -317,9 +317,9 @@ Run the primary verification query — all blocks for `page-test_00` in order:
 
 ```bash
 python -c "
-import kuzu
-db = kuzu.Database('workspace/indexes/kuzu/db')
-conn = kuzu.Connection(db)
+import real_ladybug as lb
+db = lb.Database('workspace/indexes/ladybug/db')
+conn = lb.Connection(db)
 result = conn.execute(\"\"\"
     MATCH (p:Page {id: 'page-test_00'})-[r:HAS_BLOCK]->(b:Block)
     RETURN b.id, b.type, b.text, b.level, r.position
@@ -345,9 +345,9 @@ Spot-check 1 — ordered list items have `style="ordered"` in the graph:
 
 ```bash
 python -c "
-import kuzu
-db = kuzu.Database('workspace/indexes/kuzu/db')
-conn = kuzu.Connection(db)
+import real_ladybug as lb
+db = lb.Database('workspace/indexes/ladybug/db')
+conn = lb.Connection(db)
 result = conn.execute(\"\"\"
     MATCH (b:Block {type: 'list_item'})
     RETURN b.style, count(b)
@@ -363,9 +363,9 @@ Spot-check 2 — a multi-section page returns blocks in correct positional order
 
 ```bash
 python -c "
-import kuzu
-db = kuzu.Database('workspace/indexes/kuzu/db')
-conn = kuzu.Connection(db)
+import real_ladybug as lb
+db = lb.Database('workspace/indexes/ladybug/db')
+conn = lb.Connection(db)
 result = conn.execute(\"\"\"
     MATCH (p:Page {id: 'page-deep_headings'})-[r:HAS_BLOCK]->(b:Block)
     RETURN b.type, b.level, r.position
@@ -384,9 +384,9 @@ while result.has_next():
 ```
 Step 1  (environment)      — no code dependencies
 Step 2  (directories)      — depends on Step 1
-Step 3  (kuzu_schema)      — depends on Step 1 (kuzu installed)
+Step 3  (ladybug_schema)      — depends on Step 1 (ladybug installed)
 Step 4  (jsonl_to_parquet) — depends on Step 1 (pyarrow installed)
-Step 5  (kuzu_loader)      — depends on Steps 3, 4
+Step 5  (ladybug_loader)      — depends on Steps 3, 4
 Step 6  (build_index)      — depends on Steps 3, 4, 5
 Step 7  (ingest all files) — depends on Step 6 (re-uses Test 00 pipeline)
 Step 8  (verification)     — depends on Step 7
@@ -398,7 +398,7 @@ Steps 3 and 4 can be implemented in parallel after Step 1.
 
 ## 5. What Test 01 does NOT validate
 
-- **Block versioning in Kuzu**: all blocks are version 1. Multiple versions of the same block ID are not tested.
+- **Block versioning in LadybugDB**: all blocks are version 1. Multiple versions of the same block ID are not tested.
 - **Incremental updates**: `build_index` always clears and rebuilds. Partial updates are deferred.
 - **`NEXT` edges**: sequential block ordering is encoded only via `HAS_BLOCK.position`, not as a separate relationship.
 - **Conversation and operation nodes**: not yet in the schema.

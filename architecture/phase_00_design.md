@@ -16,13 +16,13 @@ The v1 system is a local-first, block-based knowledge store. Its central concept
 
 - **Block**: the atomic versioned content unit. Each block has a stable ID, a type derived from its markup, a content payload, and a SHA-256 hash for change detection.
 - **Page**: a document represented as an ordered flat list of block IDs.
-- **Canonical storage**: JSONL files (`blocks.jsonl`, `pages.jsonl`). These are the source of truth. All other representations (HTML, SQLite indexes, Kuzu graph) are derived projections.
+- **Canonical storage**: JSONL files (`blocks.jsonl`, `pages.jsonl`). These are the source of truth. All other representations (HTML, SQLite indexes, LadybugDB graph) are derived projections.
 - **Authoring format**: Djot (`.dj` files). Djot is a formally parseable light markup language by John MacFarlane (creator of Pandoc and CommonMark). It is close to Markdown but unambiguous and formally specified.
 - **Block IDs in Djot**: Djot has native support for block-level attributes. The syntax `{#blk_001}` placed before a block element assigns that element a stable ID. Blocks without an explicit `{#id}` attribute receive an auto-generated ID during ingestion.
 
 ### Why this test first
 
-Before building the full pipeline (conversations, operations, mutations, rollback, rendering, Kuzu indexing), we validate the foundational step: **Djot → Pandoc AST → block records → JSONL**. If this works correctly and produces the expected schema, all later steps can build on it.
+Before building the full pipeline (conversations, operations, mutations, rollback, rendering, LadybugDB indexing), we validate the foundational step: **Djot → Pandoc AST → block records → JSONL**. If this works correctly and produces the expected schema, all later steps can build on it.
 
 ---
 
@@ -47,7 +47,7 @@ Before building the full pipeline (conversations, operations, mutations, rollbac
 - Conversations, operations, mutations, rollback.
 - SQLite index building.
 - HTML rendering.
-- Kuzu ingestion (planned for Test 01).
+- LadybugDB ingestion (planned for Test 01).
 - Any block type not present in the test file (code, table, quote, image, math, div).
 
 ---

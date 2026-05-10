@@ -15,7 +15,7 @@ Natural language question  →  LLM generates Cypher  →  execute  →  render 
 ## 2. Prerequisites
 
 - [ ] Phase 06 has been implemented: all template tools work, `query_cypher` tool exists.
-- [ ] Phase 05 geography corpus is enriched and indexed in Kuzu.
+- [ ] Phase 05 geography corpus is enriched and indexed in LadybugDB.
 - [ ] `OPENAI_API_KEY` is set (or a compatible API endpoint is available).
 - [ ] The `knowledge-graph` conda environment is active.
 
@@ -36,16 +36,16 @@ touch tests/test_07/test_questions.py
 
 ### Step 2 — `schema_describer.py`
 
-Generate a human/LLM-readable schema description from the live Kuzu database:
+Generate a human/LLM-readable schema description from the live LadybugDB database:
 
 ```python
-"""schema_describer — generate a text description of the Kuzu schema."""
+"""schema_describer — generate a text description of the LadybugDB schema."""
 from .registry import get_connection
 
 
 def describe_schema(db_path: str = None) -> str:
     """
-    Query Kuzu metadata and return a formatted schema description
+    Query LadybugDB metadata and return a formatted schema description
     suitable for inclusion in an LLM prompt.
     """
     conn = get_connection()
@@ -79,14 +79,16 @@ def describe_schema(db_path: str = None) -> str:
     parts.append("  - Page.id format: 'page-{filename_stem}' (e.g. 'page-danube')")
     parts.append("  - Entity.id format: 'entity-{lowercase-name}' (e.g. 'entity-germany')")
     parts.append("  - RELATES_TO.predicate examples: flows_through, is_capital_of, is_located_in, is_part_of")
-    parts.append("  - Kuzu does NOT support OPTIONAL MATCH")
     parts.append("  - Only read queries (no CREATE, MERGE, SET, DELETE)")
     
     return "\n".join(parts)
 
 
 def _get_node_tables(conn) -> dict:
-    """Get node table schemas from Kuzu metadata."""
+    """Get node table schemas from LadybugDB metadata."""
+    # LadybugDB's SHOW_TABLES() includes an additional database name column (for its attached-database feature).
+    # Do NOT use hardcoded tuple unpacking (e.g., name, type, ... = row).
+    # Access data defensively via dictionaries or column indices verified against the result headers.
     result = conn.execute("CALL show_tables() RETURN *")
     tables = {}
     while result.has_next():
@@ -100,7 +102,7 @@ def _get_node_tables(conn) -> dict:
 
 
 def _get_rel_tables(conn) -> dict:
-    """Get relationship table schemas from Kuzu metadata."""
+    """Get relationship table schemas from LadybugDB metadata."""
     result = conn.execute("CALL show_tables() RETURN *")
     tables = {}
     while result.has_next():
@@ -125,7 +127,7 @@ def _get_table_columns(conn, table_name: str) -> list:
     columns = []
     while result.has_next():
         row = result.get_next()
-        # Row format depends on Kuzu version — adapt as needed
+        # Row format depends on LadybugDB version — adapt as needed
         columns.append({
             "name": row[1],   # column name
             "type": row[2],   # data type
@@ -259,7 +261,6 @@ Rules:
 - If the question asks for text content, include b.text in the return.
 - If the question asks "which pages", return p.title.
 - ORDER BY and LIMIT when appropriate.
-- Do NOT use OPTIONAL MATCH (Kuzu does not support it).
 - Do NOT use MERGE, CREATE, SET, or DELETE (read-only queries only).
 
 Respond with ONLY the Cypher query. No explanation, no markdown fencing, no backticks.
@@ -521,7 +522,7 @@ print('Schema description: OK')
 
 ```
 Step 1  (files)             — no dependencies
-Step 2  (schema_describer)  — depends on Kuzu db existing (Phase 05)
+Step 2  (schema_describer)  — depends on LadybugDB db existing (Phase 05)
 Step 3  (ask_graph)         — depends on Steps 2 + OPENAI_API_KEY
 Step 4  (registry update)   — depends on Step 3
 Step 5  (test battery)      — depends on Steps 3, 4 + OPENAI_API_KEY
@@ -536,7 +537,7 @@ Step 2 and Step 6 can be done and verified without an API key. Steps 3-5 require
 
 - **Automatic tool routing**: deciding whether to use `query_entity` or `ask_graph` for a given question is left to the calling LLM's judgment (based on tool descriptions).
 - **Query caching**: repeated similar questions re-generate Cypher each time.
-- **Complex path queries**: Kuzu's path syntax differs from Neo4j. Some complex path queries may not work. This is documented as a known limitation.
+- **Complex path queries**: LadybugDB's path syntax differs from Neo4j. Some complex path queries may not work. This is documented as a known limitation.
 - **Prompt optimization**: the few-shot examples are static. A future improvement could select examples most relevant to the incoming question.
 - **Model comparison**: only tested with `gpt-4o-mini`. Other models (Claude, local) may need prompt adjustments.
 

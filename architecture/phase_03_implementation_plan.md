@@ -177,5 +177,5 @@ Step 4  (token check)      — depends on Steps 2, 3
 ## 5. What Phase 03 does NOT validate
 
 - **Markdown conversion**: Phase 04 handles external content sourcing.
-- **Rendering from Kuzu**: the renderer takes block dicts, not Cypher results. Phase 06 queries Kuzu and passes blocks to the renderer.
+- **Rendering from LadybugDB**: the renderer takes block dicts, not Cypher results. Phase 06 queries LadybugDB and passes blocks to the renderer.
 - **Annotations/metadata in rendered output**: deferred.

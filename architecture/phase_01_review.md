@@ -11,7 +11,7 @@ Reviewer scope: high-risk issues, explicit contradictions, and additional test c
 The two documents are internally consistent and consistent with the test_00 implementation. Specific observations:
 
 - Page ID format (`page-test_00`) matches what `ingest_page.py` actually produces (line 44: `f"page-{stem}"`). The test_00 review concern about page ID inconsistency is resolved.
-- The Kuzu schema correctly flattens `content.text`, `content.level`, and `content.style` into top-level nullable columns. This matches how the block records store data.
+- The LadybugDB schema correctly flattens `content.text`, `content.level`, and `content.style` into top-level nullable columns. This matches how the block records store data.
 - The `COPY FROM` ordering (Block + Page before HAS_BLOCK) is correct — relationship endpoints must exist first.
 - The absolute path requirement for `COPY FROM` is documented and addressed with `os.path.abspath()`.
 - The rebuild pattern (delete db dir, recreate, reload) is simple and appropriate for a derived index.
@@ -52,7 +52,7 @@ No failures or unexpected behavior.
 
 ## 4. Recommendation for Test 01
 
-These 6 files (plus the original `test_00.dj`) should be ingested before running the Kuzu index build in Test 01. This gives the graph a more realistic dataset: 7 pages, 47 blocks total, multiple heading levels, both list styles, nested formatting.
+These 6 files (plus the original `test_00.dj`) should be ingested before running the LadybugDB index build in Test 01. This gives the graph a more realistic dataset: 7 pages, 47 blocks total, multiple heading levels, both list styles, nested formatting.
 
 To include them in Test 01 verification:
 

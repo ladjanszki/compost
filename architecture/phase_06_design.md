@@ -38,7 +38,7 @@ These functions are pure Python. They can be served over any protocol (MCP, Open
 ### In scope
 
 - Implement 5 tool functions with clear interfaces.
-- Each function: opens Kuzu → runs parameterized Cypher → fetches block records → renders as Djot via Step 05's renderer.
+- Each function: opens LadybugDB → runs parameterized Cypher → fetches block records → renders as Djot via Step 05's renderer.
 - Define JSON Schema for each tool's parameters (for LLM consumption).
 - Define a tool registry (a list of tool definitions with name, description, parameter schema).
 - Test each function against the Phase 05 geography corpus.
@@ -191,7 +191,7 @@ RETURN b
 ORDER BY h.position;
 ```
 
-The function reconstructs full block records from the Kuzu row data (mapping back to the block.v1 dict format) and passes them to `render_page()`.
+The function reconstructs full block records from the LadybugDB row data (mapping back to the block.v1 dict format) and passes them to `render_page()`.
 
 ---
 
@@ -327,7 +327,7 @@ This list is importable. Whoever serves the tools (MCP, OpenAI wrapper, etc.) re
                │ Cypher queries
                ▼
 ┌──────────────────────────────────────────┐
-│  Kuzu (workspace/indexes/kuzu/db)         │
+│  LadybugDB (workspace/indexes/ladybug/db)         │
 │    Block, Page, Entity nodes              │
 │    HAS_BLOCK, LINKS_TO, MENTIONS,         │
 │    RELATES_TO edges                       │
@@ -347,17 +347,17 @@ This list is importable. Whoever serves the tools (MCP, OpenAI wrapper, etc.) re
 
 ---
 
-## 7. Kuzu connection management
+## 7. LadybugDB connection management
 
-Each tool function opens a Kuzu connection, runs queries, and closes it. For the initial implementation this is simple and stateless:
+Each tool function opens a LadybugDB connection, runs queries, and closes it. For the initial implementation this is simple and stateless:
 
 ```python
-DB_PATH = "workspace/indexes/kuzu/db"
+DB_PATH = "workspace/indexes/ladybug/db"
 
 def _get_connection():
-    import kuzu
-    db = kuzu.Database(DB_PATH)
-    return kuzu.Connection(db)
+    import real_ladybug as lb
+    db = lb.Database(DB_PATH)
+    return lb.Connection(db)
 ```
 
 If performance becomes a concern (unlikely at this scale), a connection pool can be added later. For Phase 06, open-query-close per call is fine.
