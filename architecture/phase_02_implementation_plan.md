@@ -246,7 +246,10 @@ import real_ladybug as lb
 # Clear store
 import shutil
 if os.path.exists('workspace/store/ladybug/db'):
-    shutil.rmtree('workspace/store/ladybug/db')
+    if os.path.isdir('workspace/store/ladybug/db'):
+        shutil.rmtree('workspace/store/ladybug/db')
+    else:
+        os.remove('workspace/store/ladybug/db')
 
 from src.ingest.ingest_page import ingest_page
 page_id = ingest_page('tests/test_00/test_00.dj', 'human:test')
@@ -276,7 +279,10 @@ python -c "
 import os, shutil
 import real_ladybug as lb
 if os.path.exists('workspace/store/ladybug/db'):
-    shutil.rmtree('workspace/store/ladybug/db')
+    if os.path.isdir('workspace/store/ladybug/db'):
+        shutil.rmtree('workspace/store/ladybug/db')
+    else:
+        os.remove('workspace/store/ladybug/db')
 
 from src.ingest.ingest_page import ingest_page
 page_id = ingest_page('tests/test_02/all_elements.dj', 'human:test')
@@ -309,7 +315,10 @@ python -c "
 import os, shutil
 import real_ladybug as lb
 if os.path.exists('workspace/store/ladybug/db'):
-    shutil.rmtree('workspace/store/ladybug/db')
+    if os.path.isdir('workspace/store/ladybug/db'):
+        shutil.rmtree('workspace/store/ladybug/db')
+    else:
+        os.remove('workspace/store/ladybug/db')
 
 from src.ingest.ingest_page import ingest_page
 for fname in ['geography.dj', 'danube.dj', 'europe.dj']:

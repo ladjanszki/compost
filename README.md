@@ -137,7 +137,7 @@ conda activate knowledge-graph
 Verify:
 ```bash
 python -c "import uuid6; print(uuid6.uuid7())"
-python -c "import real_ladybug as lb; print(ladybug.__version__)"
+python -c "import real_ladybug as lb; print(lb.__version__)"
 pandoc --version
 node --version
 npx @djot/djot --version
@@ -212,7 +212,7 @@ This section is the **single source of truth** for all known risks, concerns, ar
 | 1 | Low | **Unix-only assumption** — `jsonl_writer.py` (Phase 00/01, deprecated) uses `fcntl` which is POSIX-only. Future code must not introduce platform-specific imports without documenting it. | Document as Unix/macOS only. Windows is not a target. |
 | 2 | Medium | **No Python packaging** — `src/` is not an installable package. All scripts assume CWD is the repo root. `from src.ingest.xxx import` fails if run from a subdirectory. | Either add a `pyproject.toml` with editable install, or document "always run from repo root" as a hard requirement. |
 | 3 | Medium | **No version pinning on `@djot/djot`** — `npx @djot/djot` resolves to whatever version npm fetches. A breaking release of djot.js could silently change AST structure. | Pin the version in subprocess calls: `npx @djot/djot@0.3.1 --to ast`. Document the expected version. |
-| 4 | Medium | **LadybugDB is a community fork (pre-1.0)** — LadybugDB was forked from LadybugDB after Apple's acquisition (Oct 2025). As a community fork it may have less rigorous backward compatibility guarantees than the original. The API has already diverged (e.g., `SHOW_TABLES()` output, `OPTIONAL MATCH` support added). | Pinned in `environment.yml`: `real-ladybug==0.15.3`. Test against that specific version. Monitor LadybugDB release notes for breaking changes. |
+| 4 | Medium | **LadybugDB is a community fork (pre-1.0)** — LadybugDB was forked from Kuzu after Apple's acquisition (Oct 2025). As a community fork it may have less rigorous backward compatibility guarantees than the original. The API has already diverged (e.g., `SHOW_TABLES()` output, `OPTIONAL MATCH` support added). | Pinned in `environment.yml`: `real-ladybug==0.15.3`. Test against that specific version. Monitor LadybugDB release notes for breaking changes. |
 | 5 | Low | **Node.js is a silent system dependency** — If `node`/`npx` is missing, the error message is a generic `RuntimeError`. No pre-flight check exists. | Phase 02 Step 1 is a manual verification. Consider adding a startup check in `djot_ast.py` with a clear error message. |
 
 ### Ingestion pipeline

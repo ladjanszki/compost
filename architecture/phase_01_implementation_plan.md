@@ -49,7 +49,7 @@ conda env update -f environment.yml --prune
 **Verification**:
 
 ```bash
-conda run -n knowledge-graph python -c "import real_ladybug as lb; print(ladybug.__version__)"
+conda run -n knowledge-graph python -c "import real_ladybug as lb; print(lb.__version__)"
 conda run -n knowledge-graph python -c "import pyarrow; print(pyarrow.__version__)"
 ```
 
