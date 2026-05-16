@@ -1,0 +1,16 @@
+# Probability Theory
+
+Probability theory is the branch of mathematics concerned with probability. 
+It provides the mathematical framework for modeling uncertainty and randomness.
+
+## Core Concepts
+
+A central concept in this field is the [Random Variable](random_variable.dj), which maps outcomes of a random phenomenon to numbers. 
+
+When dealing with systems that evolve over time under probabilistic rules, we study a [Stochastic Process](stochastic_process.dj).
+
+## Applications
+
+- Statistical mechanics
+- Machine learning
+- Financial mathematics

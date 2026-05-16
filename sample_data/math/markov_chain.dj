@@ -1,0 +1,16 @@
+# Markov Chain
+
+A Markov chain is a type of [Stochastic Process](stochastic_process.dj) that describes a sequence of possible events in which the probability of each event depends only on the state attained in the previous event. 
+This is known as the *Markov property*.
+
+## Mathematical Definition
+
+If we want to understand its rigorous foundations, we must look deeply into [Probability Theory](probability.dj).
+
+```python
+# A simple representation of a transition matrix
+transition_matrix = [
+    [0.9, 0.1],
+    [0.5, 0.5]
+]
+```
