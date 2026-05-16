@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Phase 02 & 03 — 2026-05-16
+
+Implemented Phase 02: Rewrote ingestion to bypass Pandoc and use native `djot.js`. Dropped JSONL intermediate representation to write blocks directly into Parquet files, which are immediately loaded into LadybugDB during `ingest_page()`. Extended Block schema with `language` field and added `LINKS_TO` relationships for explicit cross-links. Re-wrote `inline_reconstruct.py` and `ast_walker.py` against the native AST.
+
+Implemented Phase 03: Built Djot rendering via `blocks_to_djot.py` that formats structured Block dictionaries back into raw Djot text. Added a roundtrip validation harness (`test_roundtrip.py`) validating `Djot -> Blocks -> Djot` without data loss (whitespace-normalized, structural fidelity). Passed verification for 31 block types. Achieved ~4.6x token reduction compared to raw JSON block representation.
+
 ## 2026-05-10 — Kuzu to LadybugDB Migration
 Replaced Kuzu with LadybugDB (community fork) as the embedded graph database, following
 Apple's acquisition and archiving of the Kuzu repository. Renamed `kuzu_schema.py` →
