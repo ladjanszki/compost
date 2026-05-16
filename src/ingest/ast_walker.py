@@ -1,7 +1,7 @@
 """
-ast_walker.py — walk a Pandoc AST and yield (type, content) tuples for each block.
+ast_walker.py — walk a djot.js AST and yield (type, content) tuples for each block.
 
-Does not generate IDs or hashes — that is block_schema's responsibility.
+Does not generate system IDs or hashes — that is block_schema's responsibility.
 """
 from typing import Iterator
 
@@ -9,107 +9,207 @@ from .inline_reconstruct import reconstruct
 
 
 def walk(ast: dict) -> list[dict]:
-    """
-    Walk the top-level blocks of a Pandoc AST and return an ordered list of
-    dicts, each with keys:
-      - type:    str  (heading | paragraph | list_item)
-      - content: dict (type-specific payload)
-
-    The order matches document order.
-    """
+    """Walk the djot.js AST. Returns ordered list of block dicts."""
     results = []
-    _process_blocks(ast["blocks"], results)
+    _walk_children(ast.get("children", []), results)
     return results
 
 
-def _process_blocks(nodes: list, results: list) -> None:
+def emit(results: list, block_type: str, content: dict, block_id: str | None = None):
+    results.append({
+        "type": block_type,
+        "content": content,
+        "id": block_id
+    })
+
+
+def _walk_children(nodes: list, results: list):
     for node in nodes:
-        _process_node(node, results)
+        _walk_node(node, results)
 
 
-def _process_node(node: dict, results: list) -> None:
-    t = node.get("t")
-    c = node.get("c")
+def _walk_node(node: dict, results: list):
+    tag = node.get("tag")
+    attrs = node.get("attributes", {})
+    block_id = attrs.get("id")  # explicit {#id} from source
+    
+    if tag == "section":
+        _walk_children(node.get("children", []), results)
+    
+    elif tag == "heading":
+        text, links = reconstruct(node.get("children", []))
+        content = {"text": text, "level": node.get("level", 1)}
+        if links:
+            content["links"] = links
+        emit(results, "heading", content, block_id)
+    
+    elif tag == "para":
+        text, links = reconstruct(node.get("children", []))
+        content = {"text": text}
+        if links:
+            content["links"] = links
+        emit(results, "paragraph", content, block_id)
+    
+    elif tag == "code_block":
+        lang = node.get("lang", "")
+        if lang.startswith("{=") and lang.endswith("}"):
+            content = {"text": node.get("text", ""), "format": lang[2:-1]}
+            emit(results, "raw_block", content, block_id)
+        else:
+            content = {"text": node.get("text", "")}
+            if lang:
+                content["language"] = lang
+            emit(results, "code_block", content, block_id)
+    
+    elif tag == "block_quote":
+        child_blocks = []
+        _walk_children(node.get("children", []), child_blocks)
+        text = _reconstruct_block_quote(child_blocks)
+        
+        all_links = []
+        for cb in child_blocks:
+            if "links" in cb.get("content", {}):
+                all_links.extend(cb["content"]["links"])
+                
+        content = {"text": text}
+        if all_links:
+            content["links"] = all_links
+        emit(results, "block_quote", content, block_id)
+    
+    elif tag == "bullet_list":
+        for item in node.get("children", []):
+            _walk_list_item(item, "unordered", results)
+    
+    elif tag == "ordered_list":
+        for item in node.get("children", []):
+            _walk_list_item(item, "ordered", results)
+    
+    elif tag == "definition_list":
+        for item in node.get("children", []):
+            _walk_definition_item(item, results)
+    
+    elif tag == "table":
+        _walk_table(node, results)
+    
+    elif tag == "thematic_break":
+        emit(results, "thematic_break", {}, block_id)
+    
+    elif tag == "div":
+        # Transparent: recurse, but capture the div's ID for the first child
+        # For now we emit the div as a block if it's not transparent in some contexts
+        # Wait, the spec says "Div and Raw... 1 div ... 1 raw_block". It wants div as a block.
+        # Let's emit a div block if requested, or just walk children. The verify test expects 'div'.
+        content = {}
+        if "class" in attrs:
+            content["classes"] = attrs["class"].split()
+            
+        child_blocks = []
+        _walk_children(node.get("children", []), child_blocks)
+        content["children"] = child_blocks
+        
+        emit(results, "div", content, block_id)
+    
+    elif tag == "raw_block":
+        content = {"text": node.get("text", "")}
+        if "format" in node:
+            content["format"] = node["format"]
+        emit(results, "raw_block", content, block_id)
 
-    if t == "Div":
-        _process_div(c, results)
 
-    elif t == "Header":
-        level = c[0]
-        inlines = c[2]
-        results.append({
-            "type": "heading",
-            "content": {
-                "text": reconstruct(inlines),
-                "level": level,
-            },
-        })
-
-    elif t == "Para":
-        inlines = c
-        results.append({
-            "type": "paragraph",
-            "content": {
-                "text": reconstruct(inlines),
-            },
-        })
-
-    elif t == "BulletList":
-        # Each item is a list of block nodes; the first node is Plain or Para.
-        for item in c:
-            first = item[0]
-            inlines = first.get("c", [])
-            results.append({
-                "type": "list_item",
-                "content": {
-                    "text": reconstruct(inlines),
-                    "style": "unordered",
-                },
-            })
-
-    elif t == "OrderedList":
-        # items are in c[1]; c[0] is list attributes
-        for item in c[1]:
-            first = item[0]
-            inlines = first.get("c", [])
-            results.append({
-                "type": "list_item",
-                "content": {
-                    "text": reconstruct(inlines),
-                    "style": "ordered",
-                },
-            })
-
-    # All other node types: recurse into children if present, no block emitted.
-    elif isinstance(c, list):
-        for child in c:
-            if isinstance(child, dict):
-                _process_node(child, results)
-            elif isinstance(child, list):
-                _process_blocks(child, results)
+def _reconstruct_block_quote(child_blocks: list) -> str:
+    texts = []
+    for b in child_blocks:
+        c = b.get("content", {})
+        if "text" in c:
+            texts.append(c["text"])
+    return "\n\n".join(texts)
 
 
-def _process_div(c: list, results: list) -> None:
-    """
-    Handle a Div node.
+def _walk_list_item(item: dict, style: str, results: list):
+    """Handle a list_item which may contain multiple paragraphs or nested lists."""
+    attrs = item.get("attributes", {})
+    block_id = attrs.get("id")
+    children = item.get("children", [])
+    
+    # Simple case: single para child -> emit as one list_item block
+    if len(children) == 1 and children[0]["tag"] == "para":
+        text, links = reconstruct(children[0].get("children", []))
+        content = {"text": text, "style": style}
+        if links:
+            content["links"] = links
+        emit(results, "list_item", content, block_id)
+    else:
+        text_parts = []
+        all_links = []
+        for child in children:
+            if child["tag"] == "para":
+                t, l = reconstruct(child.get("children", []))
+                text_parts.append(t)
+                all_links.extend(l)
+            elif child["tag"] in ("bullet_list", "ordered_list"):
+                _walk_node(child, results)
+            else:
+                _walk_node(child, results)
+        
+        if text_parts:
+            content = {"text": "\n\n".join(text_parts), "style": style}
+            if all_links:
+                content["links"] = all_links
+            emit(results, "list_item", content, block_id)
 
-    c[0] is the attr triple: [id, classes, kvs]
-    c[1] is the list of child block nodes.
 
-    Two cases:
-      - Div with class "section": Pandoc's representation of a headed section.
-        The first child is a Header; remaining children are the section body.
-        Both are processed normally — the Div is transparent.
-      - Div with kv "wrapper": Pandoc's representation of a {#id}-attributed block.
-        Contains exactly one real block element. Process that element directly.
-      - Any other Div: recurse into children.
-    """
-    attrs = c[0]       # [id_str, classes_list, kvs_list]
-    children = c[1]    # list of block nodes
+def _walk_definition_item(node: dict, results: list):
+    attrs = node.get("attributes", {})
+    block_id = attrs.get("id")
+    term = ""
+    text_parts = []
+    all_links = []
+    for child in node.get("children", []):
+        if child["tag"] == "term":
+            term, l = reconstruct(child.get("children", []))
+            all_links.extend(l)
+        elif child["tag"] == "definition":
+            for def_child in child.get("children", []):
+                if def_child["tag"] == "para":
+                    t, l = reconstruct(def_child.get("children", []))
+                    text_parts.append(t)
+                    all_links.extend(l)
+                else:
+                    _walk_node(def_child, results)
+    
+    content = {"term": term, "text": "\n\n".join(text_parts)}
+    if all_links:
+        content["links"] = all_links
+    
+    emit(results, "definition_item", content, block_id)
 
-    classes = attrs[1]
-    kvs = {kv[0]: kv[1] for kv in attrs[2]}
 
-    # Both section Divs and wrapper Divs are transparent: just process children.
-    # The ID carried by the Div is not used in Test 00 (no explicit {#id} attrs).
-    _process_blocks(children, results)
+def _walk_table(node: dict, results: list):
+    attrs = node.get("attributes", {})
+    block_id = attrs.get("id")
+    rows = []
+    all_links = []
+    caption = ""
+    for child in node.get("children", []):
+        if child["tag"] == "caption":
+            if child.get("children"):
+                caption, l = reconstruct(child.get("children", []))
+                all_links.extend(l)
+        elif child["tag"] == "row":
+            row = {"head": child.get("head", False), "cells": []}
+            for cell in child.get("children", []):
+                text, links = reconstruct(cell.get("children", []))
+                row["cells"].append({
+                    "text": text,
+                    "align": cell.get("align", "default")
+                })
+                all_links.extend(links)
+            rows.append(row)
+    
+    content = {"rows": rows}
+    if caption:
+        content["caption"] = caption
+    if all_links:
+        content["links"] = all_links
+    
+    emit(results, "table", content, block_id)
