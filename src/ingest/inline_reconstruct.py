@@ -39,9 +39,9 @@ def _reconstruct_inner(inlines: list, links_acc: list) -> str:
         elif tag == "verbatim":
             parts.append("`" + node["text"] + "`")
         elif tag == "inline_math":
-            parts.append("$`" + node["text"] + "`$")
+            parts.append("$`" + node["text"] + "`")
         elif tag == "display_math":
-            parts.append("$$`" + node["text"] + "`$$")
+            parts.append("$$`" + node["text"] + "`")
         elif tag == "link":
             link_text = _reconstruct_inner(node.get("children", []), links_acc)
             dest = node.get("destination", "")

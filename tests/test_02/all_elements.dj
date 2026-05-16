@@ -2,7 +2,7 @@
 # All Djot Elements
 
 {#para-1}
-A paragraph with *bold*, _italic_, `inline code`, and $`e=mc^2`$ math.
+A paragraph with *bold*, _italic_, `inline code`, and $`e=mc^2` math.
 
 Also a [link](https://example.com) and an ![image](photo.png).
 
@@ -42,10 +42,10 @@ def hello():
 
 ## Definition List
 
-: Term one
+Term one
 : The definition of term one.
 
-: Term two
+Term two
 : The definition of term two.
 
 ## Table
