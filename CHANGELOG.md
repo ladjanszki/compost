@@ -1,5 +1,51 @@
 # CHANGELOG
 
+This file overarches versions. Entries below the `v0` marker describe the
+LadybugDB-centric architecture that `v0` closes out.
+
+## 2026-08-03 — Architecture pivot and repository cleanup
+
+**Tagged `v0-graph-architecture`.** Everything removed in this cleanup remains
+reachable there (`git show v0-graph-architecture:<path>`).
+
+The product changed shape after a workflow interview (`my-workflow.md`,
+`mvp-interview.md`). The new design is in `mvp-design.md`:
+
+- **`.dj` files in git are the source of truth.** LadybugDB is no longer
+  canonical storage. Any graph that returns will be a derived, disposable cache.
+- **Notes are immutable and human-written; wiki pages are agent-written.** The
+  human never writes the wiki, agents never write notes.
+- **Lineage replaces semantic extraction.** Every wiki block cites the note or
+  source block it derives from. Recorded at generation time rather than
+  extracted afterwards — free, exact, and it doubles as the anti-slop
+  mechanism: a block with nothing to cite is invalid.
+- **Deleted, not deferred:** Phase 05 (entity/relation extraction), Phase 07
+  (LLM-to-Cypher), temporal quadruplets, `Annotation` nodes, the Parquet event
+  log (git supersedes it), and HITL diff approval.
+- **Retained:** `architecture/delta_ingestion_and_block_versioning.md`. Its
+  content-hash and delta mechanisms carry over unchanged; the subject moves
+  from human-edited notes to agent-regenerated wiki pages.
+
+Removed 47 files across two commits (superseded docs, then the LadybugDB
+ingestion path). ~360 LOC of parsing and rendering carried forward.
+
+**Two defects found during the carry-over audit**, both on the MVP critical
+path and neither caught by the existing roundtrip test:
+
+1. `ast_walker.py` silently drops `task_list` / `task_list_item`. Djot supports
+   them natively (`checkbox: checked|unchecked`); the walker has no branch, so
+   todos vanish with no error.
+2. Nested list items are embedded as raw markup inside the parent block's text
+   instead of being emitted as addressable blocks, so they get no IDs and
+   cannot be referenced.
+
+`test_roundtrip.py` detects neither: a dropped element is absent from both
+sides of the comparison, and nested content survives as a string inside its
+parent. The Phase 03 claim of "no data loss, 31 block types" holds only for the
+properties the test actually compares.
+
+---
+
 ## Phase 02 & 03 — 2026-05-16
 
 Implemented Phase 02: Rewrote ingestion to bypass Pandoc and use native `djot.js`. Dropped JSONL intermediate representation to write blocks directly into Parquet files, which are immediately loaded into LadybugDB during `ingest_page()`. Extended Block schema with `language` field and added `LINKS_TO` relationships for explicit cross-links. Re-wrote `inline_reconstruct.py` and `ast_walker.py` against the native AST.
