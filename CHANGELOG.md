@@ -29,20 +29,27 @@ The product changed shape after a workflow interview (`my-workflow.md`,
 Removed 47 files across two commits (superseded docs, then the LadybugDB
 ingestion path). ~360 LOC of parsing and rendering carried forward.
 
-**Two defects found during the carry-over audit**, both on the MVP critical
-path and neither caught by the existing roundtrip test:
+**Defects found during the carry-over audit**, both on the MVP critical path
+and neither caught by the existing roundtrip test:
 
 1. `ast_walker.py` silently drops `task_list` / `task_list_item`. Djot supports
    them natively (`checkbox: checked|unchecked`); the walker has no branch, so
    todos vanish with no error.
-2. Nested list items are embedded as raw markup inside the parent block's text
-   instead of being emitted as addressable blocks, so they get no IDs and
-   cannot be referenced.
+2. Nested list items are emitted *before* their parent, and nesting depth is
+   discarded, so `- a` / `- b` (nested) yields `[b, a]` flattened to one level.
 
-`test_roundtrip.py` detects neither: a dropped element is absent from both
-sides of the comparison, and nested content survives as a string inside its
-parent. The Phase 03 claim of "no data loss, 31 block types" holds only for the
-properties the test actually compares.
+*Correction:* an earlier version of this entry claimed nested items were
+embedded as raw markup in the parent block. That was wrong. The confusion came
+from a probe written without blank lines — **djot requires a blank line before
+a nested list**; without one djot itself (not the walker) parses the child as
+lazy continuation text of the parent paragraph. That is spec behaviour and a
+*canonization* concern, since hand-written notes rarely include those blank
+lines. The walker defect is the ordering and depth loss described above.
+
+`test_roundtrip.py` detects none of it: a dropped element is absent from both
+sides of the comparison, and reordering survives re-parsing unchanged. The
+Phase 03 claim of "no data loss, 31 block types" holds only for the properties
+the test actually compares.
 
 ---
 

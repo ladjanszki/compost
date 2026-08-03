@@ -23,16 +23,16 @@ def emit(results: list, block_type: str, content: dict, block_id: str | None = N
     })
 
 
-def _walk_children(nodes: list, results: list):
+def _walk_children(nodes: list, results: list, depth: int = 0):
     for node in nodes:
-        _walk_node(node, results)
+        _walk_node(node, results, depth)
 
 
-def _walk_node(node: dict, results: list):
+def _walk_node(node: dict, results: list, depth: int = 0):
     tag = node.get("tag")
     attrs = node.get("attributes", {})
     block_id = attrs.get("id")  # explicit {#id} from source
-    
+
     if tag == "section":
         _walk_children(node.get("children", []), results)
     
@@ -78,12 +78,16 @@ def _walk_node(node: dict, results: list):
     
     elif tag == "bullet_list":
         for item in node.get("children", []):
-            _walk_list_item(item, "unordered", results)
-    
+            _walk_list_item(item, "unordered", results, depth)
+
     elif tag == "ordered_list":
         for item in node.get("children", []):
-            _walk_list_item(item, "ordered", results)
-    
+            _walk_list_item(item, "ordered", results, depth)
+
+    elif tag == "task_list":
+        for item in node.get("children", []):
+            _walk_list_item(item, "task", results, depth)
+
     elif tag == "definition_list":
         for item in node.get("children", []):
             _walk_definition_item(item, results)
@@ -125,37 +129,43 @@ def _reconstruct_block_quote(child_blocks: list) -> str:
     return "\n\n".join(texts)
 
 
-def _walk_list_item(item: dict, style: str, results: list):
-    """Handle a list_item which may contain multiple paragraphs or nested lists."""
+def _walk_list_item(item: dict, style: str, results: list, depth: int = 0):
+    """
+    Handle a list_item / task_list_item.
+
+    The item's own text is emitted first, then any nested blocks it contains,
+    so document order is preserved. Nested lists are walked at depth + 1 —
+    the depth is what lets the renderer reproduce the indentation.
+    """
     attrs = item.get("attributes", {})
     block_id = attrs.get("id")
     children = item.get("children", [])
-    
-    # Simple case: single para child -> emit as one list_item block
-    if len(children) == 1 and children[0]["tag"] == "para":
-        text, links = reconstruct(children[0].get("children", []))
-        content = {"text": text, "style": style}
-        if links:
-            content["links"] = links
-        emit(results, "list_item", content, block_id)
-    else:
-        text_parts = []
-        all_links = []
-        for child in children:
-            if child["tag"] == "para":
-                t, l = reconstruct(child.get("children", []))
-                text_parts.append(t)
-                all_links.extend(l)
-            elif child["tag"] in ("bullet_list", "ordered_list"):
-                _walk_node(child, results)
-            else:
-                _walk_node(child, results)
-        
-        if text_parts:
-            content = {"text": "\n\n".join(text_parts), "style": style}
-            if all_links:
-                content["links"] = all_links
-            emit(results, "list_item", content, block_id)
+
+    text_parts = []
+    all_links = []
+    deferred = []  # non-paragraph children, walked after this item is emitted
+
+    for child in children:
+        if child.get("tag") == "para":
+            t, l = reconstruct(child.get("children", []))
+            text_parts.append(t)
+            all_links.extend(l)
+        else:
+            deferred.append(child)
+
+    block_type = "task_item" if style == "task" else "list_item"
+    content = {"text": "\n\n".join(text_parts), "style": style}
+    if depth:
+        content["depth"] = depth
+    if block_type == "task_item":
+        content["checked"] = item.get("checkbox") == "checked"
+    if all_links:
+        content["links"] = all_links
+
+    emit(results, block_type, content, block_id)
+
+    for child in deferred:
+        _walk_node(child, results, depth + 1)
 
 
 def _walk_definition_item(node: dict, results: list):

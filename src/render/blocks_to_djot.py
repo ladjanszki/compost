@@ -10,26 +10,29 @@ def render_blocks(blocks: list[dict], options: dict = None) -> str:
     out = []
     include_ids = options.get("include_ids", True)
     
+    LIST_TYPES = ("list_item", "task_item")
+
     prev_type = None
     prev_style = None
-    
+    prev_depth = 0
+
     for i, block in enumerate(blocks):
         btype = block["type"]
         content = block.get("content", {})
         block_id = block.get("id")
-        
+        depth = content.get("depth", 0)
+
         # Spacing logic
         if i > 0:
-            if btype == "list_item" and prev_type == "list_item":
-                style = content.get("style")
-                if style == prev_style:
-                    # No blank line between items of the same list
-                    pass
-                else:
+            if btype in LIST_TYPES and prev_type in LIST_TYPES:
+                # Djot only nests a sublist if a blank line precedes it;
+                # without one the child is parsed as lazy continuation text
+                # of the parent paragraph. Same-level siblings need no blank.
+                if depth != prev_depth or content.get("style") != prev_style:
                     out.append("")
             else:
                 out.append("")
-                
+    
         if include_ids and block_id:
             out.append(f"{{#{block_id}}}")
             
@@ -55,20 +58,27 @@ def render_blocks(blocks: list[dict], options: dict = None) -> str:
             lines = text.split("\n")
             out.append("\n".join(f"> {line}" if line else ">" for line in lines))
             
-        elif btype == "list_item":
+        elif btype in ("list_item", "task_item"):
             style = content.get("style", "unordered")
             text = content.get("text", "")
-            prefix = "- " if style == "unordered" else "1. "
+            if btype == "task_item":
+                prefix = "- [x] " if content.get("checked") else "- [ ] "
+            elif style == "ordered":
+                prefix = "1. "
+            else:
+                prefix = "- "
+            pad = "  " * depth
             lines = text.split("\n")
             indented = []
             for i_line, line in enumerate(lines):
                 if i_line == 0:
-                    indented.append(f"{prefix}{line}")
+                    indented.append(f"{pad}{prefix}{line}")
                 else:
-                    # Indent subsequent lines in the list item
-                    indented.append(f"  {line}" if line else "  ")
+                    # Continuation lines align with the text after the marker
+                    cont = pad + " " * len(prefix)
+                    indented.append(f"{cont}{line}" if line else cont.rstrip())
             out.append("\n".join(indented))
-            
+
         elif btype == "definition_item":
             term = content.get("term", "")
             text = content.get("text", "")
@@ -131,7 +141,8 @@ def render_blocks(blocks: list[dict], options: dict = None) -> str:
                 out.append(f"^ {caption}")
                 
         prev_type = btype
-        if btype == "list_item":
+        prev_depth = depth
+        if btype in LIST_TYPES:
             prev_style = content.get("style")
         else:
             prev_style = None
