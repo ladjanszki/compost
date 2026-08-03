@@ -70,9 +70,8 @@ nvim on it. Plain prose. No required structure.
 **submit** — happens on buffer close / nvim quit. **Not on save** — saving must stay free, or every
 `:w` mid-thought fires an agent.
 
-**canonize** — deterministic. Parse the note, assign a UUIDv7 to every block that lacks one, write
-the IDs back into the file, normalize to valid djot. The pre-canonization version is preserved by
-git; no second copy is stored. After this the file is frozen.
+**canonize** — deterministic, see §4.1. The pre-canonization version is preserved by git; no second
+copy is stored. After this the file is frozen.
 
 **generate** — an agent reads the note, decides which wiki pages it affects, and rewrites them.
 Every emitted block carries lineage. Unchanged blocks keep their IDs (see §7).
@@ -82,6 +81,46 @@ copies a block's `{#id}` to the clipboard on click.
 
 **read** — served on localhost. Read-only. This is the surface that matters most; if the wiki isn't
 worth reading, nothing else saves the project.
+
+### 4.1 Canonization
+
+**Notes are authored in Markdown and stored as Djot.** The user never writes djot. Markdown allows
+lazy list nesting (`- a` / `  - b` with no blank line between); djot does not, and would parse the
+child as continuation text of the parent paragraph. Pandoc resolves this, so no hand-written
+normalizer is needed and djot stays a purely internal format.
+
+```
+note.md
+  → pandoc -f markdown-smart -t djot --wrap=preserve
+  → restore checkbox markers:  "☐ " → "[ ] ",  "☒ " → "[x] "
+  → djot.js --to ast
+  → inject UUIDv7 ids + SHA-256 hashes
+  → djot.js --from ast --to djot
+  → notes/<uuid>.dj — frozen
+```
+
+Every flag was established by testing; each one prevents a silent rewrite of the user's text:
+
+| Flag | Without it |
+|---|---|
+| `-f markdown-smart` | Apostrophes become curly quotes — `don't` → `don't`. |
+| `--wrap=preserve` | Paragraphs are reflowed to a different width, destroying the line breaks that carry the writing's rhythm. |
+| checkbox restore | Pandoc's djot writer has no task-list support, so `- [ ]` becomes a literal `☐` and stops being a task. No pandoc flag avoids this (`-task_lists` yields `\[ \]`, equally inert). |
+
+The checkbox substitution is the only custom logic in the pipeline. `☐` is used as the marker
+rather than `\[ \]` because the user would never type it, so it cannot collide with prose.
+
+**Verified properties**, against `my-workflow.md` (15 blocks) and `mvp-interview.md` (142 blocks):
+
+- Zero words lost in either file.
+- Line breaks preserved inside paragraph blocks: `'so how do I work.\nIn a lot of ways.'` is one
+  block containing the author's newline. Paragraph-level IDs and the original rhythm coexist; no
+  line-level IDs are needed.
+- `{#id}` references survive. Pandoc escapes them to `\{#id\}` on disk, but they parse back to the
+  literal string, inline or standalone, including the compound `{#id:hash}` form.
+
+**Open caveat:** injecting an id on a `list_item` AST node did not survive `--from ast --to djot`;
+only the id on the paragraph inside it did. Needs resolving before list items can be referenced.
 
 ---
 
@@ -166,7 +205,7 @@ is no semantic hierarchy on disk. Structure lives in links and index pages, not 
 ## 9. In scope for v1
 
 - CLI: create-note, submit, generate, render, serve
-- Canonization: prose → valid djot with block IDs, written back into the file
+- Canonization per §4.1: markdown → djot via pandoc, block IDs injected, file frozen
 - Persistent djot parser worker (`npx` cold start is ~100–300 ms/file and would otherwise dominate)
 - Agent generation of wiki pages with enforced lineage
 - Lineage validator (rejects uncited blocks)
@@ -204,7 +243,7 @@ Each of these is agreed in principle; only the timing is deferred.
 | Item | Note |
 |---|---|
 | **Context assembly** | "Give me everything about topic T." Expected to work by walking the wiki hierarchy from an index page and pruning. The pruning strategy is undesigned. |
-| **Importing foreign markdown** | Chat exports (`.md` from a third-party plugin, or `.json` from captured API traffic). ~10–20 conversations for one publication-candidate topic. Needs original-preservation with file-level provenance — a different tier from hand-written notes. |
+| **Importing foreign markdown** | Chat exports (`.md` from a third-party plugin, or `.json` from captured API traffic). ~10–20 conversations for one publication-candidate topic. Needs original-preservation with file-level provenance — a different tier from hand-written notes. Note that the *conversion* half is no longer deferred: pandoc markdown → djot is on the core path per §4.1. What remains deferred is provenance for foreign material. |
 | **`context-harvest/`** | Leave in place. Do not export, do not delete. May be deleted entirely once the wiki works. |
 | **Archiving source content** | Saving the actual page/video/image, not just the URL. |
 | **Browser extension** | Current flow (extension copies `[title](url)`, paste into a note) is good enough. |
@@ -230,9 +269,9 @@ little means a stale wiki. Nothing in this document answers it.
 **Q2 — What is the unit of regeneration?**
 One page, a page and its index, or a transitive neighbourhood? Interacts directly with Q1.
 
-**Q3 — Reference syntax in prose.**
-Bare `{#019abc}` inline? A markdown link with fixed text (`[Ref](#019abc)`)? Must be trivial to
-paste and unambiguous to parse.
+**Q3 — Reference syntax in prose.** *Resolved 2026-08-03.*
+Plain `{#019abc}` works, inline or on its own line, as does the compound `{#019abc:<hash>}`.
+Verified to survive markdown → djot → parse intact. No new syntax needed.
 
 **Q4 — Is the paragraph the right block unit?**
 Agreed as the default, but the user's prose sometimes packs several thoughts into one paragraph and
