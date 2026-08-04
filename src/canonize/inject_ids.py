@@ -15,6 +15,7 @@ items there is exactly one form djot accepts:
 `{#id}` on the line *before* a list attaches to the list container, not the
 item, and the inline form `- {#id} item one` is silently discarded.
 """
+import re
 from dataclasses import dataclass
 
 import uuid6
@@ -137,6 +138,26 @@ def apply_insertions(djot_text: str, insertions: list[Insertion]) -> str:
     return "\n".join(lines)
 
 
+# A list item's id only reaches the HTML if the list is *loose*. In a tight
+# list djot unwraps the item's paragraph on render and discards the id with it,
+# leaving every list item and todo unclickable.
+#
+# A blank line after the id line makes the item loose. This is done per item
+# rather than between items because a single-item list has no sibling to
+# separate from. Blocks parse identically either way — see tests/test_canonize.
+_ID_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)]) (?:\[[ x]\] )?\{#[0-9a-f-]{36}\}\s*$")
+
+
+def loosen(djot_text: str) -> str:
+    """Force list items loose so their ids survive into HTML."""
+    out = []
+    for line in djot_text.split("\n"):
+        out.append(line)
+        if _ID_LINE.match(line):
+            out.append("")
+    return "\n".join(out)
+
+
 def inject_ids(djot_text: str) -> str:
     """Assign an id to every referenceable block and write them into the text."""
-    return apply_insertions(djot_text, plan_insertions(djot_text))
+    return loosen(apply_insertions(djot_text, plan_insertions(djot_text)))
