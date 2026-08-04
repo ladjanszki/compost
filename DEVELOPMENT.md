@@ -20,11 +20,46 @@ Three ideas carry everything:
    UUIDv7. The whole product is that these ids are stable, copyable, and
    resolvable.
 
-The consequence worth internalising: **anything computed at render time works
-retroactively on old notes; anything written into a `.dj` at canonization time
-does not.** Backlinks could be added later and immediately worked on existing
-notes. `loosen()` could not — notes canonized without it are permanently
-degraded. Ask which side a change is on before building it.
+---
+
+## The most important rule in this codebase
+
+**Render-time changes are backward compatible. Canonization-time changes are
+not.** Ask which side a change falls on *before* building it.
+
+A **render-time** change reads the corpus and produces output. It applies to
+every note ever written, for free, the next time you run `kg render`. Backlinks
+were added after notes already existed and immediately worked on all of them.
+Views, styling, click behaviour, new indexes — all free.
+
+A **canonization-time** change alters what gets written into a `.dj`. Notes are
+immutable, so notes canonized under the old behaviour keep it forever.
+`loosen()` was this kind: without it, every list item and todo was unclickable,
+and no amount of later rendering could recover it.
+
+### Recovering from a canonization change
+
+`raw/<uuid>.md` exists precisely so this is survivable. But re-canonizing is
+not free, and the cost depends on what changed:
+
+**Serialization-only** — whitespace, attribute placement, anything that does
+not alter which blocks exist. Block ids and content are unchanged, so notes can
+be migrated in place and every existing reference still resolves. `loosen()` is
+in this class: re-running it over `notes/*.dj` would have been safe.
+
+**Structural** — anything that changes block boundaries or what counts as a
+block (splitting paragraphs differently, treating a construct as one block
+instead of two). Re-canonizing `raw/` produces a *different set of blocks*, and
+`canonize_text()` assigns fresh UUIDv7s. **Every existing `{#uuid:hash}`
+reference breaks.** Recovering means writing an explicit migration that maps
+old blocks to new ones and carries the ids across — possible because `raw/` is
+kept, but real work, and impossible where blocks genuinely split or merged.
+
+So: `raw/` makes canonization changes *recoverable*, not *cheap*. Treat any
+change to block boundaries as a one-way door and get it right before the corpus
+grows.
+
+---
 
 ---
 
