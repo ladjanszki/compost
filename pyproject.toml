@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kg"
+version = "0.1.0"
+description = "Notes to an addressable, agent-writable wiki"
+requires-python = ">=3.12"
+dependencies = ["uuid6"]
+
+# System dependencies, not installable from PyPI:
+#   pandoc >= 3.0   markdown -> djot  (declared in environment.yml)
+#   node >= 18      the djot.js reference parser, via npx
+
+[project.scripts]
+kg = "src.cli:main"
+
+[tool.setuptools]
+packages = ["src", "src.canonize", "src.ingest", "src.render"]

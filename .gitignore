@@ -11,3 +11,7 @@ __pycache__/
 
 # Temporary archive — local only
 tmp/
+site/
+.DS_Store
+*.egg-info/
+build/
