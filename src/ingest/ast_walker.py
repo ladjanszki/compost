@@ -34,7 +34,15 @@ def _walk_node(node: dict, results: list, depth: int = 0):
     block_id = attrs.get("id")  # explicit {#id} from source
 
     if tag == "section":
-        _walk_children(node.get("children", []), results)
+        # A `{#id}` written before a heading attaches to the enclosing section,
+        # never to the heading itself — that is djot's own convention for
+        # heading ids. Push it down so the heading block carries it.
+        children = node.get("children", [])
+        section_id = attrs.get("id")
+        if section_id and children and children[0].get("tag") == "heading":
+            head_attrs = children[0].setdefault("attributes", {})
+            head_attrs.setdefault("id", section_id)
+        _walk_children(children, results)
     
     elif tag == "heading":
         text, links = reconstruct(node.get("children", []))
@@ -140,6 +148,14 @@ def _walk_list_item(item: dict, style: str, results: list, depth: int = 0):
     attrs = item.get("attributes", {})
     block_id = attrs.get("id")
     children = item.get("children", [])
+
+    # Djot accepts a list item's `{#id}` only on the item's first paragraph
+    # (`- {#id}` / newline / `  text`); an id written before the list attaches
+    # to the list container instead. Treat the paragraph's id as the item's.
+    if not block_id:
+        first_para = next((c for c in children if c.get("tag") == "para"), None)
+        if first_para:
+            block_id = (first_para.get("attributes") or {}).get("id")
 
     text_parts = []
     all_links = []
