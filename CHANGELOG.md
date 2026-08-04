@@ -3,6 +3,42 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.1 — 2026-08-04 — the mechanical loop
+
+The write → submit → canonize → read → reference → submit loop works end to
+end, with no LLM anywhere in it. Wiki generation is still unbuilt.
+
+**New**
+
+- `kg` on PATH via `pip install -e .`, working from any directory. The base is
+  found via `--root`, `$KG_HOME`, or a `.kg` marker in any parent.
+- `kg init` creates a base anywhere, which defers the tool/data split to a
+  runtime choice rather than an architectural commitment.
+- `kg new` opens `$EDITOR` and submits on exit — never on save, so saving
+  mid-thought stays free.
+- Static site with click-to-copy. Click a block for `{#uuid:hash}`,
+  shift-click for `{#uuid:hash+++}`. Holding Shift while hovering highlights
+  the subtree, so what will be copied is visible before committing.
+- Backlinks: a note referencing a block appears as "Referenced by" on the note
+  containing it. Computed at render time, so it works retroactively.
+- Reverse-chronological index, dated from the UUIDv7 timestamp.
+
+**Fixed — correctness**
+
+- `loosen()` moved into canonization. Djot drops a list item's id in HTML
+  unless the list is loose, so every list item and todo was unaddressable.
+  Since notes are immutable this could not have been repaired later: notes
+  canonized before the fix would have been permanently degraded.
+- Backlink scanning reads parsed block text rather than the raw file. Pandoc
+  escapes references on disk as `\{#uuid:hash\}`, so scanning the file found
+  nothing.
+
+**Docs**
+
+- `README.md` restored — the repo had no entry point since the cleanup.
+- `DEVELOPMENT.md` added: architecture, the non-obvious pandoc and djot
+  behaviours, the sabotage-verification practice, and where the next work is.
+
 ## 2026-08-03 — Architecture pivot and repository cleanup
 
 **Tagged `v0-graph-architecture`.** Everything removed in this cleanup remains

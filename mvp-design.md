@@ -1,6 +1,6 @@
 # MVP Design — Notes-to-Wiki with Lineage
 
-Status: agreed as of 2026-08-03. Derived from `my-workflow.md` and `mvp-interview.md`.
+Status: v0.1 implemented 2026-08-04; agreed 2026-08-03. Derived from `my-workflow.md` and `mvp-interview.md`.
 This document supersedes `README.md` and `architecture/phase_0*.md` for everything it covers.
 
 ---
@@ -102,6 +102,7 @@ raw/<uuid>.md
   → restore checkbox markers:  "☐ " → "[ ] ",  "☒ " → "[x] "
   → djot.js --to ast --sourcepos
   → insert {#uuid} lines as text, bottom-up
+  → loosen: blank line after each list item's id line
   → notes/<uuid>.dj — frozen
 ```
 
@@ -125,6 +126,12 @@ Two djot facts the implementation depends on, neither documented anywhere obviou
 - A list item's id is only accepted on the item's **first paragraph** (`- {#id}` / newline /
   `  text`). An id before the list attaches to the list container; the inline form is discarded
   silently. The walker falls back to the paragraph's id.
+- A list item's id is **dropped in HTML unless the list is loose** — djot unwraps the item's
+  paragraph on render and the id goes with it. `loosen()` adds a blank line after each id line;
+  doing it between items would miss single-item lists, which have no sibling. Blocks parse
+  identically either way.
+- References survive on disk **escaped** (`\{#uuid:hash\}`). Parsing unescapes them, so anything
+  scanning for references must read parsed block text, never the raw file.
 
 The checkbox substitution is the only custom logic in the pipeline. `☐` is used as the marker
 rather than `\[ \]` because the user would never type it, so it cannot collide with prose.
@@ -257,17 +264,25 @@ deterministic and testable, and it delivers capture, addressability and re-entry
 API call exists.
 
 ```
-kg new       create raw/<uuid>.md, open $EDITOR
+kg init      create a knowledge base (defers the tool/data split to runtime)
+kg new       create raw/<uuid>.md, open $EDITOR, submit on exit
 kg submit    canonize → notes/<uuid>.dj, frozen
 kg render    notes + views → site/, click-to-copy (block and subtree)
 kg serve     render, then serve site/ statically on localhost
 ```
 
+*Implemented in v0.1.* The base is found via `--root`, `$KG_HOME`, or a `.kg` marker in any parent
+directory, so `kg` runs from anywhere.
+
 **Views** are functions over the corpus — always current, regenerated on every render, free:
 
-- all notes, reverse-chronological
-- all open todos (the "what was I in the middle of" view)
-- backlinks for a block — which is just a view scoped to one id
+- all notes, reverse-chronological *(v0.1)*
+- backlinks — which notes reference a block *(v0.1)*
+- all open todos, the "what was I in the middle of" view *(deferred to v0.2)*
+
+Views are render-time functions, so adding one works retroactively on every note already written.
+Anything written into a `.dj` at canonization does not — that distinction decides what must ship
+before the first real note and what can wait.
 
 These are distinct from the **curated index pages** described in §12: a view is computed, an index
 page is agent-written wiki content. Both feel like entry points, which is why both get called
