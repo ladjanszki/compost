@@ -30,7 +30,8 @@ These must never break. Everything else is negotiable.
    graph — is derived and disposable.
 2. **Notes are immutable.** Once submitted and canonized, a note file never changes again.
 3. **Humans write notes. Agents write the wiki.** Never the reverse. The filesystem enforces it.
-4. **Every wiki block cites its sources.** A block with empty lineage is invalid and is rejected.
+4. **Every wiki block cites its sources.** A block with empty lineage is invalid. Whether that
+   means rejected at write time or flagged at render time is open — see §13 Q3b.
 5. **Block IDs are stable.** A block ID, once assigned, refers to that block forever.
 
 Invariant 4 is doing double duty — see §5.
@@ -69,20 +70,21 @@ write (nvim)  →  submit  →  canonize  →  generate  →  render  →  read 
                                           wiki        to-copy    localhost
 ```
 
-**write** — a CLI command creates `notes/<uuid>.dj` in a fixed location (never in `pwd`) and opens
-nvim on it. Plain prose. No required structure.
+**write** — a CLI command creates `raw/<uuid>.md` in a fixed location (never in `pwd`) and opens
+nvim on it. Plain Markdown prose. No required structure.
 
 **submit** — happens on buffer close / nvim quit. **Not on save** — saving must stay free, or every
 `:w` mid-thought fires an agent.
 
-**canonize** — deterministic, see §4.1. The pre-canonization version is preserved by git; no second
-copy is stored. After this the file is frozen.
+**canonize** — deterministic, see §4.1. Produces `notes/<uuid>.dj`; the markdown draft stays in
+`raw/<uuid>.md` under the same uuid. Both are frozen from this point.
 
 **generate** — an agent reads the note, decides which wiki pages it affects, and rewrites them.
 Every emitted block carries lineage. Unchanged blocks keep their IDs (see §7).
 
-**render** — `wiki/*.dj` → HTML via pandoc, deterministically, with CSS and a small JS snippet that
-copies a block's `{#id}` to the clipboard on click.
+**render** — `.dj` → HTML via pandoc, deterministically, with CSS and a small JS snippet that
+copies a block's pinned reference (`{#uuid:hash}`, or `{#uuid:hash+++}` for its subtree) to the
+clipboard on click. In v0 this renders notes; there is no wiki yet.
 
 **read** — served on localhost. Read-only. This is the surface that matters most; if the wiki isn't
 worth reading, nothing else saves the project.
@@ -95,22 +97,34 @@ child as continuation text of the parent paragraph. Pandoc resolves this, so no 
 normalizer is needed and djot stays a purely internal format.
 
 ```
-note.md
-  → pandoc -f markdown-smart -t djot --wrap=preserve
+raw/<uuid>.md
+  → pandoc -f markdown-smart-auto_identifiers -t djot --wrap=preserve
   → restore checkbox markers:  "☐ " → "[ ] ",  "☒ " → "[x] "
-  → djot.js --to ast
-  → inject UUIDv7 ids + SHA-256 hashes
-  → djot.js --from ast --to djot
+  → djot.js --to ast --sourcepos
+  → insert {#uuid} lines as text, bottom-up
   → notes/<uuid>.dj — frozen
 ```
+
+Ids are inserted **as text**, not round-tripped through the AST. The file is exactly pandoc's
+output plus inserted id lines, so the diff is additive and reviewable — this is the one moment the
+system touches something the author wrote. Implemented in `src/canonize/`.
 
 Every flag was established by testing; each one prevents a silent rewrite of the user's text:
 
 | Flag | Without it |
 |---|---|
-| `-f markdown-smart` | Apostrophes become curly quotes — `don't` → `don't`. |
+| `-smart` | Apostrophes become curly quotes — `don't` → `don't`. |
+| `-auto_identifiers` | Pandoc leaves its own slug attribute (`{#a-heading}`) in the file. Our uuid still wins semantically, so this is cleanliness — but slugs derive from heading text and invite referencing an id that moves. |
 | `--wrap=preserve` | Paragraphs are reflowed to a different width, destroying the line breaks that carry the writing's rhythm. |
 | checkbox restore | Pandoc's djot writer has no task-list support, so `- [ ]` becomes a literal `☐` and stops being a task. No pandoc flag avoids this (`-task_lists` yields `\[ \]`, equally inert). |
+
+Two djot facts the implementation depends on, neither documented anywhere obvious:
+
+- A `{#id}` written before a heading attaches to the enclosing **section**, never the heading. The
+  walker pushes it down.
+- A list item's id is only accepted on the item's **first paragraph** (`- {#id}` / newline /
+  `  text`). An id before the list attaches to the list container; the inline form is discarded
+  silently. The walker falls back to the paragraph's id.
 
 The checkbox substitution is the only custom logic in the pipeline. `☐` is used as the marker
 rather than `\[ \]` because the user would never type it, so it cannot collide with prose.
@@ -124,8 +138,8 @@ rather than `\[ \]` because the user would never type it, so it cannot collide w
 - `{#id}` references survive. Pandoc escapes them to `\{#id\}` on disk, but they parse back to the
   literal string, inline or standalone, including the compound `{#id:hash}` form.
 
-**Open caveat:** injecting an id on a `list_item` AST node did not survive `--from ast --to djot`;
-only the id on the paragraph inside it did. Needs resolving before list items can be referenced.
+Every guarantee above is sabotage-verified in `tests/test_canonize/`: re-introducing each defect
+fails the suite.
 
 ---
 
@@ -150,8 +164,8 @@ review gate. No HITL diff approval — approval gates are friction, and friction
 **Anti-slop — the important one.** The stated dealbreaker is a 3-sentence note becoming a 5-page
 article of general knowledge, diluting the user's own thinking. This looks like a prompt-tuning
 problem, which would be unfixable. It isn't: **if every block must cite a note or source, the agent
-structurally cannot emit unsourced general knowledge** — it has nothing to cite. A validator rejects
-blocks with empty lineage.
+structurally cannot emit unsourced general knowledge** — it has nothing to cite. Blocks with empty
+lineage are invalid (§13 Q3b covers whether that is enforced at write or at render).
 
 When general knowledge *is* wanted ("add a section for the lineup with past members"), that
 instruction is itself a note, and the generated blocks cite it. One rule handles both cases, and
