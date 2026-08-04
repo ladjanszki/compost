@@ -45,6 +45,7 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 
 ## v0.2 — small, all render-time or internal
 
+- [ ] **Dangling references** — see below. Found by dogfooding v0.1
 - [ ] **Open todos view** — "what was I in the middle of". Block type is
       already recorded; render-time, so it works on existing notes
 - [ ] `pytest` wiring and a runner for all three suites; no CI yet
@@ -95,6 +96,57 @@ The point where an LLM enters the system. Nothing below is deterministic.
 - [ ] Mobile / remote serving
 - [ ] Tags — may never be needed; hierarchy plus agent-written index pages may
       cover it
+
+---
+
+## Dangling references
+
+Found by submitting this repo's own docs into a knowledge base: `kg render`
+reported *"1 referenced"* for the example reference in `README.md`, whose
+target uuid exists in no note. The backlink index happily created an entry for
+a block that was never submitted. Nothing warned, nothing rendered, nothing
+broke — the reference simply pointed nowhere, silently.
+
+**Why it matters.** Notes are immutable, so a bad reference can never be
+corrected in place; it stays in the corpus forever. Without detection you only
+discover a typo by going to look for one, and the count can only grow.
+
+### The four ways a reference can dangle
+
+1. **Target never existed** — a typo, or a reference pasted from somewhere
+   else. The uuid appears nowhere in the corpus. *Possible today.*
+2. **Hash mismatch** — the uuid resolves but the content hash does not. Cannot
+   happen while every block lives in an immutable note. *Becomes real in v1,
+   when wiki pages are mutable.*
+3. **Target file removed** — notes are immutable but a file can still be
+   deleted from the repo. *Possible today.*
+4. **Regeneration orphaned it** — a wiki page was rewritten and unchanged
+   blocks were not given their old ids back. *v1; prevented by the
+   id-preserving regeneration item above, and the reason it is not optional.*
+
+### Options
+
+- **`kg check`** — scan every note's references and report each dangling one
+  with its kind, source note, and target. Render-time, so it works
+  retroactively on the whole corpus. Report-only by default; an exit code for
+  scripting. This is the cheap first move.
+- **Show them while reading** — style dangling references distinctly in the
+  HTML. Better than a separate command for the common case, because you notice
+  without having to think to look. Both are worth having; they catch different
+  moments.
+- **Warn at submit** — check a note's references as it is canonized and print a
+  warning. Must *not* block: notes are immutable, and refusing a submission
+  over a typo would lose the writing. Warning only.
+- **Resolve case 2 from history (v1)** — a hash that no longer matches the
+  current block is not an error, it is a reference to an *earlier version*.
+  Resolve it from git rather than reporting it broken. This is the annotation
+  durability guarantee in
+  `architecture/delta_ingestion_and_block_versioning.md` §4.6, and the reason
+  references are pinned in the first place.
+
+Case 2 is the one to keep in mind: once the wiki is mutable, the *majority* of
+"dangling" references will be perfectly good references to superseded content.
+A checker that cannot tell the difference will be noise, and noise gets muted.
 
 ---
 
