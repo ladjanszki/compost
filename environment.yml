@@ -3,8 +3,13 @@ channels:
   - conda-forge
 dependencies:
   - python=3.12
+  # Markdown -> Djot conversion in the canonize pipeline. Declared here rather
+  # than assumed on the system PATH: pandoc installed in conda base is not
+  # visible to `conda run -n knowledge-graph`.
+  - pandoc>=3.0
   - pip
   - pip:
     - uuid6
-    - real-ladybug==0.15.3
-    - pyarrow
+
+# Also required, as system dependencies:
+#   node >= 18 and npx  — for the djot.js reference parser (@djot/djot)
