@@ -14,6 +14,7 @@ Two djot behaviours this has to work around, both found by testing:
     handles that (see canonize/inject_ids.loosen); if it ever regresses, the
     per-page addressability count reports it.
 """
+import datetime
 import html as html_mod
 import re
 import subprocess
@@ -96,15 +97,33 @@ def load_notes(store: Store) -> list[dict]:
         # An artifact is named, so its filename is its title. A conversation is
         # a uuid, so the first heading — or failing that the first block — is
         # the only human-readable handle on it.
-        if kind == "artifact":
+        # A link should say what it points at. Prefer the document's own first
+        # heading; fall back to the filename for an artifact (which is chosen,
+        # so it means something) and to the opening words for a conversation
+        # (whose name is a uuid, which means nothing).
+        heading = next((b["content"]["text"] for b in blocks
+                        if b["type"] == "heading"), "")
+        if heading:
+            title = heading
+        elif kind == "artifact":
             title = path.stem.replace("-", " ")
         else:
-            title = next(
-                (b["content"]["text"] for b in blocks if b["type"] == "heading"),
-                next((b["content"].get("text", "") for b in blocks), "") or path.stem,
-            )
-        turns = sum(1 for b in blocks
-                    if b["type"] == "div" and "turn" in (b["content"].get("classes") or []))
+            title = next((b["content"].get("text", "") for b in blocks
+                          if b["content"].get("text")), "") or path.stem
+
+        turn_blocks = [b for b in blocks if b["type"] == "div"
+                       and "turn" in (b["content"].get("classes") or [])]
+        turns = len(turn_blocks)
+        # An imported conversation carries the real time of its first turn;
+        # its filename cannot supply one.
+        stamp = next((((b["content"].get("attrs") or {}).get("time") or "")[:16]
+                      for b in turn_blocks
+                      if (b["content"].get("attrs") or {}).get("time")), "")
+        who = []
+        for b in turn_blocks:
+            a = (b["content"].get("attrs") or {}).get("author")
+            if a and a not in who:
+                who.append(a)
         notes.append({
             "id": path.stem,
             "kind": kind,
@@ -112,6 +131,11 @@ def load_notes(store: Store) -> list[dict]:
             "djot": djot,
             "blocks": blocks,
             "turns": turns,
+            "authors": who,
+            "when": stamp.replace("T", " ") or _when(path.stem)
+                    or datetime.datetime.fromtimestamp(
+                        path.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+            "words": sum(len(b["content"].get("text", "").split()) for b in blocks),
             "title": " ".join(title.split())[:80],
         })
     return notes
@@ -161,7 +185,9 @@ CSS = """
   .backlinks h2 {font-size: 14px; text-transform: uppercase; letter-spacing: .05em;
         color: #7a8ba6;}
   .noteindex {list-style: none; padding: 0;}
-  .noteindex li {padding: .35rem 0; border-bottom: 1px solid #f0f2f6;}
+  .noteindex li {padding: .5rem 0; border-bottom: 1px solid #f0f2f6;}
+  .noteindex .meta {display: block; color: #9aa7bb; font-size: 12px;
+        font-family: monospace; margin-top: .1rem;}
   .noteindex .when {color: #9aa7bb; font-size: 12px; font-family: monospace;}
   .kind {font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
         color: #9aa7bb;}
@@ -267,8 +293,17 @@ PAGE = """<!DOCTYPE html>
 
 
 def _when(note_id: str) -> str:
-    """UUIDv7 embeds a millisecond timestamp — no separate date field needed."""
+    """
+    UUIDv7 embeds a millisecond timestamp — no separate date field needed.
+
+    The version nibble is checked. An imported session is named after its own
+    log, which is a UUIDv4, and decoding its first 12 hex digits as a timestamp
+    produced a date in the year 4527 before this guard existed.
+    """
     import datetime
+    parts = note_id.split("-")
+    if len(parts) != 5 or not parts[2].startswith("7"):
+        return ""
     try:
         ms = int(note_id.replace("-", "")[:12], 16)
         return datetime.datetime.fromtimestamp(
@@ -308,14 +343,22 @@ def render(store: Store) -> dict:
             encoding="utf-8")
 
     def listing(rows):
-        return "".join(
-            f'<li><span class="when">{_when(n["id"])}</span> '
-            f'<a href="{n["id"]}.html">{html_mod.escape(n["title"]) or n["id"]}</a>'
-            f' <span class="when">'
-            f'{str(n["turns"]) + " turns, " if n["turns"] else ""}'
-            f'{len(n["blocks"])} blocks</span></li>'
-            for n in rows
-        )
+        out = []
+        for n in rows:
+            facts = []
+            if n["turns"]:
+                facts.append(f'{n["turns"]} turns')
+            if n["authors"]:
+                facts.append(" · ".join(n["authors"]))
+            facts.append(f'{len(n["blocks"])} blocks')
+            facts.append(f'{n["words"]:,} words'.replace(",", " "))
+            when = n["when"]
+            out.append(
+                f'<li><a href="{n["id"]}.html">'
+                f'{html_mod.escape(n["title"]) or n["id"]}</a>'
+                f'<span class="meta">{when + " · " if when else ""}'
+                f'{" · ".join(facts)}</span></li>')
+        return "".join(out)
 
     convs = [n for n in notes if n["kind"] == "conversation"]
     arts = [n for n in notes if n["kind"] == "artifact"]
