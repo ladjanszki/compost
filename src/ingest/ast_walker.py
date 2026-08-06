@@ -107,19 +107,27 @@ def _walk_node(node: dict, results: list, depth: int = 0):
         emit(results, "thematic_break", {}, block_id)
     
     elif tag == "div":
-        # Transparent: recurse, but capture the div's ID for the first child
-        # For now we emit the div as a block if it's not transparent in some contexts
-        # Wait, the spec says "Div and Raw... 1 div ... 1 raw_block". It wants div as a block.
-        # Let's emit a div block if requested, or just walk children. The verify test expects 'div'.
+        # A div is a container, not a leaf: it emits itself and then its children
+        # are flattened into the same list, exactly like a section. Nesting the
+        # children inside content instead would make them invisible to every
+        # consumer of the block list — no hash, no backlinks, no addressability —
+        # even though inject_ids assigns them ids. That disagreement between the
+        # two halves of the pipeline was a real bug.
+        #
+        # Containment is *derived*, not stored as parent/child edges (see
+        # mvp-design.md §6.1): `contains` is how many of the following blocks
+        # belong to this div, which is all a renderer or a subtree copy needs.
         content = {}
         if "class" in attrs:
             content["classes"] = attrs["class"].split()
-            
-        child_blocks = []
-        _walk_children(node.get("children", []), child_blocks)
-        content["children"] = child_blocks
-        
+        extra = {k: v for k, v in attrs.items() if k not in ("id", "class")}
+        if extra:
+            content["attrs"] = extra
+
+        start = len(results)
         emit(results, "div", content, block_id)
+        _walk_children(node.get("children", []), results, depth)
+        content["contains"] = len(results) - start - 1
     
     elif tag == "raw_block":
         content = {"text": node.get("text", "")}

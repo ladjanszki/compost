@@ -15,8 +15,11 @@ def render_blocks(blocks: list[dict], options: dict = None) -> str:
     prev_type = None
     prev_style = None
     prev_depth = 0
+    skip_until = 0        # blocks already emitted as a div's flattened children
 
     for i, block in enumerate(blocks):
+        if i < skip_until:
+            continue
         btype = block["type"]
         content = block.get("content", {})
         block_id = block.get("id")
@@ -97,15 +100,19 @@ def render_blocks(blocks: list[dict], options: dict = None) -> str:
             out.append("---")
             
         elif btype == "div":
+            # The walker flattens a div's children into the block list and records
+            # how many follow it, so re-serializing means consuming that many and
+            # closing the fence after them.
             classes = " ".join(content.get("classes", []))
-            children = content.get("children", [])
+            n = content.get("contains", 0)
             out.append(f"::: {classes}")
-            
-            child_text = render_blocks(children, options).rstrip()
+
+            child_text = render_blocks(blocks[i + 1: i + 1 + n], options).rstrip()
             if child_text:
                 out.append(child_text)
-                
+
             out.append(":::")
+            skip_until = i + 1 + n
             
         elif btype == "raw_block":
             fmt = content.get("format", "")

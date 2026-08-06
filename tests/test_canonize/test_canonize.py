@@ -79,6 +79,42 @@ def tc2_lazy_nesting_becomes_addressable():
 
 
 # --------------------------------------------------------------------------
+# TC-2b  Blocks inside a div stay addressable
+#
+# A div is a container, so its children must reach the flat block list. Nesting
+# them inside the div's content instead makes them invisible to every consumer
+# — no hash, no backlinks, no addressability — while inject_ids still writes
+# ids for them into the file. Neither the canonize verifier nor the roundtrip
+# test can see that: the blocks are simply absent from both sides.
+#
+# This matters because folded content (tool calls, subagent transcripts) is
+# exactly what a div is for.
+# --------------------------------------------------------------------------
+def tc2b_div_children_are_blocks():
+    print("\nTC-2b: blocks inside a div are addressable")
+    md = "Before.\n\n::: tool-call\nInside one.\n\nInside two.\n:::\n\nAfter.\n"
+    r = canonize_text(md)
+    blocks = blocks_of(r.djot)
+    texts = [b["content"].get("text", "") for b in blocks]
+
+    check("div children reach the flat block list",
+          "Inside one." in texts and "Inside two." in texts, texts)
+    check("the div itself is still a block",
+          any(b["type"] == "div" for b in blocks))
+    check("every block in a div carries an id",
+          all(b.get("id") for b in blocks),
+          [b["type"] for b in blocks if not b.get("id")])
+    check("the div records how many blocks it contains",
+          next(b["content"].get("contains") for b in blocks
+               if b["type"] == "div") == 2)
+    # Ids written into the file but absent from the block list are the actual
+    # failure mode: they look clickable in HTML and resolve to nothing.
+    check("no id is written that the block list does not know about",
+          len(re.findall(r"\{#[0-9a-f-]{36}\}", r.djot)) == len(blocks),
+          f"{len(re.findall(r'{#[0-9a-f-]{36}}', r.djot))} ids, {len(blocks)} blocks")
+
+
+# --------------------------------------------------------------------------
 # TC-3  Task lists survive pandoc
 # --------------------------------------------------------------------------
 def tc3_tasks_survive():
@@ -178,6 +214,7 @@ def tc7_real_notes():
 def main():
     tc1_every_block_has_an_id()
     tc2_lazy_nesting_becomes_addressable()
+    tc2b_div_children_are_blocks()
     tc3_tasks_survive()
     tc4_text_is_preserved()
     tc5_references_survive()
