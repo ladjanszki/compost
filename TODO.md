@@ -63,6 +63,18 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 
 ## v0.3 — next
 
+- [x] **Importer attribution** — a `user` line is not "the human typed this".
+      Tool results, harness injections and slash-command echoes were all
+      appearing under the user's name; in one session only 1 of 18 was real
+- [x] **`kg artifact`** with handle-preserving update, so a living document can
+      be commented on more than once
+- [x] **Honest index links** — title from the first heading, real date,
+      participants, size
+- [ ] **Doc examples dangle by design.** Publishing README/AGENTS as artifacts
+      adds 5 dangling references, because `{#a3f9c2d1}` in a code block is
+      documentation, not a citation. `kg check` is right to report them and
+      wrong to make them look like corpus damage. Needs a way to tell the two
+      apart — probably ignoring references inside code blocks
 - [ ] **Reply affordance in the HTML** — a button that puts you in a draft for
       the block you clicked. The handle is already copied; the missing half is
       not having to switch to a terminal

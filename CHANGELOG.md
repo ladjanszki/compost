@@ -40,6 +40,13 @@ what the other wrote.
 
 **New**
 
+- `kg artifact` — publish a markdown document as an artifact. On update,
+  unchanged blocks **keep their handles**, matched by content hash rather than
+  position so an insertion does not renumber everything after it. Without this,
+  regenerating a document orphans every comment ever written about it, and those
+  comments live in immutable turns where they can never be corrected. This is
+  the delta algorithm from `architecture/delta_ingestion_and_block_versioning.md`,
+  and it turned out to be about thirty lines.
 - `kg import` — a closed Claude Code session becomes a conversation. The whole
   log is turned into one markdown document and canonized in a single pass,
   because pandoc carries fenced divs and their attributes through to djot.
@@ -61,6 +68,20 @@ what the other wrote.
 
 **Fixed — correctness**
 
+- **The importer attributed the harness to the human.** A `user` line in a
+  session log is not the same thing as "the person typed this": tool results
+  come back as user messages because that is the API protocol, the harness
+  injects its own context, and a slash command echoes both its name and its
+  output. In one 18-"user"-turn session **only 1 turn was genuinely typed**, so
+  a reader saw directory listings above the user's name. Tool results are now
+  folded into the call that produced them, matched on `tool_use_id`; harness
+  messages are attributed to `system`; injected system-reminders are lifted out
+  of real typing and kept, folded, rather than discarded.
+- **A conversation's date was decoded from a UUIDv4.** An imported session is
+  named after its log, whose id is not a UUIDv7, so reading its first twelve hex
+  digits as a millisecond timestamp dated one conversation to the year 4527.
+  `_when()` now checks the version nibble, and imported turns carry their real
+  timestamp as an attribute.
 - **A div swallowed its children.** `inject_ids` recursed into a div and gave
   every child an id; `ast_walker` nested those children inside the div's
   `content` instead of emitting them. Two halves of one pipeline held opposite
