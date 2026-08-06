@@ -33,7 +33,7 @@ def make_base(tmp: Path, sources: list[str]) -> store_mod.Store:
     st = store_mod.init(tmp / "kb")
     for i, md in enumerate(sources):
         r = canonize_text(md)
-        (st.notes / f"019fcc00-0000-7000-8000-{i:012d}.dj").write_text(
+        (st.conversations / f"019fcc00-0000-7000-8000-{i:012d}.dj").write_text(
             r.djot, encoding="utf-8")
     return st
 
@@ -70,12 +70,12 @@ def tc2_backlinks():
     with tempfile.TemporaryDirectory() as tmp:
         st = make_base(Path(tmp), ["# Target\n\nThe referenced paragraph.\n"])
         target = [b for b in walk(get_ast_from_text(
-            next(st.notes.glob("*.dj")).read_text()))
+            next(st.conversations.glob("*.dj")).read_text()))
             if b["type"] == "paragraph"][0]
         ref = reference(target["id"])
 
         r = canonize_text(f"Reacting to {ref} with a comment.\n")
-        (st.notes / "019fcc00-0000-7000-8000-000000000009.dj").write_text(
+        (st.conversations / "019fcc00-0000-7000-8000-000000000009.dj").write_text(
             r.djot, encoding="utf-8")
 
         notes = load_notes(st)
@@ -94,10 +94,10 @@ def tc3_subtree_flag():
     with tempfile.TemporaryDirectory() as tmp:
         st = make_base(Path(tmp), ["# Target\n\nA paragraph.\n"])
         target = walk(get_ast_from_text(
-            next(st.notes.glob("*.dj")).read_text()))[0]
+            next(st.conversations.glob("*.dj")).read_text()))[0]
         ref = reference(target["id"], subtree=True)
         r = canonize_text(f"Rewrite {ref} please.\n")
-        (st.notes / "019fcc00-0000-7000-8000-000000000009.dj").write_text(
+        (st.conversations / "019fcc00-0000-7000-8000-000000000009.dj").write_text(
             r.djot, encoding="utf-8")
 
         idx = backlink_index(load_notes(st))
@@ -109,7 +109,7 @@ def tc4_store_resolution():
     print("\nTC-4: the base is found from anywhere")
     with tempfile.TemporaryDirectory() as tmp:
         st = store_mod.init(Path(tmp) / "kb")
-        nested = st.root / "notes"
+        nested = st.root / "conversations"
         import os
         cwd = os.getcwd()
         try:

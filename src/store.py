@@ -4,10 +4,22 @@ store.py — locating and describing a knowledge base on disk.
 A knowledge base is a directory created by `kg init`:
 
     <root>/
-      raw/     <uuid>.md   the draft exactly as written, frozen
-      notes/   <uuid>.dj   canonized and addressable, frozen
-      site/                generated HTML (disposable)
-      .kg                  marker file identifying the root
+      raw/<conv>/<turn>.md      drafts exactly as written, frozen
+      conversations/<conv>.dj   turns, appended; every block frozen once written
+      artifacts/<name>.dj       agent-written and regenerated; mutable
+      site/                     generated HTML (disposable)
+      .kg                       marker file identifying the root
+
+The split is by **mutability**, not by author. A conversation is append-only:
+turns are added, but no block already in the file ever changes, which is what
+keeps handles stable and references resolvable. An artifact is rewritten in
+place and needs id-preserving regeneration. Either party can write either kind;
+authorship is recorded per turn as a `{.turn author=...}` attribute, so it lives
+in the .dj and therefore in git.
+
+A conversation is one file rather than a directory of turns because turns get
+concatenated for reading anyway, and because one file is one djot parse: an
+imported session of ~70 turns costs about a second instead of two minutes.
 
 `kg` is meant to be run from anywhere, so the root is resolved in order:
 KG_HOME, then an explicit --root, then by walking up from the current
@@ -22,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 MARKER = ".kg"
-SUBDIRS = ("raw", "notes", "site")
+SUBDIRS = ("raw", "conversations", "artifacts", "site")
 
 
 class StoreError(Exception):
@@ -38,19 +50,32 @@ class Store:
         return self.root / "raw"
 
     @property
-    def notes(self) -> Path:
-        return self.root / "notes"
+    def conversations(self) -> Path:
+        return self.root / "conversations"
+
+    @property
+    def artifacts(self) -> Path:
+        return self.root / "artifacts"
 
     @property
     def site(self) -> Path:
         return self.root / "site"
 
-    def note_paths(self) -> list[Path]:
-        """Canonized notes, oldest first — uuid7 sorts chronologically."""
-        return sorted(self.notes.glob("*.dj"))
+    def conversation_paths(self) -> list[Path]:
+        """Conversations, oldest first — uuid7 sorts chronologically."""
+        return sorted(self.conversations.glob("*.dj"))
 
-    def draft_for(self, note_path: Path) -> Path:
-        return self.raw / (note_path.stem + ".md")
+    def artifact_paths(self) -> list[Path]:
+        """Artifacts, by name — they are titles, not timestamps."""
+        return sorted(self.artifacts.glob("*.dj"))
+
+    def source_paths(self) -> list[Path]:
+        """Everything with addressable blocks in it."""
+        return self.conversation_paths() + self.artifact_paths()
+
+    def drafts_for(self, conv_id: str) -> list[Path]:
+        """The turns of a conversation, as they were written."""
+        return sorted((self.raw / conv_id).glob("*.md"))
 
 
 def init(root: str | os.PathLike) -> Store:
