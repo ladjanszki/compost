@@ -46,31 +46,62 @@ def tc1_turns_and_authors():
         {"type": "assistant", "uuid": "a1", "message": {"content": [
             {"type": "thinking", "thinking": "hmm"},
             {"type": "text", "text": "An answer."},
-            {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]}},
+            {"type": "tool_use", "id": "t1", "name": "Bash",
+             "input": {"command": "ls"}}]}},
         {"type": "user", "uuid": "u2", "message": {"content": [
-            {"type": "tool_result", "content": "file.txt"}]}},
+            {"type": "tool_result", "tool_use_id": "t1", "content": "file.txt"}]}},
         {"type": "assistant", "uuid": "a2", "isSidechain": True,
          "message": {"content": [{"type": "text", "text": "Subagent says hi."}]}},
     ])
     turns = turns_from_session(p)
-    check("bookkeeping lines are skipped", len(turns) == 4, len(turns))
-    check("authors are assigned",
-          [t["author"] for t in turns] == ["human", "claude", "human",
-                                           "claude:sidechain"],
-          [t["author"] for t in turns])
+    check("bookkeeping lines are skipped", len(turns) == 3, len(turns))
     check("prose is separated from folded parts",
           turns[1]["prose"] == ["An answer."] and len(turns[1]["folded"]) == 2,
           turns[1])
+
+    # A tool result is protocol, not typing: it arrives as a `user` message but
+    # the person never wrote it. It belongs to the call that produced it.
+    check("a tool result does not become a human turn",
+          [t["author"] for t in turns] == ["human", "claude", "claude:sidechain"],
+          [t["author"] for t in turns])
+    check("the result is folded into its own call",
+          "file.txt" in turns[1]["folded"][1]["body"]
+          and "ls" in turns[1]["folded"][1]["body"],
+          turns[1]["folded"][1])
 
     blocks = walk(get_ast_from_text(canonize_text(session_markdown(turns)).djot))
     authors = [(b["content"].get("attrs") or {}).get("author")
                for b in blocks if b["type"] == "div"
                and "turn" in (b["content"].get("classes") or [])]
     check("every turn survives canonization with its author",
-          authors == ["human", "claude", "human", "claude:sidechain"], authors)
+          authors == ["human", "claude", "claude:sidechain"], authors)
     check("the tool name is kept for the fold's summary",
           any((b["content"].get("attrs") or {}).get("name") == "Bash"
               for b in blocks if b["type"] == "div"))
+
+
+def tc1b_harness_messages_are_not_the_human():
+    print("\nTC-1b: the harness writing as the user is not attributed to them")
+    p = session([
+        {"type": "user", "uuid": "u1", "isMeta": True,
+         "message": {"content": "Injected context the person never saw."}},
+        {"type": "user", "uuid": "u2", "message": {"content":
+            "<command-name>/context</command-name>\n"
+            "<local-command-stdout>a big listing</local-command-stdout>"}},
+        {"type": "user", "uuid": "u3", "message": {"content":
+            "A real question.\n<system-reminder>injected</system-reminder>"}},
+        {"type": "user", "uuid": "u4", "message": {"content":
+            "[Request interrupted by user for tool use]"}},
+    ])
+    turns = turns_from_session(p)
+    check("only genuine typing is attributed to the human",
+          [t["author"] for t in turns] == ["system", "system", "human", "system"],
+          [t["author"] for t in turns])
+    human = [t for t in turns if t["author"] == "human"][0]
+    check("an injected system-reminder is stripped out of real typing",
+          human["prose"] == ["A real question."], human["prose"])
+    check("but the reminder is kept, folded, not discarded",
+          any("injected" in f["body"] for f in human["folded"]))
 
 
 def tc2_tool_output_cannot_break_the_document():
@@ -87,9 +118,10 @@ def tc2_tool_output_cannot_break_the_document():
     p = session([
         {"type": "user", "uuid": "u1", "message": {"content": "Read the file."}},
         {"type": "assistant", "uuid": "a1", "message": {"content": [
-            {"type": "tool_use", "name": "Read", "input": {"file": "x"}}]}},
+            {"type": "tool_use", "id": "t9", "name": "Read",
+             "input": {"file": "x"}}]}},
         {"type": "user", "uuid": "u2", "message": {"content": [
-            {"type": "tool_result", "content": hostile}]}},
+            {"type": "tool_result", "tool_use_id": "t9", "content": hostile}]}},
         {"type": "assistant", "uuid": "a2", "message": {"content": [
             {"type": "text", "text": "Done reading."}]}},
     ])
@@ -100,8 +132,10 @@ def tc2_tool_output_cannot_break_the_document():
                  and "turn" in (b["content"].get("classes") or [])]
     authors = [(b["content"].get("attrs") or {}).get("author") for b in turn_divs]
     check("the payload did not forge a turn", "attacker" not in authors, authors)
-    check("turn count is exactly what the log contained",
-          len(turn_divs) == 4, f"{len(turn_divs)} divs from 4 messages")
+    # 4 log messages -> 3 turns: the human, the tool call, the reply. The
+    # result is inside the call's fold, not a turn of its own.
+    check("the tool result folded into its call rather than adding a turn",
+          len(turn_divs) == 3, f"{len(turn_divs)} turns from 4 messages")
     check("the last turn's prose survived intact",
           any(b["content"].get("text") == "Done reading." for b in blocks),
           [b["content"].get("text", "")[:30] for b in blocks])
@@ -114,6 +148,7 @@ def tc2_tool_output_cannot_break_the_document():
 
 def main():
     tc1_turns_and_authors()
+    tc1b_harness_messages_are_not_the_human()
     tc2_tool_output_cannot_break_the_document()
     print()
     if FAILURES:
