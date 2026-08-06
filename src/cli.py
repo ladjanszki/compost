@@ -7,6 +7,7 @@ cli.py — the `kg` command.
     kg render         build the static site and blocks.json
     kg check          report dangling references and handle collisions
     kg import <log>   import a closed Claude Code session as a conversation
+    kg artifact <md>  publish a document as an artifact, handles preserved
     kg serve [-p]     render, then serve site/ on localhost
 
 The base is found via --root, then $KG_HOME, then a `.kg` marker in the
@@ -18,6 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import artifact as artifact_mod
 from . import conversation as conv_mod
 from . import importer as import_mod
 from . import store as store_mod
@@ -111,6 +113,30 @@ def cmd_render(args) -> int:
         print(f"WARNING: {missing} block(s) are not addressable in HTML",
               file=sys.stderr)
         return 1
+    return 0
+
+
+def cmd_artifact(args) -> int:
+    """Publish a markdown document as an artifact, keeping handles stable."""
+    st = store_mod.find(args.root)
+    src = Path(args.file).expanduser().resolve()
+    if not src.exists():
+        print(f"no such file: {src}", file=sys.stderr)
+        return 1
+
+    name = args.name or artifact_mod.name_for(src)
+    dest = st.artifacts / f"{name}.dj"
+    existed = dest.exists()
+    stats = artifact_mod.write(dest, src.read_text(encoding="utf-8"))
+
+    print(f"{'updated' if existed else 'published'} artifacts/{name}.dj")
+    if existed:
+        print(f"  {stats['kept']} blocks kept their handles, "
+              f"{stats['added']} new, {stats['removed']} gone")
+        if stats["removed"]:
+            print("  run `kg check`: references to removed blocks now dangle")
+    else:
+        print(f"  {stats['added']} blocks")
     return 0
 
 
@@ -212,6 +238,11 @@ def main(argv=None) -> int:
 
     s = sub.add_parser("render", help="build the static site")
     s.set_defaults(fn=cmd_render)
+
+    s = sub.add_parser("artifact", help="publish a markdown file as an artifact")
+    s.add_argument("file")
+    s.add_argument("-n", "--name", help="artifact name (default: from the filename)")
+    s.set_defaults(fn=cmd_artifact)
 
     s = sub.add_parser("import", help="import a closed Claude Code session")
     s.add_argument("session",
