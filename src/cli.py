@@ -2,8 +2,8 @@
 cli.py — the `kg` command.
 
     kg init [dir]     create a knowledge base
-    kg new            write a note, submit it on editor exit
-    kg submit <file>  canonize an existing markdown file into the base
+    kg new            write a turn, append it on editor exit
+    kg submit <file>  append an existing markdown file as a turn
     kg render         build the static site
     kg serve [-p]     render, then serve site/ on localhost
 
@@ -16,10 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-import uuid6
-
+from . import conversation as conv_mod
 from . import store as store_mod
-from .canonize import canonize_text
 from .render.to_html import render as render_site
 
 
@@ -28,27 +26,37 @@ def _editor() -> list[str]:
             or "nvim").split()
 
 
-def _submit_file(st: store_mod.Store, md_path: Path, note_id: str) -> None:
-    """Canonize a draft into the base. Both files are frozen afterwards."""
+def _submit_turn(st: store_mod.Store, md_path: Path, conv_id: str | None,
+                 author: str, turn_id: str | None = None) -> None:
+    """Append a draft to a conversation as one turn. Blocks are frozen after."""
     text = md_path.read_text(encoding="utf-8")
     if not text.strip():
-        print("Empty note — nothing submitted.", file=sys.stderr)
-        if md_path.parent == st.raw:
+        print("Empty turn — nothing submitted.", file=sys.stderr)
+        if md_path.parent.parent == st.raw:
             md_path.unlink(missing_ok=True)
         raise SystemExit(1)
 
-    result = canonize_text(text)
+    # You reply by clicking a block, so the thread is implied by what the draft
+    # cites — no second handle to copy.
+    if conv_id is None:
+        conv_id = conv_mod.infer_conversation(st, text)
+    started = conv_id is None
+    conv_id = conv_id or conv_mod.new_id()
 
-    st.raw.mkdir(parents=True, exist_ok=True)
-    st.notes.mkdir(parents=True, exist_ok=True)
-    draft = st.raw / f"{note_id}.md"
+    path = st.conversations / f"{conv_id}.dj"
+    turn_id, blocks = conv_mod.append_turn(path, text, author, turn_id)
+
+    draft = st.raw / conv_id / f"{turn_id}.md"
+    draft.parent.mkdir(parents=True, exist_ok=True)
     if md_path.resolve() != draft.resolve():
         draft.write_text(text, encoding="utf-8")
-    (st.notes / f"{note_id}.dj").write_text(result.djot, encoding="utf-8")
+        if md_path.parent.parent == st.raw:
+            md_path.unlink(missing_ok=True)
 
-    print(f"submitted {note_id}  ({len(result.blocks)} blocks)")
+    print(f"{'started' if started else 'appended to'} conversation {conv_id}")
+    print(f"  turn   {turn_id}  ({len(blocks)} blocks, author: {author})")
     print(f"  draft  {draft}")
-    print(f"  note   {st.notes / (note_id + '.dj')}")
+    print(f"  file   {path}")
 
 
 # ------------------------------------------------------------- commands ---
@@ -56,21 +64,25 @@ def _submit_file(st: store_mod.Store, md_path: Path, note_id: str) -> None:
 def cmd_init(args) -> int:
     st = store_mod.init(args.dir)
     print(f"knowledge base ready at {st.root}")
-    print(f"  raw/    drafts as written\n  notes/  canonized\n  site/   generated")
+    print("  raw/            drafts as written\n"
+          "  conversations/  turns, appended, blocks frozen\n"
+          "  artifacts/      agent-written, regenerated\n"
+          "  site/           generated")
     print(f"\nTip: export KG_HOME={st.root}")
     return 0
 
 
 def cmd_new(args) -> int:
     st = store_mod.find(args.root)
-    note_id = str(uuid6.uuid7())
-    st.raw.mkdir(parents=True, exist_ok=True)
-    draft = st.raw / f"{note_id}.md"
+    turn_id = conv_mod.new_id()
+    scratch = st.raw / "_drafting"
+    scratch.mkdir(parents=True, exist_ok=True)
+    draft = scratch / f"{turn_id}.md"
     draft.touch()
 
     # Submission happens on editor exit, never on save: saving must stay free.
     subprocess.call([*_editor(), str(draft)])
-    _submit_file(st, draft, note_id)
+    _submit_turn(st, draft, args.conversation, args.author, turn_id)
     return 0
 
 
@@ -80,15 +92,15 @@ def cmd_submit(args) -> int:
     if not md.exists():
         print(f"no such file: {md}", file=sys.stderr)
         return 1
-    _submit_file(st, md, str(uuid6.uuid7()))
+    _submit_turn(st, md, args.conversation, args.author)
     return 0
 
 
 def cmd_render(args) -> int:
     st = store_mod.find(args.root)
     stats = render_site(st)
-    print(f"{stats['notes']} notes, {stats['blocks']} blocks, "
-          f"{stats['backlinks']} referenced → {st.site}")
+    print(f"{stats['conversations']} conversations, {stats['artifacts']} artifacts, "
+          f"{stats['blocks']} blocks, {stats['backlinks']} referenced → {st.site}")
     if stats["clickable"] < stats["blocks"]:
         missing = stats["blocks"] - stats["clickable"]
         print(f"WARNING: {missing} block(s) are not addressable in HTML",
@@ -116,11 +128,20 @@ def main(argv=None) -> int:
     s.add_argument("dir", nargs="?", default=".")
     s.set_defaults(fn=cmd_init)
 
-    s = sub.add_parser("new", help="write and submit a note")
+    def turn_args(p):
+        p.add_argument("-c", "--conversation",
+                       help="conversation to append to "
+                            "(default: inferred from the blocks the draft cites)")
+        p.add_argument("--author", default="human",
+                       help="who wrote this turn (default: human)")
+
+    s = sub.add_parser("new", help="write a turn and submit it")
+    turn_args(s)
     s.set_defaults(fn=cmd_new)
 
-    s = sub.add_parser("submit", help="canonize an existing markdown file")
+    s = sub.add_parser("submit", help="append an existing markdown file as a turn")
     s.add_argument("file")
+    turn_args(s)
     s.set_defaults(fn=cmd_submit)
 
     s = sub.add_parser("render", help="build the static site")
