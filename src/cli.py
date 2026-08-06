@@ -6,6 +6,7 @@ cli.py — the `kg` command.
     kg submit <file>  append an existing markdown file as a turn
     kg render         build the static site and blocks.json
     kg check          report dangling references and handle collisions
+    kg import <log>   import a closed Claude Code session as a conversation
     kg serve [-p]     render, then serve site/ on localhost
 
 The base is found via --root, then $KG_HOME, then a `.kg` marker in the
@@ -18,7 +19,9 @@ import sys
 from pathlib import Path
 
 from . import conversation as conv_mod
+from . import importer as import_mod
 from . import store as store_mod
+from .canonize import canonize_text
 from .render import index as index_mod
 from .render.to_html import load_notes, render as render_site
 
@@ -111,6 +114,48 @@ def cmd_render(args) -> int:
     return 0
 
 
+def cmd_import(args) -> int:
+    """Turn a closed Claude Code session into a conversation."""
+    st = store_mod.find(args.root)
+    path = Path(args.session).expanduser()
+    if not path.is_file():
+        found = import_mod.sessions_for(path)
+        if not found:
+            print(f"no session log at {path}, and no logs for that directory",
+                  file=sys.stderr)
+            return 1
+        for p in found:
+            print(f"  {p.name}  {p.stat().st_size // 1024} KB")
+        print("\nPass one of these paths to import it.")
+        return 0
+
+    turns = import_mod.turns_from_session(path)
+    if not turns:
+        print("no user or assistant turns in that session", file=sys.stderr)
+        return 1
+
+    md = import_mod.session_markdown(turns)
+    result = canonize_text(md)
+
+    conv_id = args.conversation or path.stem
+    dest = st.conversations / f"{conv_id}.dj"
+    if dest.exists() and not args.force:
+        print(f"{dest} already exists; pass --force to replace it",
+              file=sys.stderr)
+        return 1
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(result.djot, encoding="utf-8")
+
+    folded = sum(len(t["folded"]) for t in turns)
+    authors = {}
+    for t in turns:
+        authors[t["author"]] = authors.get(t["author"], 0) + 1
+    print(f"imported {path.name} -> conversations/{conv_id}.dj")
+    print(f"  {len(turns)} turns ({', '.join(f'{k}: {v}' for k, v in authors.items())})")
+    print(f"  {len(result.blocks)} blocks, {folded} folded tool/thinking parts")
+    return 0
+
+
 def cmd_check(args) -> int:
     """Report references that resolve to nothing, and handle collisions."""
     st = store_mod.find(args.root)
@@ -167,6 +212,14 @@ def main(argv=None) -> int:
 
     s = sub.add_parser("render", help="build the static site")
     s.set_defaults(fn=cmd_render)
+
+    s = sub.add_parser("import", help="import a closed Claude Code session")
+    s.add_argument("session",
+                   help="path to a .jsonl session log, or a project directory "
+                        "to list the logs for")
+    s.add_argument("-c", "--conversation", help="conversation id (default: the session id)")
+    s.add_argument("--force", action="store_true", help="replace an existing conversation")
+    s.set_defaults(fn=cmd_import)
 
     s = sub.add_parser("check", help="report dangling references and collisions")
     s.set_defaults(fn=cmd_check)
