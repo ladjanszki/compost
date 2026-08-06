@@ -10,14 +10,22 @@ authoritative where this document is silent.
 
 Three ideas carry everything:
 
-1. **`.dj` files in git are the source of truth.** HTML, indexes, any future
-   graph — all derived and disposable. If you find yourself storing something
-   that cannot be rebuilt from the `.dj` files, stop.
-2. **Notes are immutable.** Submitting freezes a note. You never edit one; you
-   write another note referring to it. This is what makes block ids permanent
-   and provenance answerable.
-3. **Blocks are the unit.** Every paragraph, heading, list item and todo has a
-   UUIDv7. The whole product is that these ids are stable, copyable, and
+1. **`.dj` files in git are the source of truth.** HTML, `blocks.json`, any
+   future graph — all derived and disposable. If you find yourself storing
+   something that cannot be rebuilt from the `.dj` files, stop. The one
+   exception proves the rule: *authorship* is asserted, not derivable, which is
+   exactly why it lives in the `.dj` as a turn attribute rather than in
+   `blocks.json`.
+2. **Blocks are immutable; files are not.** A conversation file grows by
+   appending turns, but no block already in it ever changes. That is what makes
+   handles permanent and appending safe, and it is why conversations need none
+   of the delta machinery artifacts will.
+3. **The split is mutability, not authorship.** Either party writes either kind.
+   `conversations/` is append-only, `artifacts/` is rewritten in place. What
+   protects you is not that agents are locked out of a directory but that
+   nothing already written can be altered.
+4. **Blocks are the unit.** Every paragraph, heading, list item and todo has an
+   8-hex handle. The whole product is that these are stable, copyable, and
    resolvable.
 
 ---
@@ -68,7 +76,10 @@ grows.
 ```
 src/
   cli.py              the `kg` entry point (argparse, one function per command)
-  store.py            locating a base: --root, then $KG_HOME, then a .kg marker
+  store.py            locating a base; conversations/ and artifacts/
+  refs.py             THE handle and reference format — one source of truth
+  conversation.py     turns: wrap, append, verify; infer the thread from cites
+  importer.py         a Claude Code session JSONL -> one markdown document
   canonize/
     __init__.py       canonize_text() + the verifier that can refuse output
     md_to_djot.py     pandoc wrapper; every flag prevents a silent rewrite
@@ -77,24 +88,31 @@ src/
     djot_ast.py       runs djot.js, returns the native AST
     ast_walker.py     AST -> flat list of block dicts
     inline_reconstruct.py   inline nodes -> djot markup text
-    block_schema.py   block records (largely legacy; canonize does its own)
+    block_schema.py   block records (legacy; canonize does its own)
   render/
-    to_html.py        base -> static site, backlinks, click-to-copy
+    to_html.py        base -> static site, backlinks, click-to-copy, folds
+    index.py          blocks.json + the check behind `kg check`
     blocks_to_djot.py blocks -> djot text (not on the canonize path; needed
-                      when agents start generating wiki pages)
+                      when agents start generating artifacts)
 tests/
-  test_canonize/      markdown -> addressable note
-  test_render/        base -> clickable site
+  test_canonize/      markdown -> addressable turn
+  test_conversation/  appending turns without disturbing them
+  test_importer/      a session log -> a conversation
+  test_render/        base -> clickable site, blocks.json, kg check
   test_03/            djot -> blocks -> djot roundtrip
-tools/                scratch prototypes, not part of the product
+tools/                scratch prototypes and one-off migrations
 ```
 
 Run everything:
 
 ```bash
-conda run -n knowledge-graph python tests/test_canonize/test_canonize.py
-conda run -n knowledge-graph python tests/test_render/test_site.py
-conda run -n knowledge-graph python tests/test_03/test_roundtrip.py
+for t in tests/test_canonize/test_canonize.py \
+         tests/test_conversation/test_conversation.py \
+         tests/test_importer/test_importer.py \
+         tests/test_render/test_site.py \
+         tests/test_03/test_roundtrip.py; do
+  conda run -n knowledge-graph python "$t" || echo "FAILED: $t"
+done
 ```
 
 There is no pytest wiring yet. Tests are standalone scripts that print
@@ -105,13 +123,14 @@ There is no pytest wiring yet. Tests are standalone scripts that print
 ## The pipeline
 
 ```
-raw/<uuid>.md
+raw/<conv>/<turn>.md
   → pandoc -f markdown-smart-auto_identifiers -t djot --wrap=preserve
   → restore checkbox markers        "☐ " → "[ ] ",  "☒ " → "[x] "
   → djot.js --to ast --sourcepos
-  → insert {#uuid} lines as text, bottom-up
+  → insert {#handle} lines as text, bottom-up
   → loosen: blank line after each list item's id line
-  → notes/<uuid>.dj                 frozen
+  → wrap in {#handle .turn author="..."} ::: ... :::
+  → append to conversations/<conv>.dj, then verify nothing earlier moved
 ```
 
 Notes are **authored in Markdown and stored as Djot**. Markdown allows lazy
@@ -125,7 +144,12 @@ and reviewable — this is the only moment the system edits something a human
 wrote, and it should stay that way.
 
 `canonize_text()` verifies its own output and raises rather than emitting a
-note whose blocks are unaddressable. Trust that check; it has caught real bugs.
+turn whose blocks are unaddressable. Trust that check; it has caught real bugs.
+
+`append_turn()` verifies again after the append: every block already in the file
+must still be there with the same handle, text, depth, level and containment.
+Structure is compared because the seam failure changes no text — see
+`conversation.py` for the measured cases.
 
 ---
 
@@ -160,8 +184,23 @@ them will silently break addressability.
   unwraps the item's paragraph and the id goes with it. `loosen()` adds a blank
   line after each id line. Doing it *between* items misses single-item lists,
   which have no sibling to separate from.
-- References survive on disk **escaped**: `\{#uuid:hash\}`. Parsing unescapes
-  them, so scan parsed block text, never the raw file.
+- References survive on disk **escaped**, colon included: `\{#handle\}`.
+  Parsing unescapes them, so scan parsed block text, never the raw file. Since
+  a handle and an id attribute are now the same shape, **escaping is the only
+  thing separating a reference the author typed from an id we assigned** —
+  `refs.ID_ATTR` has a negative lookbehind for exactly this.
+- A **div is a container**, and the walker must flatten its children into the
+  block list. Nesting them inside `content` makes them invisible to everything
+  downstream while `inject_ids` still writes ids for them — clickable in HTML,
+  resolving to nothing. This was a real bug (see CHANGELOG v0.2) and neither the
+  verifier nor the roundtrip test could see it, because the blocks were absent
+  from both sides of every comparison.
+- Pandoc carries fenced divs **and their key=value attributes** through to djot,
+  which is why a whole imported session can be canonized in one pass instead of
+  once per turn.
+- Fence length matters. Tool output routinely contains `:::` and code fences, so
+  the importer computes every fence to be longer than the longest run it must
+  contain. A fixed fence gets closed early by its own payload.
 
 ---
 
@@ -196,31 +235,32 @@ pipeline's own output.
 
 In rough order.
 
-**1. Wiki generation (v1).** The big one. Notes exist; nothing generates a wiki
-yet. The shape agreed so far: generation is explicitly invoked, an agent reads
-notes directly (no embeddings — a few hundred notes fit in context), and every
-emitted block cites the note block it came from. That citation requirement is
-also the anti-slop mechanism: a block with nothing to cite is invalid, so
-general knowledge cannot leak in. See `mvp-design.md` §5.
+**1. Artifact generation (v1).** The big one. Conversations exist; nothing
+generates an artifact from them yet. The shape agreed so far: generation is
+explicitly invoked, an agent reads `blocks.json` directly (no embeddings — a
+project corpus fits in context), and every emitted block cites the block it came
+from. Note that the user has decided chat content **is** freely citable, so the
+"a block with nothing to cite is invalid" rule is the anti-slop mechanism but
+imported conversations are legitimate sources. See `mvp-design.md` §5.
 
-**2. Regeneration must preserve ids.** When an agent rewrites a wiki page,
-unchanged blocks must keep their ids or every note referring to them is
+**2. Regeneration must preserve handles.** When an agent rewrites an artifact,
+unchanged blocks must keep their handles or every turn referring to them is
 orphaned. This is the delta algorithm in
-`architecture/delta_ingestion_and_block_versioning.md` — written for
-human-edited files, but the algorithm is unchanged; only the subject moves.
+`architecture/delta_ingestion_and_block_versioning.md`. **Until it exists, no
+agent should rewrite an artifact** — `AGENTS.md` says so explicitly.
 
 **3. Deferred views.** Open todos across the corpus. Cheap: the block type is
-already recorded, and it is a render-time view so it works retroactively.
+already in `blocks.json`, and it is a render-time view so it works retroactively.
 
-**4. Semantic linking (`mvp-design.md` §13 Q1).** Which wiki page a note
-affects, beyond the blocks it explicitly cites. Needs embeddings or LLM
-reading, and is its own initiative. Keep inferred edges in a distinct type from
+**4. Semantic linking (`mvp-design.md` §13 Q1).** Which artifact a turn affects,
+beyond the blocks it explicitly cites. Needs embeddings or LLM reading, and is
+its own initiative. Keep inferred edges in a distinct type from
 reference/lineage edges: when a link is wrong, the first question is always
 whether a machine guessed it or a human asserted it.
 
 **5. Housekeeping.** No pytest/CI wiring. `npx` spawns a Node process per parse
-(~100–300 ms), which is fine at current scale but wants a persistent worker
-before bulk ingestion. `src/ingest/block_schema.py` is largely legacy.
+(~1 s measured), which one-file-per-conversation keeps tolerable but which still
+dominates `kg render`. `src/ingest/block_schema.py` is legacy.
 
 ---
 

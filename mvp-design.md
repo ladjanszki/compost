@@ -1,6 +1,7 @@
 # MVP Design — Notes-to-Wiki with Lineage
 
-Status: v0.1 implemented 2026-08-04; agreed 2026-08-03. Derived from `my-workflow.md` and `mvp-interview.md`.
+Status: v0.2 implemented 2026-08-06; v0.1 2026-08-04; agreed 2026-08-03. Derived from `my-workflow.md`,
+`mvp-interview.md`, and the first conversation held inside the system itself.
 This document supersedes `README.md` and `architecture/phase_0*.md` for everything it covers.
 
 ---
@@ -26,13 +27,19 @@ entire point.
 
 These must never break. Everything else is negotiable.
 
-1. **`.dj` files in git are the source of truth.** Every other artifact — HTML, any index, any
-   graph — is derived and disposable.
-2. **Notes are immutable.** Once submitted and canonized, a note file never changes again.
-3. **Humans write notes. Agents write the wiki.** Never the reverse. The filesystem enforces it.
-4. **Every wiki block cites its sources.** A block with empty lineage is invalid. Whether that
+1. **`.dj` files in git are the source of truth.** Every other artifact — HTML, `blocks.json`, any
+   graph — is derived and disposable. Authorship is the exception that proves it: it is asserted
+   rather than derivable, so it lives *in* the `.dj` as a turn attribute.
+2. **Blocks are immutable; files need not be.** A conversation grows by appending turns, but no
+   block already written ever changes. Artifacts are rewritten in place and therefore require
+   id-preserving regeneration (§7) before an agent may touch one.
+3. **The boundary is mutability, not authorship.** *Revised 2026-08-06.* This previously read
+   "humans write notes, agents write the wiki; the filesystem enforces it." Either party now writes
+   either kind, and authorship is recorded per turn. The guarantee that survives — and the one that
+   was doing the work — is that nothing already written can be altered, whoever wrote it.
+4. **Every artifact block cites its sources.** A block with empty lineage is invalid. Whether that
    means rejected at write time or flagged at render time is open — see §13 Q3b.
-5. **Block IDs are stable.** A block ID, once assigned, refers to that block forever.
+5. **Handles are stable.** A handle, once assigned, refers to that block forever.
 
 Invariant 4 is doing double duty — see §5.
 
@@ -42,10 +49,11 @@ Invariant 4 is doing double duty — see §5.
 
 | Kind | Location | Written by | Mutable | Notes |
 |---|---|---|---|---|
-| **Draft** | `raw/<uuid>.md` | Human (nvim) | No | Exactly what was written, frozen at submit |
-| **Note** | `notes/<uuid>.dj` | Human, via canonize | No | Same uuid as its draft |
-| **Source** | inside a note | Human | No | `[title](url)` + why it mattered |
-| **Wiki page** | `wiki/<uuid>.dj` | Agent | Yes | Generated; carries lineage. **Absent in v0.** |
+| **Draft** | `raw/<conv>/<turn>.md` | Either party | No | Exactly what was written, frozen at submit |
+| **Turn** | inside `conversations/<conv>.dj` | Either party | No | Fenced div carrying its author |
+| **Conversation** | `conversations/<conv>.dj` | Either party | Append-only | Turns; no block in one ever changes |
+| **Source** | inside a turn | Human | No | `[title](url)` + why it mattered |
+| **Artifact** | `artifacts/<name>.dj` | Either party | Yes | README, TODO, article. Regeneration must preserve handles |
 | **Todo state** | `state/` | UI action | Yes | Done/undone, keyed by block ID |
 | **HTML** | `site/` | Generator | Derived | pandoc + css + js |
 
@@ -53,9 +61,17 @@ The draft and the note share a uuid, so provenance is a filename lookup rather t
 Keeping the markdown original is cheap and makes "what did I actually write" answerable without
 git archaeology.
 
-**There is only one kind of submission: a note.** A "conversation" is not a storage type — it's a
-*view*, rendering the chain of notes and agent replies that reference each other by ID. Nothing is
-decided at submit time, because submit time is where friction would kill adoption.
+**A conversation is a storage type.** *Revised 2026-08-06.* This previously said a conversation was
+only a view over notes that reference each other. It is a file: turns appended, each fenced as
+`{#handle .turn author="..."}`. The change came from noticing that the conversation is also the
+answer to "how does the agent know what to do" — there is no invocation protocol, because the
+instruction is always "read conversation C; the turns since your last one are your input."
+
+It is also the unit of context control. A new conversation is a deliberately fresh view; the same
+conversation is full history. Nothing extra is needed to provide either.
+
+Nothing else is decided at submit time, because submit time is where friction would kill adoption —
+including which conversation a turn belongs to, which is inferred from the blocks it cites.
 
 Filenames are `<uuid>.dj` and are meaningless. Pages and blocks are real; files are containers.
 
@@ -175,9 +191,17 @@ structurally cannot emit unsourced general knowledge** — it has nothing to cit
 lineage are invalid (§13 Q3b covers whether that is enforced at write or at render).
 
 When general knowledge *is* wanted ("add a section for the lineup with past members"), that
-instruction is itself a note, and the generated blocks cite it. One rule handles both cases, and
+instruction is itself a turn, and the generated blocks cite it. One rule handles both cases, and
 the two kinds of block are distinguishable — worth rendering differently, since they carry
 different trust.
+
+**Imported conversations are freely citable.** *Decided 2026-08-06, against the recommendation.*
+The concern was that chat logs are the sloppiest possible source, so making agent prose a
+legitimate citation target would blunt this mechanism. The user's position: they push back on
+agents, require sources, and read what is written, so if it was said in a conversation it was at
+least read and probably argued with. This is reversible without a migration — authorship is
+recorded per turn, so a render-time filter can single out artifact blocks whose only citation is
+agent prose, if it turns out to be needed.
 
 ---
 
@@ -191,14 +215,25 @@ different trust.
 
 | Form | Meaning |
 |---|---|
-| `{#uuid:hash}` | that block, at that exact version |
-| `{#uuid:hash+++}` | that block **and its subtree**, recursively |
+| `{#a3f9c2d1}` | that block |
+| `{#a3f9c2d1+++}` | that block **and its subtree**, recursively |
+| `{#a3f9c2d1@7f2e}` | that block at a specific version — artifacts only |
 | `[title](page.dj)` | a page — naturally "current", since pages are named not versioned |
 
-**Block references are always pinned.** An unversioned `{#uuid}` is not legal. The reason is
-provenance: when debugging why an agent wrote something, "which version of this paragraph was fed
-to it" must be answerable from the reference alone, not reconstructed from timestamps. Page links
-carry the "ongoing" intent that bare block references would otherwise have expressed.
+**Handles are 8 random hex, not UUIDs.** *Revised 2026-08-06.* A UUIDv7 cost 39 bytes per block on
+disk and 56 per reference — measured at 26.8% of the corpus, and unreadable inline, which is a real
+cost in both the page and the context window. Nothing used a per-block timestamp; note and
+conversation ids stay UUIDv7 so dates and ordering still work. A registry-backed handle could be
+shorter still (4–5 characters) but requires a handle-to-block file that **cannot be rebuilt from the
+`.dj` files** — losing it would break every reference at once, which no other artifact here can do.
+Collisions are the accepted cost of minting handles without reading the corpus; `kg check` reports
+them.
+
+**The version pin is optional.** *Revised 2026-08-06.* It was previously required on every
+reference, for provenance: "which version of this paragraph was fed to the agent" must be answerable
+from the reference alone. For an immutable conversation block the handle already answers it, so the
+pin is redundant there and is kept for artifacts, which are mutable. Both forms are defined now so
+the syntax never has to change again.
 
 `+++` is deliberately wide rather than a single `+`: it is never typed by hand — the HTML copies it
 — so the only thing that matters is how easily it can be spotted next to a 36-character UUID.
@@ -243,17 +278,21 @@ canonical and had no history. Files are canonical now, and git holds the history
 ## 8. Repository layout
 
 ```
-raw/          <uuid>.md   — the draft exactly as written, frozen
-notes/        <uuid>.dj   — canonized, addressable, frozen
-wiki/         <uuid>.dj   — agent-written, versioned. Absent until v1.
-site/                     — generated HTML (gitignored)
-state/                    — todo done/undone, keyed by block ID
-src/                      — the tooling
+raw/<conv>/<turn>.md      — drafts exactly as written, frozen
+conversations/<conv>.dj   — turns, appended; every block frozen once written
+artifacts/<name>.dj       — documents, rewritten in place
+site/                     — generated HTML + blocks.json (gitignored)
+state/                    — todo done/undone, keyed by handle
 ```
 
-`notes/` and `wiki/` are separate directories so the filesystem enforces the write boundary — a bug
-cannot quietly let an agent into your notes. All `.dj` files sit flat within their directory; there
-is no semantic hierarchy on disk. Structure lives in links and index pages, not in folders.
+**A base is per project.** The user works in project directories, so the base lives with the project
+rather than being global. This also makes "the whole corpus fits in context" obviously true rather
+than merely assumed.
+
+The directories no longer enforce a write boundary — that job moved to immutability. What they do
+separate is *append-only* from *rewritten*, which is the distinction that decides whether the delta
+algorithm is needed. All `.dj` files sit flat within their directory; structure lives in links and
+index pages, not in folders.
 
 ---
 

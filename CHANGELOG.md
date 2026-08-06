@@ -3,6 +3,92 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2 — 2026-08-06 — conversations, and an agent in the loop
+
+The loop now runs with both parties in it. Either can write; neither can alter
+what the other wrote.
+
+**Changed — the shape of the system**
+
+- **The split is mutability, not authorship.** `notes/` and `wiki/` enforced
+  "humans write notes, agents write the wiki" with the filesystem. That boundary
+  is gone: `conversations/` is append-only and `artifacts/` is rewritten in
+  place, and either party writes either kind. What protected anything was never
+  the directory but immutability, and that is kept — no block already written
+  ever changes, whoever wrote it. Revises invariant 3 and §3 of `mvp-design.md`,
+  which called a conversation a view rather than a storage type.
+- **A conversation is one append-only file**, not a directory of turns. Turns
+  get concatenated for reading anyway, and one file is one djot parse: at the
+  measured ~1 s per `npx` spawn, a 70-turn imported session costs about a second
+  this way against roughly two minutes as separate files.
+- **Turns are fenced divs carrying their author** —
+  `{#handle .turn author="claude"}`. One native djot construct provides the
+  container, the authorship, and the nesting that folded tool traffic needs. No
+  frontmatter, no sidecar, nothing outside the reference implementation.
+- **Block ids are 8 hex characters, not UUIDv7.** A UUID cost 39 bytes per block
+  on disk and 56 per reference — measured at 26.8% of the corpus, and unreadable
+  inline. Handles cost 10.2%. Nothing needed a per-block timestamp; note ids stay
+  UUIDv7 so dates and ordering still work. Rejected the shorter registry-backed
+  handle: a handle-to-block file cannot be rebuilt from the `.dj` files, so
+  losing it would break every reference at once.
+- **The version pin is now optional.** `{#handle}` for immutable conversation
+  blocks, whose handle already pins their content; `{#handle@ver}` for artifacts.
+  Both forms are defined now so the syntax never has to change again.
+- **The thread is inferred from citations.** You reply by clicking a block, so
+  the conversation is implied; `-c` is only needed when a draft cites nothing or
+  cites two threads.
+
+**New**
+
+- `kg import` — a closed Claude Code session becomes a conversation. The whole
+  log is turned into one markdown document and canonized in a single pass,
+  because pandoc carries fenced divs and their attributes through to djot.
+  Nothing is filtered: tool traffic and thinking are wrapped in `.tool-call`
+  divs that the renderer folds away, so the transcript is complete and every
+  block of it addressable. Subagent branches become `claude:sidechain` turns.
+- `site/blocks.json` — every block with its handle, hash, type, source,
+  structure, citations and author. An agent can read a `.dj` with grep but
+  cannot *cite* one, because the hash is SHA-256 over the parsed block; this
+  closes that gap and doubles as whole-corpus context assembly.
+- `kg check` — dangling references and handle collisions, as a set difference
+  over `blocks.json`. A dangling reference cannot be repaired in place, because
+  the turn holding it is immutable, so noticing is the only defence.
+- `AGENTS.md` — everything an agent needs to read and write a base, without
+  reading this repository.
+- Rendering: per-turn author labels straight from the djot attribute via
+  `attr()`, no JavaScript; `.tool-call` divs folded into `<details>`; whole
+  turns subtree-copyable.
+
+**Fixed — correctness**
+
+- **A div swallowed its children.** `inject_ids` recursed into a div and gave
+  every child an id; `ast_walker` nested those children inside the div's
+  `content` instead of emitting them. Two halves of one pipeline held opposite
+  beliefs, so canonization wrote ids into the file for blocks the block list did
+  not contain — clickable in HTML, resolving to nothing, absent from every view.
+  Neither the verifier nor the roundtrip test could see it, because the blocks
+  were missing from both sides of every comparison; `test_roundtrip` even had a
+  `_flatten()` helper written to accommodate the nesting. This blocked folds
+  entirely, and would have made every block of every imported turn
+  unaddressable.
+
+**Measured, because it drove decisions**
+
+- Appending a turn directly after a heading section merges it into the
+  *previous* paragraph — an already-referenced block's text silently grows and
+  the new turn's id attaches to nothing. A list appended after a paragraph is
+  absorbed as continuation text and loses its id. A single blank line prevents
+  every case found; the turn fence then makes merging structurally impossible.
+- `npx @djot/djot` costs ~1 s per spawn, and `kg render` parses each file twice.
+
+**Migration**
+
+`tools/migrate_to_handles.py` remapped the test base: 248 blocks, 27 references
+rewritten, zero dangling, including a cross-file subtree reference. Old-to-new
+is positional — re-canonizing an immutable draft yields the same block sequence
+— so nothing was guessed, and the script refuses to write if the sequences do
+not correspond.
+
 ## v0.1 — 2026-08-04 — the mechanical loop
 
 The write → submit → canonize → read → reference → submit loop works end to

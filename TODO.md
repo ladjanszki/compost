@@ -43,27 +43,54 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 
 ---
 
-## v0.2 — small, all render-time or internal
+## v0.2 — conversations, and an agent in the loop ✓
 
-- [ ] **Dangling references** — see below. Found by dogfooding v0.1
-- [ ] **Open todos view** — "what was I in the middle of". Block type is
-      already recorded; render-time, so it works on existing notes
-- [ ] `pytest` wiring and a runner for all three suites; no CI yet
-- [ ] Persistent djot worker — `npx` spawns a Node process per parse
-      (~100–300 ms). Fine now, wants fixing before bulk ingestion
+- [x] **Fix the walker's div handling** — a div swallowed its children, so every
+      block of every folded turn would have been unaddressable
+- [x] **8-hex handles** replacing UUIDv7 block ids; id overhead 26.8% → 10.2%
+- [x] Optional version pin: `{#handle}` immutable, `{#handle@ver}` artifacts
+- [x] `conversations/` and `artifacts/` — the split is mutability, not authorship
+- [x] Turns as `{.turn author=...}` divs; authorship in the djot, so in git
+- [x] Append verification — earlier blocks must survive unchanged, structure
+      included, since the seam failure changes no text
+- [x] Thread inferred from the blocks a draft cites; no second handle to copy
+- [x] `blocks.json` — the corpus an agent can actually cite from
+- [x] `kg check` — dangling references and handle collisions
+- [x] `kg import` — a closed Claude Code session becomes a conversation
+- [x] Folded tool traffic; per-turn author labels
+- [x] `AGENTS.md` — an agent needs the base and this file, not the repo
+- [x] Migrate the test base: 248 blocks remapped, zero dangling
+
+## v0.3 — next
+
+- [ ] **Reply affordance in the HTML** — a button that puts you in a draft for
+      the block you clicked. The handle is already copied; the missing half is
+      not having to switch to a terminal
+- [ ] **Open todos view** — "what was I in the middle of". Block type is already
+      in `blocks.json`; render-time, so it works retroactively
+- [ ] **Backlinks are per-note, not per-block** — a target citing eleven blocks
+      shows the same link eleven times with no indication of which block each
+      points at. Noise at exactly the moment it should be useful
+- [ ] `pytest` wiring and one runner for all five suites; no CI yet
+- [ ] Persistent djot worker — `npx` costs ~1 s per spawn and `kg render` parses
+      every file twice. One-file-per-conversation keeps this tolerable, but it
+      dominates render time
 - [ ] Remove `src/ingest/block_schema.py` (legacy; canonize does its own)
 - [ ] Restore a copy-confirmation flash outside the repaint cycle
 - [ ] Decide whether `+++` should be the *default* on headings, with a
-      modifier for the single block ("rewrite this section" is likely commoner)
+      modifier for the single block
 
-## v1 — wiki generation
+## v1 — artifact generation
 
-The point where an LLM enters the system. Nothing below is deterministic.
+The point where an LLM writes rather than converses. Nothing below is
+deterministic.
 
-- [ ] `wiki/` directory; agents write there, humans never do
-- [ ] Explicit generation: assemble notes, hand to an agent, take the result
-      back. No embeddings — a few hundred notes fit in context
-- [ ] Record lineage on every generated block (`DERIVED_FROM` → note block)
+- [ ] Explicit generation: hand `blocks.json` to an agent, take an artifact
+      back. No embeddings — a project corpus fits in context
+- [ ] **README and TODO as generated artifacts**, in djot, read from the served
+      pages. The bootstrap has to sit *outside* the base, since a guide living
+      inside it is only findable after you know the base exists
+- [ ] Record lineage on every generated block (`DERIVED_FROM` → source block)
 - [ ] **Lineage validation** — a block that cites nothing is invalid. Open:
       reject at write time, or flag visibly at render time (§13 Q3b)
 - [ ] **Id-preserving regeneration** — unchanged blocks must keep their ids or
@@ -100,6 +127,8 @@ The point where an LLM enters the system. Nothing below is deterministic.
 ---
 
 ## Dangling references
+
+*Case 1 and case 3 are now reported by `kg check` (v0.2).* The rest stands.
 
 Found by submitting this repo's own docs into a knowledge base: `kg render`
 reported *"1 referenced"* for the example reference in `README.md`, whose
@@ -159,6 +188,12 @@ Carried from `mvp-design.md` §13.
 - [ ] **Q2** What is the unit of regeneration — one page, a page and its index,
       a transitive neighbourhood? Interacts with Q1
 - [ ] **Q3b** Lineage: reject at write, or flag at render?
+- [x] **Q9** Where do agent replies live? *Resolved 2026-08-06: in conversations,
+      which either party writes. The boundary moved from authorship to
+      mutability.*
+- [x] **Q10** Are chat logs citable sources? *Resolved 2026-08-06: yes,
+      deliberately. Decided against the recommendation; reversible at render
+      time because authorship is recorded, so no migration if it goes wrong.*
 - [ ] **Q4** Is the paragraph the right block unit? Agreed as default, but
       prose sometimes packs several thoughts into one
 - [ ] **Q5** Which model generates the wiki, and what caps the cost?
