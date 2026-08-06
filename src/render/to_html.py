@@ -23,6 +23,7 @@ from ..canonize import block_hash
 from ..ingest.ast_walker import walk
 from ..ingest.djot_ast import get_ast_from_text
 from ..refs import HANDLE, ID_ATTR, REF as REF_RE
+from . import index as index_mod
 from ..store import Store
 
 _ID_IN_HTML = re.compile(r'id="' + HANDLE + r'"')
@@ -330,6 +331,8 @@ def render(store: Store) -> dict:
         PAGE.format(title=store.root.name, css=CSS, script=SCRIPT,
                     body=index_body, home="index.html"),
         encoding="utf-8")
+
+    index_mod.write(store, notes)
 
     return {"conversations": sum(1 for n in notes if n["kind"] == "conversation"),
             "artifacts": sum(1 for n in notes if n["kind"] == "artifact"),

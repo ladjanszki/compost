@@ -14,6 +14,8 @@ sys.path.insert(0, ".")
 from src import store as store_mod
 from src.canonize import block_hash, canonize_text
 from src.refs import reference
+from src.render import index as index_mod
+from src.render.to_html import load_notes
 from src.ingest.ast_walker import walk
 from src.ingest.djot_ast import get_ast_from_text
 from src.render.to_html import backlink_index, load_notes, render
@@ -126,11 +128,63 @@ def tc4_store_resolution():
             check("non-base raises an actionable error", "kg init" in str(e))
 
 
+# --------------------------------------------------------------------------
+# TC-5  blocks.json, and the check that reads it
+#
+# A dangling reference cannot be repaired in place — the turn containing it is
+# immutable — so noticing is the only defence. The check must therefore fire on
+# a handle that resolves to nothing, and must not fire on one that resolves.
+# --------------------------------------------------------------------------
+def tc5_index_and_check():
+    print("\nTC-5: blocks.json and kg check")
+    with tempfile.TemporaryDirectory() as tmp:
+        st = store_mod.init(Path(tmp) / "kb")
+        from src.conversation import append_turn
+        path = st.conversations / "019fcc00-0000-7000-8000-000000000001.dj"
+        append_turn(path, "The block worth citing.\n", "human")
+
+        target = [b for b in load_notes(st)[0]["blocks"] if b["type"] == "paragraph"][0]
+        append_turn(path, f"Answering {reference(target['id'])} here.\n", "claude")
+
+        records = index_mod.build(load_notes(st))
+        by_handle = {r["handle"]: r for r in records}
+
+        check("every block has a record", len(records) == len(load_notes(st)[0]["blocks"]))
+        check("records carry a hash a reader cannot compute from the file",
+              all(len(r["hash"]) == 16 for r in records))
+        check("authorship comes through from the turn",
+              {r.get("author") for r in records} == {"human", "claude"},
+              {r.get("author") for r in records})
+        check("citations are recorded",
+              any(r.get("cites") == [target["id"]] for r in records))
+
+        clean = index_mod.check(records)
+        check("a resolving reference is not reported",
+              not clean["dangling"] and not clean["collisions"], clean)
+
+        # Sabotage: point at a handle that exists nowhere.
+        broken = [dict(r) for r in records]
+        next(r for r in broken if r.get("cites"))["cites"] = ["deadbeef"]
+        report = index_mod.check(broken)
+        check("a dangling reference is reported",
+              len(report["dangling"]) == 1, report["dangling"])
+        check("the report names the source and the target",
+              report["dangling"][0]["target"] == "deadbeef"
+              and report["dangling"][0]["source"].endswith(".dj"))
+
+        # Sabotage: two blocks claiming one handle.
+        dup = [dict(r) for r in records]
+        dup[1]["handle"] = dup[0]["handle"]
+        check("a handle collision is reported",
+              len(index_mod.check(dup)["collisions"]) == 1)
+
+
 def main():
     tc1_every_block_clickable()
     tc2_backlinks()
     tc3_subtree_flag()
     tc4_store_resolution()
+    tc5_index_and_check()
     print()
     if FAILURES:
         print(f"{len(FAILURES)} check(s) FAILED: {FAILURES}")

@@ -4,7 +4,8 @@ cli.py — the `kg` command.
     kg init [dir]     create a knowledge base
     kg new            write a turn, append it on editor exit
     kg submit <file>  append an existing markdown file as a turn
-    kg render         build the static site
+    kg render         build the static site and blocks.json
+    kg check          report dangling references and handle collisions
     kg serve [-p]     render, then serve site/ on localhost
 
 The base is found via --root, then $KG_HOME, then a `.kg` marker in the
@@ -18,7 +19,8 @@ from pathlib import Path
 
 from . import conversation as conv_mod
 from . import store as store_mod
-from .render.to_html import render as render_site
+from .render import index as index_mod
+from .render.to_html import load_notes, render as render_site
 
 
 def _editor() -> list[str]:
@@ -109,6 +111,25 @@ def cmd_render(args) -> int:
     return 0
 
 
+def cmd_check(args) -> int:
+    """Report references that resolve to nothing, and handle collisions."""
+    st = store_mod.find(args.root)
+    report = index_mod.check(index_mod.build(load_notes(st)))
+
+    for d in report["dangling"]:
+        print(f"dangling  {d['source']}  {d['from']} -> {d['target']}\n"
+              f"          {d['text']}")
+    for c in report["collisions"]:
+        print(f"collision {c['handle']} used by {len(c['blocks'])} blocks:")
+        for src, text in c["blocks"]:
+            print(f"          {src}  {text}")
+
+    bad = len(report["dangling"]) + len(report["collisions"])
+    print(f"{report['blocks']} blocks, {len(report['dangling'])} dangling, "
+          f"{len(report['collisions'])} collisions")
+    return 1 if bad else 0
+
+
 def cmd_serve(args) -> int:
     st = store_mod.find(args.root)
     if cmd_render(args) != 0:
@@ -146,6 +167,9 @@ def main(argv=None) -> int:
 
     s = sub.add_parser("render", help="build the static site")
     s.set_defaults(fn=cmd_render)
+
+    s = sub.add_parser("check", help="report dangling references and collisions")
+    s.set_defaults(fn=cmd_check)
 
     s = sub.add_parser("serve", help="render, then serve on localhost")
     s.add_argument("-p", "--port", type=int, default=8000)
