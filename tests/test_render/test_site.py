@@ -13,6 +13,7 @@ sys.path.insert(0, ".")
 
 from src import store as store_mod
 from src.canonize import block_hash, canonize_text
+from src.refs import reference
 from src.ingest.ast_walker import walk
 from src.ingest.djot_ast import get_ast_from_text
 from src.render.to_html import backlink_index, load_notes, render
@@ -59,7 +60,7 @@ def tc1_every_block_clickable():
         html = next(st.site.glob("019*.html")).read_text()
         check("todo renders as a real checkbox", 'type="checkbox"' in html)
         check("every id carries a data-hash",
-              len(re.findall(r'id="[0-9a-f-]{36}" data-hash="[0-9a-f]{16}"', html))
+              len(re.findall(r'id="[0-9a-f]{8}" data-hash="[0-9a-f]{16}"', html))
               == stats["clickable"])
         check("subtree markers present", 'data-subtree="1"' in html)
 
@@ -71,7 +72,7 @@ def tc2_backlinks():
         target = [b for b in walk(get_ast_from_text(
             next(st.notes.glob("*.dj")).read_text()))
             if b["type"] == "paragraph"][0]
-        ref = "{#%s:%s}" % (target["id"], block_hash(target)[:16])
+        ref = reference(target["id"])
 
         r = canonize_text(f"Reacting to {ref} with a comment.\n")
         (st.notes / "019fcc00-0000-7000-8000-000000000009.dj").write_text(
@@ -94,7 +95,7 @@ def tc3_subtree_flag():
         st = make_base(Path(tmp), ["# Target\n\nA paragraph.\n"])
         target = walk(get_ast_from_text(
             next(st.notes.glob("*.dj")).read_text()))[0]
-        ref = "{#%s:%s+++}" % (target["id"], block_hash(target)[:16])
+        ref = reference(target["id"], subtree=True)
         r = canonize_text(f"Rewrite {ref} please.\n")
         (st.notes / "019fcc00-0000-7000-8000-000000000009.dj").write_text(
             r.djot, encoding="utf-8")

@@ -22,10 +22,10 @@ from pathlib import Path
 from ..canonize import block_hash
 from ..ingest.ast_walker import walk
 from ..ingest.djot_ast import get_ast_from_text
+from ..refs import HANDLE, ID_ATTR, REF as REF_RE
 from ..store import Store
 
-REF_RE = re.compile(r"\{#([0-9a-f-]{36}):([0-9a-f]{16})(\+*)\}")
-_UUID_ATTR = re.compile(r"\{#([0-9a-f-]{36})\}")
+_ID_IN_HTML = re.compile(r'id="' + HANDLE + r'"')
 
 
 def djot_to_html(djot: str) -> str:
@@ -76,7 +76,7 @@ def annotate(djot: str, blocks: list) -> str:
         h, sub_ok = meta[bid]
         return f'{{#{bid} data-hash="{h}"{" data-subtree=\"1\"" if sub_ok else ""}}}'
 
-    return _UUID_ATTR.sub(sub, djot)
+    return ID_ATTR.sub(sub, djot)
 
 
 # ---------------------------------------------------------------- corpus ---
@@ -197,7 +197,9 @@ document.addEventListener('click', function (e) {
   const el = e.target.closest('[data-hash]');
   if (!el) return;
   const sub = e.shiftKey && el.hasAttribute('data-subtree') ? '+++' : '';
-  const ref = '{#' + el.id + ':' + el.dataset.hash + sub + '}';
+  // No version pin: conversation blocks are immutable, so the handle already
+  // pins the content. Artifacts are mutable and will copy '@' + hash.
+  const ref = '{#' + el.id + sub + '}';
   navigator.clipboard.writeText(ref).then(function () {
     const t = document.getElementById('toast');
     t.textContent = ref;
@@ -239,7 +241,7 @@ def render(store: Store) -> dict:
 
     for note in notes:
         body = djot_to_html(annotate(note["djot"], note["blocks"]))
-        ids_in_html = len(re.findall(r'id="[0-9a-f-]{36}"', body))
+        ids_in_html = len(_ID_IN_HTML.findall(body))
         total_blocks += sum(1 for b in note["blocks"] if b.get("id"))
         clickable += ids_in_html
 

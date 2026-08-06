@@ -15,12 +15,10 @@ items there is exactly one form djot accepts:
 `{#id}` on the line *before* a list attaches to the list container, not the
 item, and the inline form `- {#id} item one` is silently discarded.
 """
-import re
 from dataclasses import dataclass
 
-import uuid6
-
 from ..ingest.djot_ast import get_ast_from_text
+from ..refs import ID_LINE, new_handle
 
 # Blocks that get an id at their own position, on a preceding line.
 SIMPLE_BLOCKS = {
@@ -41,8 +39,8 @@ class Insertion:
 
 
 def _new_id() -> str:
-    """UUIDv7 — sortable, and its embedded timestamp gives parsed_at for free."""
-    return str(uuid6.uuid7())
+    """A block handle — 8 random hex. See refs.py for why not a UUID."""
+    return new_handle()
 
 
 def _start(node: dict):
@@ -145,15 +143,12 @@ def apply_insertions(djot_text: str, insertions: list[Insertion]) -> str:
 # A blank line after the id line makes the item loose. This is done per item
 # rather than between items because a single-item list has no sibling to
 # separate from. Blocks parse identically either way — see tests/test_canonize.
-_ID_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)]) (?:\[[ x]\] )?\{#[0-9a-f-]{36}\}\s*$")
-
-
 def loosen(djot_text: str) -> str:
     """Force list items loose so their ids survive into HTML."""
     out = []
     for line in djot_text.split("\n"):
         out.append(line)
-        if _ID_LINE.match(line):
+        if ID_LINE.match(line):
             out.append("")
     return "\n".join(out)
 

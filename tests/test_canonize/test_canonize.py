@@ -11,10 +11,11 @@ sys.path.insert(0, ".")
 from src.canonize import canonize_text
 from src.ingest.ast_walker import walk
 from src.ingest.djot_ast import get_ast_from_text
+from src.refs import HANDLE
 
 FAILURES = []
 
-UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}")
+HANDLE_RE = re.compile(HANDLE)
 
 
 def check(name: str, condition: bool, detail: str = ""):
@@ -50,17 +51,17 @@ def tc1_every_block_has_an_id():
     # Every id must be one we assigned. A pandoc-generated heading slug
     # ("{#a-heading}") would satisfy "has an id" while violating the stable-id
     # invariant, since it changes whenever the heading text is edited.
-    not_uuid = [(b["type"], b["id"]) for b in blocks
-                if not UUID_RE.fullmatch(b["id"] or "")]
-    check("every id is an assigned UUID, not a derived slug",
-          not not_uuid, f"non-uuid ids: {not_uuid}")
+    not_handle = [(b["type"], b["id"]) for b in blocks
+                if not HANDLE_RE.fullmatch(b["id"] or "")]
+    check("every id is an assigned handle, not a derived slug",
+          not not_handle, f"non-handle ids: {not_handle}")
 
     # No stray attributes either. Pandoc's auto_identifiers leaves a
     # "{#a-heading}" line that our UUID overrides semantically but which stays
     # in the file as noise, so the residue is worth catching directly.
     stray = [a for a in re.findall(r"\{#([^}]*)\}", r.djot)
-             if not UUID_RE.fullmatch(a)]
-    check("no leftover non-UUID attributes in the file",
+             if not HANDLE_RE.fullmatch(a)]
+    check("no leftover non-handle attributes in the file",
           not stray, f"stray: {stray}")
 
 
@@ -110,8 +111,8 @@ def tc2b_div_children_are_blocks():
     # Ids written into the file but absent from the block list are the actual
     # failure mode: they look clickable in HTML and resolve to nothing.
     check("no id is written that the block list does not know about",
-          len(re.findall(r"\{#[0-9a-f-]{36}\}", r.djot)) == len(blocks),
-          f"{len(re.findall(r'{#[0-9a-f-]{36}}', r.djot))} ids, {len(blocks)} blocks")
+          len(re.findall(r"\{#[0-9a-f]{8}\}", r.djot)) == len(blocks),
+          f"{len(re.findall(r'{#[0-9a-f]{8}}', r.djot))} ids, {len(blocks)} blocks")
 
 
 # --------------------------------------------------------------------------
@@ -155,14 +156,25 @@ def tc4_text_is_preserved():
 def tc5_references_survive():
     print("\nTC-5: hand-written block references survive")
     md = (
-        "Regarding {#019abc} I think this is incomplete.\n\n"
-        "And {#019abc:3f7a2b9c1e8d4f0a} pins a version.\n"
+        "Regarding {#a3f9c2d1} I think this is incomplete.\n\n"
+        "And {#a3f9c2d1@7f2e} pins a version, {#a3f9c2d1+++} takes the subtree.\n"
     )
     r = canonize_text(md)
-    texts = " ".join(b["content"].get("text", "") for b in blocks_of(r.djot))
-    check("plain reference survives", "{#019abc}" in texts, texts)
-    check("compound reference survives",
-          "{#019abc:3f7a2b9c1e8d4f0a}" in texts, texts)
+    blocks = blocks_of(r.djot)
+    texts = " ".join(b["content"].get("text", "") for b in blocks)
+    check("plain reference survives", "{#a3f9c2d1}" in texts, texts)
+    check("version-pinned reference survives", "{#a3f9c2d1@7f2e}" in texts, texts)
+    check("subtree reference survives", "{#a3f9c2d1+++}" in texts, texts)
+
+    # A handle and an id attribute are now the same shape, so the only thing
+    # separating "a reference the author typed" from "an id we assigned" is
+    # pandoc's escaping. If a written reference were ever read as an attribute
+    # it would silently become a second block claiming that handle.
+    check("a written reference is not mistaken for an id attribute",
+          all(b["id"] != "a3f9c2d1" for b in blocks),
+          [b["id"] for b in blocks])
+    check("written references stay escaped on disk",
+          r"\{#a3f9c2d1\}" in r.djot, r.djot)
 
 
 # --------------------------------------------------------------------------
@@ -185,8 +197,8 @@ def tc6_injection_is_inert():
     # Removing the injected id lines must give back the original byte for byte.
     # Note [ \t] rather than \s: \s matches newlines and would swallow the
     # blank lines between blocks, making a purely additive insertion look lossy.
-    stripped = re.sub(r"^[ \t]*\{#[0-9a-f-]{36}\}\n", "", injected, flags=re.M)
-    stripped = re.sub(r"^([ \t]*[-*+] (?:\[[ x]\] )?)\{#[0-9a-f-]{36}\}\n[ \t]*",
+    stripped = re.sub(r"^[ \t]*\{#[0-9a-f]{8}\}\n", "", injected, flags=re.M)
+    stripped = re.sub(r"^([ \t]*[-*+] (?:\[[ x]\] )?)\{#[0-9a-f]{8}\}\n[ \t]*",
                       r"\1", stripped, flags=re.M)
     check("stripping ids restores the pandoc output", stripped == plain,
           "id insertion is not purely additive")
