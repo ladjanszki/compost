@@ -54,6 +54,10 @@ def has_subtree(blocks: list, i: int) -> bool:
         lvl = c.get("level", 1)
         return not (nxt[0]["type"] == "heading"
                     and nxt[0]["content"].get("level", 1) <= lvl)
+    if b["type"] == "div":
+        # A turn (or any div) owns the blocks flattened out of it, so shift-click
+        # copies a whole turn.
+        return c.get("contains", 0) > 0
     if b["type"] in ("list_item", "task_item"):
         d = c.get("depth", 0)
         nxt = blocks[i + 1:]
@@ -82,20 +86,31 @@ def annotate(djot: str, blocks: list) -> str:
 # ---------------------------------------------------------------- corpus ---
 
 def load_notes(store: Store) -> list[dict]:
-    """Every canonized note, oldest first, with its parsed blocks."""
+    """Every conversation and artifact, with its parsed blocks."""
     notes = []
-    for path in store.note_paths():
+    for path in store.source_paths():
+        kind = "artifact" if path.parent == store.artifacts else "conversation"
         djot = path.read_text(encoding="utf-8")
         blocks = walk(get_ast_from_text(djot))
-        title = next(
-            (b["content"]["text"] for b in blocks if b["type"] == "heading"),
-            next((b["content"].get("text", "") for b in blocks), "") or path.stem,
-        )
+        # An artifact is named, so its filename is its title. A conversation is
+        # a uuid, so the first heading — or failing that the first block — is
+        # the only human-readable handle on it.
+        if kind == "artifact":
+            title = path.stem.replace("-", " ")
+        else:
+            title = next(
+                (b["content"]["text"] for b in blocks if b["type"] == "heading"),
+                next((b["content"].get("text", "") for b in blocks), "") or path.stem,
+            )
+        turns = sum(1 for b in blocks
+                    if b["type"] == "div" and "turn" in (b["content"].get("classes") or []))
         notes.append({
             "id": path.stem,
+            "kind": kind,
             "path": path,
             "djot": djot,
             "blocks": blocks,
+            "turns": turns,
             "title": " ".join(title.split())[:80],
         })
     return notes
@@ -147,6 +162,21 @@ CSS = """
   .noteindex {list-style: none; padding: 0;}
   .noteindex li {padding: .35rem 0; border-bottom: 1px solid #f0f2f6;}
   .noteindex .when {color: #9aa7bb; font-size: 12px; font-family: monospace;}
+  .kind {font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+        color: #9aa7bb;}
+  /* A turn is fenced in its own div so appends cannot corrupt the seam; the
+     author attribute rides along in the djot, so the label needs no JS. */
+  .turn {border-left: 3px solid #e4e8ef; padding: .2rem 0 .2rem 1rem;
+        margin: 1.6rem 0;}
+  .turn[author]::before {content: attr(author); display: block; font-size: 11px;
+        text-transform: uppercase; letter-spacing: .07em; color: #9aa7bb;
+        margin-bottom: .4rem;}
+  .turn[author="human"] {border-left-color: #2b5fd9;}
+  .turn[author^="claude"], .turn[author^="agent"] {border-left-color: #d99b2b;}
+  details.tool-call {margin: .6rem 0; font-size: 13px;}
+  details.tool-call > summary {cursor: pointer; color: #7a8ba6; font-size: 12px;
+        font-family: monospace;}
+  details.tool-call[open] {border-left: 2px solid #f0f2f6; padding-left: .8rem;}
   #toast {position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
         background: #1a1a1a; color: #fff; padding: .5rem 1rem; border-radius: 6px;
         font: 13px monospace; opacity: 0; transition: opacity .15s;
@@ -155,6 +185,20 @@ CSS = """
 """
 
 SCRIPT = """
+// Tool traffic is the bulk of an imported session and almost none of its value.
+// Fold it: the whole transcript stays in the page and stays addressable, but
+// what you read by default is the conversation.
+document.querySelectorAll('div.tool-call').forEach(function (div) {
+  const d = document.createElement('details');
+  d.className = 'tool-call';
+  const s = document.createElement('summary');
+  const first = div.querySelector('p,pre,li');
+  s.textContent = '⊞ ' + ((first && first.textContent.trim().slice(0, 72)) || 'tool call');
+  d.appendChild(s);
+  while (div.firstChild) d.appendChild(div.firstChild);
+  div.replaceWith(d);
+});
+
 // A heading's id lands on the wrapping <section>. Move it to the heading so the
 // heading is one block, and mark the section as that block's subtree container.
 document.querySelectorAll('section[data-hash]').forEach(function (sec) {
@@ -262,19 +306,32 @@ def render(store: Store) -> dict:
                         script=SCRIPT, body=body, home="index.html"),
             encoding="utf-8")
 
-    items = "".join(
-        f'<li><span class="when">{_when(n["id"])}</span> '
-        f'<a href="{n["id"]}.html">{html_mod.escape(n["title"]) or n["id"]}</a>'
-        f' <span class="when">{len(n["blocks"])} blocks</span></li>'
-        for n in reversed(notes)
-    )
-    index_body = (f"<h1>Notes</h1><p>{len(notes)} notes, "
-                  f"{total_blocks} addressable blocks.</p>"
-                  f'<ul class="noteindex">{items}</ul>')
+    def listing(rows):
+        return "".join(
+            f'<li><span class="when">{_when(n["id"])}</span> '
+            f'<a href="{n["id"]}.html">{html_mod.escape(n["title"]) or n["id"]}</a>'
+            f' <span class="when">'
+            f'{str(n["turns"]) + " turns, " if n["turns"] else ""}'
+            f'{len(n["blocks"])} blocks</span></li>'
+            for n in rows
+        )
+
+    convs = [n for n in notes if n["kind"] == "conversation"]
+    arts = [n for n in notes if n["kind"] == "artifact"]
+    index_body = (f"<h1>{store.root.name}</h1><p>{len(convs)} conversations, "
+                  f"{len(arts)} artifacts, {total_blocks} addressable blocks.</p>")
+    if convs:
+        index_body += ('<p class="kind">Conversations</p>'
+                       f'<ul class="noteindex">{listing(list(reversed(convs)))}</ul>')
+    if arts:
+        index_body += ('<p class="kind">Artifacts</p>'
+                       f'<ul class="noteindex">{listing(arts)}</ul>')
     (store.site / "index.html").write_text(
-        PAGE.format(title="Notes", css=CSS, script=SCRIPT,
+        PAGE.format(title=store.root.name, css=CSS, script=SCRIPT,
                     body=index_body, home="index.html"),
         encoding="utf-8")
 
-    return {"notes": len(notes), "blocks": total_blocks,
-            "clickable": clickable, "backlinks": len(backlinks)}
+    return {"conversations": sum(1 for n in notes if n["kind"] == "conversation"),
+            "artifacts": sum(1 for n in notes if n["kind"] == "artifact"),
+            "blocks": total_blocks, "clickable": clickable,
+            "backlinks": len(backlinks)}
