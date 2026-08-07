@@ -35,7 +35,7 @@ SKIP_TYPES = {"mode", "permission-mode", "file-history-snapshot", "ai-title",
 # rest to the human is a lie the reader cannot detect — a directory listing
 # appears above their name — so each is recognised and re-attributed.
 META_MARKERS = ("<command-name>", "<command-message>", "<local-command-stdout>",
-                "[Request interrupted by user")
+                "[Request interrupted by user", "<local-command-caveat>")
 SYSTEM_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>",
                              re.DOTALL)
 

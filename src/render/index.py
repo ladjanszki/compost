@@ -23,7 +23,7 @@ lived only here it would be destroyed by the next render.
 import json
 
 from ..canonize import block_hash
-from ..refs import REF
+from ..refs import citations
 
 
 def _turn_authors(blocks: list) -> list:
@@ -67,7 +67,7 @@ def build(notes: list[dict]) -> list[dict]:
                     rec[field] = c[field]
             if authors[i]:
                 rec["author"] = authors[i]
-            cited = [m.group(1) for m in REF.finditer(c.get("text", ""))]
+            cited = citations(b)
             if cited:
                 rec["cites"] = cited
             out.append(rec)

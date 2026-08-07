@@ -48,6 +48,32 @@ ID_LINE = re.compile(
     r"^\s*(?:[-*+]|\d+[.)]) (?:\[[ x]\] )?\{#" + HANDLE + r"\}\s*$")
 
 
+CODE_SPAN = re.compile(r"`[^`]*`")
+
+# Code carries references that are not citations: a documented example, or a
+# shell command from an experiment. Importing this project's own sessions turned
+# 6 dangling references into 48, every one of them inside code. A checker that
+# reports those is noise, and noise gets muted — which would cost the one thing
+# the check is for, since a bad reference lives in an immutable block and can
+# never be corrected in place.
+CODE_TYPES = {"code_block", "raw_block"}
+
+
+def citations(block: dict) -> list[str]:
+    """
+    Handles a block genuinely cites, ignoring anything inside code.
+
+    Takes a walked block, not a string, because the block's type is half the
+    answer: a code block cites nothing at all.
+    """
+    if block["type"] in CODE_TYPES:
+        return []
+    text = block["content"].get("text", "")
+    spans = [m.span() for m in CODE_SPAN.finditer(text)]
+    return [m.group(1) for m in REF.finditer(text)
+            if not any(a <= m.start() < b for a, b in spans)]
+
+
 def new_handle() -> str:
     """A fresh block handle. Pure — collisions are reported by `kg check`."""
     return secrets.token_hex(4)

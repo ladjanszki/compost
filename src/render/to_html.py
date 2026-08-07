@@ -23,7 +23,7 @@ from pathlib import Path
 from ..canonize import block_hash
 from ..ingest.ast_walker import walk
 from ..ingest.djot_ast import get_ast_from_text
-from ..refs import HANDLE, ID_ATTR, REF as REF_RE
+from ..refs import HANDLE, ID_ATTR, REF as REF_RE, citations
 from . import index as index_mod
 from ..store import Store
 
@@ -87,6 +87,19 @@ def annotate(djot: str, blocks: list) -> str:
 
 # ---------------------------------------------------------------- corpus ---
 
+def _first_human_words(blocks: list) -> str:
+    """The opening of the first human turn — what the conversation was for."""
+    for i, b in enumerate(blocks):
+        if (b["type"] == "div"
+                and "turn" in (b["content"].get("classes") or [])
+                and (b["content"].get("attrs") or {}).get("author") == "human"):
+            for inner in blocks[i + 1: i + 1 + b["content"].get("contains", 0)]:
+                text = inner["content"].get("text", "").strip()
+                if text:
+                    return text
+    return ""
+
+
 def load_notes(store: Store) -> list[dict]:
     """Every conversation and artifact, with its parsed blocks."""
     notes = []
@@ -103,13 +116,19 @@ def load_notes(store: Store) -> list[dict]:
         # (whose name is a uuid, which means nothing).
         heading = next((b["content"]["text"] for b in blocks
                         if b["type"] == "heading"), "")
-        if heading:
-            title = heading
-        elif kind == "artifact":
-            title = path.stem.replace("-", " ")
+        if kind == "artifact":
+            title = heading or path.stem.replace("-", " ")
         else:
-            title = next((b["content"].get("text", "") for b in blocks
-                          if b["content"].get("text")), "") or path.stem
+            # A conversation is best named by what the person opened with. Its
+            # first heading is usually something the *agent* wrote, and its
+            # first block can be harness output, which titled one session
+            # "<local-command-caveat>Caveat: The...".
+            spoken = {(b["content"].get("attrs") or {}).get("author")
+                      for b in blocks if b["type"] == "div"} - {"system", None}
+            title = (_first_human_words(blocks) or heading
+                     or (next((b["content"].get("text", "") for b in blocks
+                               if b["content"].get("text")), "") if spoken else "")
+                     or path.stem)
 
         turn_blocks = [b for b in blocks if b["type"] == "div"
                        and "turn" in (b["content"].get("classes") or [])]
@@ -153,10 +172,11 @@ def backlink_index(notes: list[dict]) -> dict[str, list[dict]]:
         # Scan parsed block text, not the raw file: pandoc escapes references
         # on disk as "\{#uuid:hash\}", and parsing is what unescapes them.
         for block in note["blocks"]:
+            cited = set(citations(block))
             for m in REF_RE.finditer(block["content"].get("text", "")):
                 target = m.group(1)
-                if target == block.get("id"):
-                    continue  # a block referencing itself is not a backlink
+                if target == block.get("id") or target not in cited:
+                    continue  # itself, or quoted inside code — not a backlink
                 entries = index.setdefault(target, [])
                 if not any(e["note"] is note for e in entries):
                     entries.append({"note": note, "subtree": bool(m.group(3))})
@@ -285,7 +305,7 @@ PAGE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><style>{css}</style></head><body>
-<nav><a href="{home}">← all notes</a></nav>
+<nav><a href="{home}">← index</a></nav>
 {body}
 <div id="toast"></div>
 <script>{script}</script></body></html>
@@ -350,6 +370,10 @@ def render(store: Store) -> dict:
                 facts.append(f'{n["turns"]} turns')
             if n["authors"]:
                 facts.append(" · ".join(n["authors"]))
+            # The name is how you look something up ("where is the README?"),
+            # so it belongs on screen even when a heading supplies the title.
+            if n["kind"] == "artifact" and n["title"].lower() != n["id"].replace("-", " "):
+                facts.insert(0, n["id"] + ".dj")
             facts.append(f'{len(n["blocks"])} blocks')
             facts.append(f'{n["words"]:,} words'.replace(",", " "))
             when = n["when"]

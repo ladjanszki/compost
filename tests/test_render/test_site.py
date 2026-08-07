@@ -172,6 +172,22 @@ def tc5_index_and_check():
               report["dangling"][0]["target"] == "deadbeef"
               and report["dangling"][0]["source"].endswith(".dj"))
 
+        # A handle inside code is not a citation. Importing this project's own
+        # sessions turned 6 dangling references into 48, all of them shell
+        # commands and documented examples. A checker that reports those is
+        # noise, and noise gets muted.
+        append_turn(path, "Docs say:\n\n```\n{#deadbeef} is an example\n```\n"
+                          "and inline `{#feedface}` too.\n", "claude")
+        recs2 = index_mod.build(load_notes(st))
+        cited = {h for r in recs2 for h in r.get("cites", [])}
+        check("a handle in a code block is not a citation",
+              "deadbeef" not in cited, cited)
+        check("a handle in a code span is not a citation",
+              "feedface" not in cited, cited)
+        check("a real citation still counts", target["id"] in cited, cited)
+        check("so nothing dangles", not index_mod.check(recs2)["dangling"],
+              index_mod.check(recs2)["dangling"])
+
         # Sabotage: two blocks claiming one handle.
         dup = [dict(r) for r in records]
         dup[1]["handle"] = dup[0]["handle"]
