@@ -12,7 +12,7 @@ corrected. A document you cannot safely update is a document nobody will comment
 on twice.
 
 The fix is the delta algorithm from
-`architecture/delta_ingestion_and_block_versioning.md`, and it is smaller than
+`archive/architecture/delta_ingestion_and_block_versioning.md`, and it is smaller than
 it sounds. Hash each block by `(type, content)`; a block whose hash matches one
 in the previous version *is* that block and keeps its handle. Only genuinely new
 or changed text gets a new handle. Matching is by content rather than by

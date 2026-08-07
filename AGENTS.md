@@ -3,6 +3,12 @@
 You are working with a project knowledge base built by `kg`. This file is all
 you need — do not read the tool's source to use it.
 
+**Read the base, not the repo's markdown.** `site/blocks.json` is the corpus;
+`artifacts/state-of-play.dj` is where the work stands; `conversations/` holds
+why every decision was made. Markdown files at the repo root are *sources* for
+four of the artifacts, so reading both is reading the same thing twice. Anything
+under `archive/` is historical and must not be followed.
+
 A base is a directory containing `.kg`, `conversations/`, `artifacts/`, `raw/`
 and `site/`. Find it with `--root <dir>` or `$KG_HOME`, or by running `kg` from
 inside it.

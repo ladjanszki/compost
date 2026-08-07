@@ -1,8 +1,15 @@
 # Development
 
-Written for someone arriving cold. Read `README.md` first for what the system
-does, then this to work on it. `mvp-design.md` is the product spec and is
-authoritative where this document is silent.
+Written for someone arriving cold. Read `README.md` for what the system does,
+then this to work on it, then `artifacts/state-of-play.dj` for where the work
+stands.
+
+There is no separate product spec any more. `mvp-design.md` was one, and it
+became the main source of documentation drift: it declared itself authoritative
+while describing `notes/`, `wiki/` and UUID block ids, none of which exist. It
+is in `archive/`. Its invariants are in "Mental model" below and its open
+questions are in `TODO.md`. **Code comments still cite its section numbers;
+those citations are historical.**
 
 ---
 
@@ -249,18 +256,19 @@ explicitly invoked, an agent reads `blocks.json` directly (no embeddings — a
 project corpus fits in context), and every emitted block cites the block it came
 from. Note that the user has decided chat content **is** freely citable, so the
 "a block with nothing to cite is invalid" rule is the anti-slop mechanism but
-imported conversations are legitimate sources. See `mvp-design.md` §5.
+imported conversations are legitimate sources. The reasoning is in the conversations.
 
 **2. Regeneration must preserve handles.** When an agent rewrites an artifact,
 unchanged blocks must keep their handles or every turn referring to them is
 orphaned. This is the delta algorithm in
-`architecture/delta_ingestion_and_block_versioning.md`. **Until it exists, no
+`archive/architecture/delta_ingestion_and_block_versioning.md`, now implemented
+in `src/artifact.py` for artifacts. **Until it exists for regeneration, no
 agent should rewrite an artifact** — `AGENTS.md` says so explicitly.
 
 **3. Deferred views.** Open todos across the corpus. Cheap: the block type is
 already in `blocks.json`, and it is a render-time view so it works retroactively.
 
-**4. Semantic linking (`mvp-design.md` §13 Q1).** Which artifact a turn affects,
+**4. Semantic linking (`TODO.md`, Open questions).** Which artifact a turn affects,
 beyond the blocks it explicitly cites. Needs embeddings or LLM reading, and is
 its own initiative. Keep inferred edges in a distinct type from
 reference/lineage edges: when a link is wrong, the first question is always

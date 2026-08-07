@@ -1,6 +1,7 @@
 # TODO
 
-Everything discussed. See `mvp-design.md` for why, `DEVELOPMENT.md` for how.
+Everything discussed. See `DEVELOPMENT.md` for how, and `conversations/` for
+why — the reasoning lives in the base, not in a spec that can drift.
 
 **Released versions and planning milestones are different things**, and this
 file used to blur them. Versions are git tags on `main`. The headings that used
@@ -98,9 +99,23 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
       as artifacts, all 3311 handles preserved through the move
 - [x] Separate released versions from planning milestones; record that
       development happens on `main` with tags
+- [x] **Cut the documentation surface in half.** `mvp-design.md`,
+      `mvp-interview.md`, `my-workflow.md`, `human-log.md` and `architecture/`
+      move to `archive/` — 1141 of 2195 root doc lines, and the contradictory
+      half. `mvp-design.md` was the worst offender: it declared itself
+      authoritative while describing `notes/`, `wiki/` and UUID block ids
+- [x] `CLAUDE.md` — the bootstrap a fresh agent loads automatically, routing it
+      to `blocks.json` and the base rather than to markdown
+- [x] `artifacts/state-of-play.dj` — the handoff: what exists, what does not,
+      the traps that already cost something, and what to do next
 
 ## Next
 
+- [ ] **Docs are still published twice** — `README.md` and `artifacts/readme.dj`
+      hold the same words, and only `kg artifact` keeps them in step. The
+      obvious end state is that the `.dj` is the source and any `.md` is
+      generated for GitHub, but that inverts the pipeline and was not worth
+      doing in a hurry. Until then: **republish after editing**
 - [ ] **Em dashes become `---` on disk.** Pandoc's djot writer applies smart
       punctuation and `-t djot-smart` is rejected, so an em dash the author
       typed is stored as three hyphens and the README's title reads "kg ---
@@ -144,7 +159,7 @@ deterministic.
       reject at write time, or flag visibly at render time (§13 Q3b)
 - [ ] **Id-preserving regeneration** — unchanged blocks must keep their ids or
       every note referring to them is orphaned. This is the delta algorithm in
-      `architecture/delta_ingestion_and_block_versioning.md`
+      `archive/architecture/delta_ingestion_and_block_versioning.md`
 - [ ] Render agent-written general knowledge differently from note-grounded
       blocks; they carry different trust
 - [ ] Curated index pages (agent-written entry points, distinct from views)
@@ -221,7 +236,7 @@ discover a typo by going to look for one, and the count can only grow.
   current block is not an error, it is a reference to an *earlier version*.
   Resolve it from git rather than reporting it broken. This is the annotation
   durability guarantee in
-  `architecture/delta_ingestion_and_block_versioning.md` §4.6, and the reason
+  `archive/architecture/delta_ingestion_and_block_versioning.md` §4.6, and the reason
   references are pinned in the first place.
 
 Case 2 is the one to keep in mind: once the wiki is mutable, the *majority* of
@@ -232,7 +247,7 @@ A checker that cannot tell the difference will be noise, and noise gets muted.
 
 ## Open questions
 
-Carried from `mvp-design.md` §13.
+Carried from the archived v0.1 spec.
 
 - [ ] **Q1** How does an agent know which wiki page a note affects?
       *Deferred as its own initiative — see v2+ semantic linking.*

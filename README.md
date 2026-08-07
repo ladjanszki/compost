@@ -121,10 +121,17 @@ comments written about them survive.
 
 ## Design
 
-- [AGENTS.md](AGENTS.md) — hand this to an agent; it needs nothing else
-- [mvp-design.md](mvp-design.md) — what this is and why
+- [CLAUDE.md](CLAUDE.md) — what an agent loads first; the routing table
+- [AGENTS.md](AGENTS.md) — how to read and write the base; an agent needs this
+  and the base, not this repo
+- `artifacts/state-of-play.dj` — **where the work actually stands.** Read it in
+  the served site, or from `site/blocks.json`
 - [DEVELOPMENT.md](DEVELOPMENT.md) — the code, the non-obvious parts, and where
   the next work is
-- [TODO.md](TODO.md) — what is next, by version
-- [CHANGELOG.md](CHANGELOG.md) — history, including the architectures this
-  replaced
+- [TODO.md](TODO.md) — what is next
+- [CHANGELOG.md](CHANGELOG.md) — history
+- [archive/](archive/) — the v0.1 spec and the interviews that produced it.
+  **Historical. Superseded. Do not follow it.**
+
+The reasoning behind every decision is in `conversations/`, not in a spec.
+A spec drifts; an immutable conversation cannot.

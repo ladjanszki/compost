@@ -123,6 +123,24 @@ described an architecture that no longer existed.
   is usually something the agent wrote, and its first block can be harness
   output, which titled one session "<local-command-caveat>Caveat: The...".
 
+**Docs**
+
+- The documentation surface is halved. `mvp-design.md`, `mvp-interview.md`,
+  `my-workflow.md`, `human-log.md` and `architecture/` move to `archive/` —
+  1141 of 2195 root doc lines, and the contradictory half. `mvp-design.md` was
+  the worst of it: still declaring itself authoritative while describing
+  `notes/`, `wiki/`, UUID block ids and "humans write notes, agents write the
+  wiki", none of which survive. Its invariants are in `DEVELOPMENT.md` and its
+  open questions in `TODO.md`. Code comments still cite its section numbers;
+  those are historical now.
+- `CLAUDE.md` is the bootstrap a fresh agent loads automatically. It routes to
+  `site/blocks.json` and the base rather than to markdown, which is the point:
+  the reasoning lives in immutable conversations that cannot drift, while a
+  spec can and did.
+- `artifacts/state-of-play.dj` is the handoff — what exists, what does not, the
+  traps that already cost something, what to do next, and what nobody has
+  answered.
+
 **Measured, because it drove decisions**
 
 - Appending a turn directly after a heading section merges it into the
