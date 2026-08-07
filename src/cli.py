@@ -90,6 +90,10 @@ def cmd_new(args) -> int:
     # Submission happens on editor exit, never on save: saving must stay free.
     subprocess.call([*_editor(), str(draft)])
     _submit_turn(st, draft, args.conversation, args.author, turn_id)
+    # The draft has moved under its conversation; don't leave the scratch
+    # directory sitting in the base.
+    if not any(scratch.iterdir()):
+        scratch.rmdir()
     return 0
 
 
