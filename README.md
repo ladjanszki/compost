@@ -101,6 +101,24 @@ turn as a djot attribute, so it lives in the file and therefore in git.
 Keep your base in git. The `.dj` files are the source of truth; everything else
 is derived and can be deleted.
 
+## This repo is its own knowledge base
+
+`kg` is developed inside the base it built. `conversations/`, `artifacts/` and
+`raw/` sit at the repo root next to `src/`, and a `.kg` marker there means `kg`
+resolves the base from anywhere in the tree with no `KG_HOME` set.
+
+The documents you are reading are published into it:
+
+```bash
+kg artifact README.md      # republish after editing
+kg render && kg serve      # read and comment on them at localhost:8000
+```
+
+**The `.md` file is the source; `artifacts/<name>.dj` is its canonized,
+addressable form** — the same relationship `raw/` has to a conversation turn.
+Edit the markdown, republish, and unchanged blocks keep their handles, so
+comments written about them survive.
+
 ## Design
 
 - [AGENTS.md](AGENTS.md) — hand this to an agent; it needs nothing else

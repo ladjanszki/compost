@@ -93,6 +93,22 @@ what the other wrote.
   entirely, and would have made every block of every imported turn
   unaddressable.
 
+- **A reference inside code is not a citation.** Importing this project's own
+  sessions took `kg check` from 6 dangling references to 48 — every one a shell
+  command from a throwaway experiment or a documented example. A checker that
+  reports those is noise, and noise gets muted, which would cost the only thing
+  the check is for. Code blocks and code spans are now excluded, and the count
+  went to zero.
+- **The repo is its own knowledge base.** `.kg`, `conversations/`, `artifacts/`
+  and `raw/` at the root; the docs are published with `kg artifact`. Moving the
+  corpus in preserved all 3311 handles exactly, verified by comparing a hash of
+  the whole handle set before and after.
+- Index links show the document's own heading, the artifact's filename (so
+  "where is the README?" has an answer), the real date, participants, and size.
+  A conversation is titled by **what the human opened with** — its first heading
+  is usually something the agent wrote, and its first block can be harness
+  output, which titled one session "<local-command-caveat>Caveat: The...".
+
 **Measured, because it drove decisions**
 
 - Appending a turn directly after a heading section merges it into the

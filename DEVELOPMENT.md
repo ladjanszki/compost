@@ -73,11 +73,19 @@ grows.
 
 ## Layout
 
+The repo is also a knowledge base: `.kg`, `conversations/`, `artifacts/` and
+`raw/` live at the root, so `kg` works anywhere in the tree without `KG_HOME`.
+The docs are published into it with `kg artifact <file>.md`; the markdown is the
+source and the `.dj` is its addressable form. **Republish after editing a doc**,
+or the served copy drifts from the file.
+
 ```
 src/
   cli.py              the `kg` entry point (argparse, one function per command)
   store.py            locating a base; conversations/ and artifacts/
-  refs.py             THE handle and reference format — one source of truth
+  refs.py             THE handle and reference format, and what counts as a
+                      citation — one source of truth
+  artifact.py         documents: publish, and keep handles across a rewrite
   conversation.py     turns: wrap, append, verify; infer the thread from cites
   importer.py         a Claude Code session JSONL -> one markdown document
   canonize/

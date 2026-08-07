@@ -1,7 +1,15 @@
 # TODO
 
-Everything discussed, by version. See `mvp-design.md` for why, `DEVELOPMENT.md`
-for how.
+Everything discussed. See `mvp-design.md` for why, `DEVELOPMENT.md` for how.
+
+**Released versions and planning milestones are different things**, and this
+file used to blur them. `v0.1` is a git tag; `v0.2` is what is on the
+`conversations` branch, unreleased. The headings below that read like versions
+— "v1", "v2+" — were never versions, only buckets meaning "the next big
+milestone" and "later". They are named rather than numbered now, so nothing
+implies a release that does not exist.
+
+Tags so far: `v0-graph-architecture`, `v0.1`.
 
 Before adding anything here, decide whether it is a **render-time** change
 (backward compatible, works on old notes for free) or a **canonization-time**
@@ -75,6 +83,14 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
       documentation, not a citation. `kg check` is right to report them and
       wrong to make them look like corpus damage. Needs a way to tell the two
       apart — probably ignoring references inside code blocks
+- [ ] **Em dashes become `---` on disk.** Pandoc's djot writer applies smart
+      punctuation and `-t djot-smart` is rejected, so an em dash the author
+      typed is stored as three hyphens and the README's title reads "kg ---
+      conversations". A restore is possible because pandoc *escapes* a literal
+      `--` as `\--` while writing a converted dash unescaped, so the two are
+      distinguishable — but a naive substitution would also rewrite code
+      blocks, so it needs fence tracking. Canonization-time, so it changes
+      handles for any block containing one
 - [ ] **Reply affordance in the HTML** — a button that puts you in a draft for
       the block you clicked. The handle is already copied; the missing half is
       not having to switch to a terminal
@@ -92,7 +108,10 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 - [ ] Decide whether `+++` should be the *default* on headings, with a
       modifier for the single block
 
-## v1 — artifact generation
+## Milestone: artifact generation
+
+The next release after v0.2. Previously labelled "v1", which suggested a
+maturity nothing here has yet.
 
 The point where an LLM writes rather than converses. Nothing below is
 deterministic.
@@ -113,7 +132,9 @@ deterministic.
 - [ ] Curated index pages (agent-written entry points, distinct from views)
 - [ ] Cost control: which model, and what stops a large note cascading
 
-## v2+ — deferred, agreed in principle
+## Later — agreed in principle, not scheduled
+
+Previously labelled "v2+".
 
 - [ ] **Semantic linking** (§13 Q1) — which page a note affects beyond the
       blocks it cites. Needs embeddings or LLM reading; its own initiative.
@@ -217,7 +238,7 @@ Carried from `mvp-design.md` §13.
 
 ---
 
-## Before v1: use v0.1 for a week
+## Before artifact generation: use it for a week
 
 Write real notes, react to them, see whether the loop holds. Everything after
 this point is expensive to change and cheap to postpone, and the corpus you
