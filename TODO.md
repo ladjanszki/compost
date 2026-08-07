@@ -3,13 +3,17 @@
 Everything discussed. See `mvp-design.md` for why, `DEVELOPMENT.md` for how.
 
 **Released versions and planning milestones are different things**, and this
-file used to blur them. `v0.1` is a git tag; `v0.2` is what is on the
-`conversations` branch, unreleased. The headings below that read like versions
-— "v1", "v2+" — were never versions, only buckets meaning "the next big
-milestone" and "later". They are named rather than numbered now, so nothing
-implies a release that does not exist.
+file used to blur them. Versions are git tags on `main`. The headings that used
+to read "v1" and "v2+" were never versions, only buckets meaning "the next big
+milestone" and "later"; they are named now, so nothing implies a release that
+does not exist.
 
-Tags so far: `v0-graph-architecture`, `v0.1`.
+**Development happens on `main`, with a tag per version.** No feature branches:
+one developer, no remote, no CI, nothing to isolate from. Branch only for a
+change that is genuinely a one-way door — the em-dash canonization change below
+is the current candidate — and merge it quickly.
+
+Tags so far: `v0-graph-architecture`, `v0.1`, `v0.1.1`.
 
 Before adding anything here, decide whether it is a **render-time** change
 (backward compatible, works on old notes for free) or a **canonization-time**
@@ -51,7 +55,7 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 
 ---
 
-## v0.2 — conversations, and an agent in the loop ✓
+## v0.1.1 — conversations, and an agent in the loop ✓
 
 - [x] **Fix the walker's div handling** — a div swallowed its children, so every
       block of every folded turn would have been unaddressable
@@ -68,21 +72,30 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 - [x] Folded tool traffic; per-turn author labels
 - [x] `AGENTS.md` — an agent needs the base and this file, not the repo
 - [x] Migrate the test base: 248 blocks remapped, zero dangling
-
-## v0.3 — next
-
 - [x] **Importer attribution** — a `user` line is not "the human typed this".
-      Tool results, harness injections and slash-command echoes were all
-      appearing under the user's name; in one session only 1 of 18 was real
+      Tool results, harness injections and slash-command echoes all appeared
+      under the user's name; in one session only 1 turn of 18 was real
 - [x] **`kg artifact`** with handle-preserving update, so a living document can
-      be commented on more than once
-- [x] **Honest index links** — title from the first heading, real date,
-      participants, size
-- [ ] **Doc examples dangle by design.** Publishing README/AGENTS as artifacts
-      adds 5 dangling references, because `{#a3f9c2d1}` in a code block is
-      documentation, not a citation. `kg check` is right to report them and
-      wrong to make them look like corpus damage. Needs a way to tell the two
-      apart — probably ignoring references inside code blocks
+      be commented on more than once. This is the delta algorithm, and it is
+      what makes commenting on a README survive the next edit
+- [x] **A reference inside code is not a citation** — importing this project's
+      own sessions took `kg check` from 6 dangling to 48, every one a shell
+      command or a documented example. Now zero
+- [x] **Honest index links** — the document's own heading, the artifact's
+      filename so "where is the README?" has an answer, the real date,
+      participants and size
+- [x] **Conversations titled by what the human opened with** — the first
+      heading is usually the agent's, and the first block can be harness output
+- [x] Guard `_when()` against non-UUIDv7 ids — an imported session's id is a
+      UUIDv4 and decoded to the year 4527
+- [x] Import all four sessions for this project
+- [x] **The repo is its own knowledge base** — base at the root, docs published
+      as artifacts, all 3311 handles preserved through the move
+- [x] Separate released versions from planning milestones; record that
+      development happens on `main` with tags
+
+## Next
+
 - [ ] **Em dashes become `---` on disk.** Pandoc's djot writer applies smart
       punctuation and `-t djot-smart` is rejected, so an em dash the author
       typed is stored as three hyphens and the README's title reads "kg ---

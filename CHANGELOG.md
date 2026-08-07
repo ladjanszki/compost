@@ -3,10 +3,15 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2 — 2026-08-06 — conversations, and an agent in the loop
+## v0.1.1 — 2026-08-07 — conversations, and an agent in the loop
 
 The loop now runs with both parties in it. Either can write; neither can alter
 what the other wrote.
+
+Developed on `main` with a tag per version. A `conversations` feature branch
+was created and fast-forwarded away: with one developer, no remote and no CI
+there is nothing to isolate from, and the cost was a trunk whose documentation
+described an architecture that no longer existed.
 
 **Changed — the shape of the system**
 
@@ -103,6 +108,8 @@ what the other wrote.
   and `raw/` at the root; the docs are published with `kg artifact`. Moving the
   corpus in preserved all 3311 handles exactly, verified by comparing a hash of
   the whole handle set before and after.
+- All four Claude Code sessions for this project are imported: 348, 311, 20 and
+  3 turns.
 - Index links show the document's own heading, the artifact's filename (so
   "where is the README?" has an answer), the real date, participants, and size.
   A conversation is titled by **what the human opened with** — its first heading

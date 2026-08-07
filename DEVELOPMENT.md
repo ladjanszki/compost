@@ -274,6 +274,14 @@ dominates `kg render`. `src/ingest/block_schema.py` is legacy.
 
 ## Conventions
 
+- **Work on `main`; tag each version.** No feature branches. One developer, no
+  remote, no CI, no review gate — a branch buys isolation from nothing and
+  costs a stale trunk. This was learned the direct way: a `conversations`
+  branch left `main` seventeen commits behind, still describing `notes/`,
+  `wiki/` and UUID block ids, so anyone reading the default branch — or any
+  agent following `AGENTS.md` — got confidently wrong instructions. That is the
+  documentation drift this repo has been rescued from twice, in a new costume.
+  Branch only for a change that is a genuine one-way door, and merge it fast.
 - Commit per logical step; separate infrastructure/config changes from code.
 - Update `CHANGELOG.md` when behaviour changes.
 - **Fix documentation drift in the same session as the decision**, not the next
