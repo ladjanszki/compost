@@ -15,3 +15,6 @@ site/
 .DS_Store
 *.egg-info/
 build/
+
+# Knowledge base backups — the pre-migration corpus lives in the old repo
+_pre-handles-backup/
