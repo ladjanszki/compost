@@ -23,7 +23,8 @@ from . import artifact as artifact_mod
 from . import conversation as conv_mod
 from . import importer as import_mod
 from . import store as store_mod
-from .canonize import canonize_text
+from .ingest.ast_walker import walk
+from .ingest.djot_ast import get_ast_from_text
 from .render import index as index_mod
 from .render.to_html import load_notes, render as render_site
 
@@ -164,17 +165,35 @@ def cmd_import(args) -> int:
         print("no user or assistant turns in that session", file=sys.stderr)
         return 1
 
-    md = import_mod.session_markdown(turns)
-    result = canonize_text(md)
-
     conv_id = args.conversation or path.stem
     dest = st.conversations / f"{conv_id}.dj"
-    if dest.exists() and not args.force:
-        print(f"{dest} already exists; pass --force to replace it",
-              file=sys.stderr)
-        return 1
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(result.djot, encoding="utf-8")
+
+    # A live session is imported again and again as it grows, so refreshing has
+    # to be safe. Turns the log does not know about were written by hand — a
+    # reply submitted into this conversation — and re-importing would delete
+    # them, so that case is refused rather than absorbed.
+    if dest.exists():
+        # Read the turn attributes from parsed blocks, not from the file text.
+        # An imported conversation quotes djot in its own content, so scanning
+        # raw text finds `turn="..."` inside examples and reports turns that do
+        # not exist. Scanning parsed structure is the rule here, and this is the
+        # third place it has mattered.
+        existing = {
+            (b["content"].get("attrs") or {}).get("turn")
+            for b in walk(get_ast_from_text(dest.read_text(encoding="utf-8")))
+            if b["type"] == "div" and "turn" in (b["content"].get("classes") or [])
+        } - {None}
+        handwritten = existing - {t["uuid"] for t in turns}
+        if handwritten and not args.force:
+            print(f"{dest.name} has {len(handwritten)} turn(s) that are not in "
+                  "the log — submitted by hand. Re-importing would delete them.\n"
+                  "Pass --force to overwrite anyway.", file=sys.stderr)
+            return 1
+
+    md = import_mod.session_markdown(turns)
+    # Same mechanism as an artifact: unchanged blocks keep their handles, so a
+    # refresh does not orphan every comment written about the conversation.
+    stats = artifact_mod.write(dest, md)
 
     folded = sum(len(t["folded"]) for t in turns)
     authors = {}
@@ -182,7 +201,11 @@ def cmd_import(args) -> int:
         authors[t["author"]] = authors.get(t["author"], 0) + 1
     print(f"imported {path.name} -> conversations/{conv_id}.dj")
     print(f"  {len(turns)} turns ({', '.join(f'{k}: {v}' for k, v in authors.items())})")
-    print(f"  {len(result.blocks)} blocks, {folded} folded tool/thinking parts")
+    print(f"  {stats['kept'] + stats['added']} blocks, "
+          f"{folded} folded tool/thinking parts")
+    if stats["kept"]:
+        print(f"  refreshed: {stats['kept']} blocks kept their handles, "
+              f"{stats['added']} new, {stats['removed']} gone")
     return 0
 
 
@@ -253,7 +276,8 @@ def main(argv=None) -> int:
                    help="path to a .jsonl session log, or a project directory "
                         "to list the logs for")
     s.add_argument("-c", "--conversation", help="conversation id (default: the session id)")
-    s.add_argument("--force", action="store_true", help="replace an existing conversation")
+    s.add_argument("--force", action="store_true",
+                   help="overwrite even if the conversation has hand-written turns")
     s.set_defaults(fn=cmd_import)
 
     s = sub.add_parser("check", help="report dangling references and collisions")

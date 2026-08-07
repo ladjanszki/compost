@@ -108,6 +108,13 @@ described an architecture that no longer existed.
   and `raw/` at the root; the docs are published with `kg artifact`. Moving the
   corpus in preserved all 3311 handles exactly, verified by comparing a hash of
   the whole handle set before and after.
+- Re-importing a session **preserves handles**. A live session is refreshed
+  repeatedly as it grows, and the first implementation overwrote the file
+  blindly, renumbering every block on each refresh — which would orphan every
+  comment ever made on that conversation. It uses the same content-hash
+  matching as an artifact, and refuses when the conversation contains turns the
+  log does not know about, because those were submitted by hand and would be
+  deleted.
 - All four Claude Code sessions for this project are imported: 348, 311, 20 and
   3 turns.
 - Index links show the document's own heading, the artifact's filename (so

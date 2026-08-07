@@ -89,6 +89,11 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 - [x] Guard `_when()` against non-UUIDv7 ids — an imported session's id is a
       UUIDv4 and decoded to the year 4527
 - [x] Import all four sessions for this project
+- [x] **Re-importing a live session preserves handles** — a session is imported
+      again and again as it grows, and a blind overwrite renumbered every block
+      each time, which would orphan any comment made on it. Same content-hash
+      mechanism as an artifact. Refuses when the conversation holds turns the
+      log does not know about, since those were submitted by hand
 - [x] **The repo is its own knowledge base** — base at the root, docs published
       as artifacts, all 3311 handles preserved through the move
 - [x] Separate released versions from planning milestones; record that
