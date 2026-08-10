@@ -1,6 +1,30 @@
 """
 inline_reconstruct.py — reconstruct Djot inline markup from djot.js AST inline nodes.
+
+Structural markup is emitted as djot source (`_emph_`, `` `code` ``, `[x](y)`),
+because that is what a block's stored text has always been. Typographic
+constructs are the exception and are emitted as the *character* they stand for:
+djot has smart punctuation in the spec, so `---` in a source file means an em
+dash, and `\\-\\--` means three literal hyphens. Emitting the source spelling for
+both would make them indistinguishable in the stored text, which is the loss
+this module exists to avoid.
+
+An unrecognised tag raises. It used to emit nothing, which is how every em
+dash, en dash and ellipsis in the corpus was silently deleted — and the same
+silence dropped task lists and swallowed a div's children before that. Three
+bugs, one cause: a missing branch that says nothing. See CHANGELOG v0.1.2.
 """
+
+# djot smart punctuation, resolved to the character it denotes.
+SMART_PUNCTUATION = {
+    "em_dash": "—",
+    "en_dash": "–",
+    "ellipses": "…",
+    "left_single_quote": "‘",
+    "right_single_quote": "’",
+    "left_double_quote": "“",
+    "right_double_quote": "”",
+}
 
 def _format_attrs(attributes: dict) -> str:
     if not attributes:
@@ -70,9 +94,25 @@ def _reconstruct_inner(inlines: list, links_acc: list) -> str:
         elif tag == "raw_inline":
             fmt = node.get("format", "")
             parts.append(f"`{node['text']}`{{={fmt}}}")
+        elif tag == "smart_punctuation":
+            kind = node.get("type")
+            if kind not in SMART_PUNCTUATION:
+                raise ValueError(
+                    f"unknown smart_punctuation type {kind!r}; add it to "
+                    "SMART_PUNCTUATION rather than letting it be dropped")
+            parts.append(SMART_PUNCTUATION[kind])
+        elif tag == "double_quoted":
+            parts.append("“" + _reconstruct_inner(node.get("children", []), links_acc) + "”")
+        elif tag == "single_quoted":
+            parts.append("‘" + _reconstruct_inner(node.get("children", []), links_acc) + "’")
+        elif tag == "url":
+            parts.append("<" + node["text"] + ">")
+        elif tag == "email":
+            parts.append("<" + node["text"] + ">")
         else:
-            # Unknown inline: emit children if present, otherwise skip
-            if "children" in node:
-                parts.append(_reconstruct_inner(node["children"], links_acc))
-    
+            raise ValueError(
+                f"inline_reconstruct: no branch for djot inline tag {tag!r}. "
+                "Add one. Emitting nothing deletes the author's text silently, "
+                "which is how three bugs shipped past green tests.")
+
     return "".join(parts)

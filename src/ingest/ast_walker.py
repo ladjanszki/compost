@@ -23,6 +23,15 @@ def emit(results: list, block_type: str, content: dict, block_id: str | None = N
     })
 
 
+# Tags a parent handles before recursion ever reaches _walk_node: list items go
+# through _walk_list_item, table parts through _walk_table, and the reference
+# and footnote maps hang off the document rather than the block stream.
+_WALKED_ELSEWHERE = {
+    "list_item", "task_list_item", "definition_list_item", "term", "definition",
+    "row", "cell", "caption", "reference", "footnote",
+}
+
+
 def _walk_children(nodes: list, results: list, depth: int = 0):
     for node in nodes:
         _walk_node(node, results, depth)
@@ -134,6 +143,16 @@ def _walk_node(node: dict, results: list, depth: int = 0):
         if "format" in node:
             content["format"] = node["format"]
         emit(results, "raw_block", content, block_id)
+
+    elif tag not in _WALKED_ELSEWHERE:
+        # Falling through silently is how task_list vanished, how a div's
+        # children became unaddressable, and how every em dash was deleted.
+        # A tag this walker does not know is a bug in this walker, and it
+        # should say so at the moment it happens rather than produce a block
+        # list that is quietly missing something. See CHANGELOG v0.1.2.
+        raise ValueError(
+            f"ast_walker: no branch for djot block tag {tag!r}. Add one, or "
+            "add it to _WALKED_ELSEWHERE if a parent already handles it.")
 
 
 def _reconstruct_block_quote(child_blocks: list) -> str:
