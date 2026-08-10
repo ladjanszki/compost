@@ -207,7 +207,7 @@ them will silently break addressability.
 - A **div is a container**, and the walker must flatten its children into the
   block list. Nesting them inside `content` makes them invisible to everything
   downstream while `inject_ids` still writes ids for them — clickable in HTML,
-  resolving to nothing. This was a real bug (see CHANGELOG v0.2) and neither the
+  resolving to nothing. This was a real bug (see CHANGELOG v0.1.1) and neither the
   verifier nor the roundtrip test could see it, because the blocks were absent
   from both sides of every comparison.
 - Pandoc carries fenced divs **and their key=value attributes** through to djot,

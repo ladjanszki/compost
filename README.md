@@ -10,7 +10,7 @@ same base, answers into the same conversation, and its answer is addressable
 too. Closed Claude Code sessions can be imported whole, so past chats stop being
 stranded.
 
-**Status: v0.2.** The loop runs with a human and an agent in it. Artifact
+**Status: v0.1.1.** The loop runs with a human and an agent in it. Artifact
 generation — an agent writing a README or TODO from the conversations — is not
 built yet.
 
