@@ -3,6 +3,49 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.1.2 — 2026-08-10 — punctuation, and a bug class closed
+
+Every em dash, en dash, ellipsis and curly quote an author had typed was being
+deleted from the stored text. `readme.dj`'s own title read
+`kg  conversations to an addressable wiki`. 795 occurrences across the corpus.
+
+**The `.dj` files were correct the whole time.** Djot has smart punctuation in
+its specification: `---` in a source file *means* an em dash, and `\-\--` means
+three literal hyphens. Pandoc was encoding it exactly right, and the round trip
+through djot.js is lossless. An earlier TODO entry blamed pandoc's writer, said
+the corruption was on disk, and estimated the repair as canonization-time work
+needing fence tracking. All of that was wrong. That entry is kept, because it
+is cited, with a superseding block beside it.
+
+The defect was in `inline_reconstruct.py`, which had no branch for djot's
+`smart_punctuation` node. Its fallback emitted nothing.
+
+- **An unhandled tag now raises**, in the inline reconstructor and in the block
+  walker. This is the actual subject of the release. A missing branch that says
+  nothing has now produced three bugs: `task_list` silently dropped, a div
+  silently swallowing its children, and this. Each was invisible to the tests
+  because the element was absent from *both* sides of every comparison, so
+  nothing could see the difference. A branch that raises cannot fail that way.
+- `smart_punctuation` is resolved to the character it denotes rather than
+  echoed as its source spelling, so that an em dash and three literal hyphens
+  stay distinguishable in the stored text. Structural markup is still emitted
+  as djot source, as it always has been.
+- `url` and `email` autolinks were dropped by the same fallback. One occurrence
+  in the corpus.
+- `double_quoted` and `single_quoted` handled defensively. Unreachable today
+  only because pandoc escapes quotes as `\"`, and an unhandled *container*
+  loses its children rather than just its wrapper.
+- `tests/test_inlines/` — the branches, the sabotage check, and a pass over
+  every file in the corpus so an unhandled tag announces itself.
+
+No handle moved. Both sides of the `kg artifact` hash comparison are parsed by
+the same reconstructor, so the change is symmetric: all six republished
+documents reported 0 new and 0 gone, and `kg check` stayed at 0 dangling.
+
+Sequenced before the `graph/` work deliberately. That milestone migrates block
+text into nodes carrying an immutability invariant, so a hole repaired
+afterwards would be a content change on a node that already has an identity.
+
 ## v0.1.1 — 2026-08-07 — conversations, and an agent in the loop
 
 The loop now runs with both parties in it. Either can write; neither can alter

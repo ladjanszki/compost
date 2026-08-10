@@ -11,10 +11,11 @@ does not exist.
 
 **Development happens on `main`, with a tag per version.** No feature branches:
 one developer, no remote, no CI, nothing to isolate from. Branch only for a
-change that is genuinely a one-way door — the em-dash canonization change below
-is the current candidate — and merge it quickly.
+change that is genuinely a one-way door. The em-dash entry below was the
+standing candidate and turned out not to be one at all: it was render-time, and
+v0.1.2 shipped it on `main` in an afternoon.
 
-Tags so far: `v0-graph-architecture`, `v0.1`, `v0.1.1`.
+Tags so far: `v0-graph-architecture`, `v0.1`, `v0.1.1`, `v0.1.2`.
 
 Before adding anything here, decide whether it is a **render-time** change
 (backward compatible, works on old notes for free) or a **canonization-time**
@@ -109,7 +110,50 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 - [x] `artifacts/state-of-play.dj` — the handoff: what exists, what does not,
       the traps that already cost something, and what to do next
 
+## v0.1.2 — punctuation, and a bug class closed ✓
+
+Small and self-contained. It ships before the `graph/` work rather than inside
+it, because phase 6 of that plan migrates block text into nodes that carry an
+immutability invariant: migrate first and 1,567 holes become permanent, and
+repairing them afterwards is a content change on nodes that already have an
+identity, which the spec forbids. Fix first and the migration copies correct
+text.
+
+The defect: djot has smart punctuation **in the spec**, so `---` is how djot
+spells an em dash and pandoc is right to write it that way — the `.dj` files on
+disk are correct and the round trip is lossless. But `inline_reconstruct.py`
+has no branch for djot's `smart_punctuation` node, so every em dash, en dash,
+ellipsis and curly quote the author typed is **deleted** from the parsed text.
+`readme.dj`'s own title reads `kg  conversations to an addressable wiki`. This
+is render-time, not canonization-time, and it corrects the whole corpus with no
+file rewritten: both sides of the `kg artifact` hash comparison change
+symmetrically, so no handle moves and no citation breaks.
+
+- [x] `smart_punctuation` branch, all types — 789 occurrences in the corpus
+- [x] `url` branch — a bare autolink is dropped the same way. 1 occurrence
+- [x] `double_quoted` and `single_quoted`, defensively. Unhandled *containers*
+      drop their children, which is the catastrophic form of the same bug.
+      Unreachable today only because pandoc escapes quotes as `\"`
+- [x] **An unknown tag raises instead of emitting nothing.** This is the point
+      of the release. The bug is never the missing branch, it is that a missing
+      branch is silent: `task_list` dropped silently, a div swallowed its
+      children silently, and now this. Three times, one cause. Same treatment
+      for the block walker
+- [x] Parse the whole corpus as the test, so an unhandled tag announces itself.
+      Sabotage-verified by deleting a branch and confirming failure
+- [x] Republish the artifacts so the served text is correct
+- [x] `CHANGELOG.md`, tag `v0.1.2`
+
 ## Next
+
+- [ ] **Are the root markdown files views, and should they be tracked?** If
+      `artifacts/*.dj` is the source and the `.md` is generated, then
+      `README.md` is a view and views are not tracked — but an untracked README
+      is a strange thing for a repository, and GitHub renders the `.md`. Worth
+      a conversation rather than a decision. One measured input: `graph.dj`
+      through pandoc to markdown and back keeps only **79 of 99** block hashes,
+      so "regenerate the markdown whenever we need it" is fine for reading and
+      is *not* free for republishing — 20 blocks would take new handles
 
 - [ ] **Decide the id scheme before node types land.** Handles are
       `secrets.token_hex(4)` — random, never derived from content, so identity
@@ -133,6 +177,11 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
       distinguishable — but a naive substitution would also rewrite code
       blocks, so it needs fence tracking. Canonization-time, so it changes
       handles for any block containing one
+- [ ] *Superseded by v0.1.2 above, and kept because it is cited.* The entry
+      above is wrong on every count: the `.dj` is correct, `---` is djot's
+      spelling of an em dash, the round trip is lossless, nothing needs fence
+      tracking, and it is render-time rather than canonization-time. The damage
+      is in `inline_reconstruct.py`, which drops the character entirely
 - [ ] **Reply affordance in the HTML** — a button that puts you in a draft for
       the block you clicked. The handle is already copied; the missing half is
       not having to switch to a terminal

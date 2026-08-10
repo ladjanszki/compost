@@ -114,6 +114,7 @@ tests/
   test_conversation/  appending turns without disturbing them
   test_importer/      a session log -> a conversation
   test_render/        base -> clickable site, blocks.json, kg check
+  test_inlines/       nothing the author typed is silently dropped
   test_03/            djot -> blocks -> djot roundtrip
 tools/                scratch prototypes and one-off migrations
 ```
@@ -123,8 +124,10 @@ Run everything:
 ```bash
 for t in tests/test_canonize/test_canonize.py \
          tests/test_conversation/test_conversation.py \
+         tests/test_artifact/test_artifact.py \
          tests/test_importer/test_importer.py \
          tests/test_render/test_site.py \
+         tests/test_inlines/test_inlines.py \
          tests/test_03/test_roundtrip.py; do
   conda run -n knowledge-graph python "$t" || echo "FAILED: $t"
 done
@@ -216,6 +219,21 @@ them will silently break addressability.
 - Fence length matters. Tool output routinely contains `:::` and code fences, so
   the importer computes every fence to be longer than the longest run it must
   contain. A fixed fence gets closed early by its own payload.
+- **Djot has smart punctuation in the specification.** `---` in a `.dj` file
+  *is* an em dash and `\-\--` is three literal hyphens; pandoc encodes both
+  correctly and the round trip is lossless. Nothing is corrupted on disk. What
+  was corrupted was our reading of it: `inline_reconstruct` had no branch for
+  the `smart_punctuation` node and its fallback emitted nothing, so 795
+  characters the authors typed were deleted from the stored text (CHANGELOG
+  v0.1.2). Smart punctuation is therefore resolved to its character while
+  structural markup stays djot source, so an em dash and a literal `---` remain
+  distinguishable.
+- **A missing branch must raise, never fall through.** This is the same defect
+  three times: `task_list` dropped, a div's children swallowed, punctuation
+  deleted. Silence is what made all three invisible — the element is absent
+  from both sides of every comparison, so no test can see a difference. Both
+  the walker and the reconstructor now raise on an unknown tag, and the corpus
+  is parsed as a test so a new one announces itself.
 
 ---
 
