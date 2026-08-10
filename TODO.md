@@ -111,6 +111,15 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 
 ## Next
 
+- [ ] **Decide the id scheme before node types land.** Handles are
+      `secrets.token_hex(4)` — random, never derived from content, so identity
+      is recorded only in the `.dj`. Random ids carry birthday risk (14% chance
+      of a collision per render at 10x, certain at 100x) and cost more
+      characters than they need to. A base36 counter over a single ingestion
+      queue removes collisions outright and needs no fixed width: 3 characters
+      today, 4 at 100x. Open: one check character or two, since a dense id
+      space turns a mistyped handle from a dangling reference into a silent
+      citation of the wrong block. Canonization-time, so it is one-way
 - [ ] **Docs are still published twice** — `README.md` and `artifacts/readme.dj`
       hold the same words, and only `kg artifact` keeps them in step. The
       obvious end state is that the `.dj` is the source and any `.md` is
@@ -143,7 +152,7 @@ migration). See DEVELOPMENT.md — it decides urgency more than anything else.
 
 ## Milestone: artifact generation
 
-The next release after v0.2. Previously labelled "v1", which suggested a
+The next release after v0.1.1. Previously labelled "v1", which suggested a
 maturity nothing here has yet.
 
 The point where an LLM writes rather than converses. Nothing below is
@@ -194,7 +203,7 @@ Previously labelled "v2+".
 
 ## Dangling references
 
-*Case 1 and case 3 are now reported by `kg check` (v0.2).* The rest stands.
+*Case 1 and case 3 are now reported by `kg check` (v0.1.1).* The rest stands.
 
 Found by submitting this repo's own docs into a knowledge base: `kg render`
 reported *"1 referenced"* for the example reference in `README.md`, whose
