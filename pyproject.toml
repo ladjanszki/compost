@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kg"
-version = "0.1.3"
-description = "Notes to an addressable, agent-writable wiki"
+name = "kgb"
+dynamic = ["version"]
+description = "Conversations to an addressable, agent-writable wiki"
 requires-python = ">=3.12"
 dependencies = ["uuid6"]
 
@@ -14,7 +14,13 @@ dependencies = ["uuid6"]
 #   node >= 18      the djot.js reference parser, via npx
 
 [project.scripts]
-kg = "src.cli:main"
+kgb = "src.cli:main"
+# `kg` was the name until v0.1.4. Kept as an alias so every doc, note and shell
+# history written before the rename still runs; it prints a deprecation notice.
+kg = "src.cli:main_deprecated_kg"
 
 [tool.setuptools]
 packages = ["src", "src.canonize", "src.ingest", "src.render"]
+
+[tool.setuptools.dynamic]
+version = {attr = "src.__version__"}

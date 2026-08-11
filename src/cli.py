@@ -14,10 +14,14 @@ The base is found via --root, then $KG_HOME, then a `.kg` marker in the
 current directory or any parent — so `kg` works from anywhere.
 """
 import argparse
+import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+from . import __version__
 
 from . import artifact as artifact_mod
 from . import conversation as conv_mod
@@ -252,8 +256,109 @@ def cmd_serve(args) -> int:
     return 0
 
 
-def main(argv=None) -> int:
-    p = argparse.ArgumentParser(prog="kg", description="notes → addressable wiki")
+def cmd_lookup(args) -> int:
+    """Resolve a handle: the block, and everything that cites it."""
+    st = store_mod.find(args.root)
+    blocks = _blocks_json(st)
+    if blocks is None:
+        return 1
+
+    handle = re.sub(r"[{}#+@]", "", args.handle)[:8]
+    by_handle = {b["handle"]: b for b in blocks}
+    b = by_handle.get(handle)
+    if b is None:
+        print(f"no block {handle}", file=sys.stderr)
+        return 1
+
+    print(f"{{#{b['handle']}}}  {b['type']} · {b.get('author') or '-'} · {b['source']}")
+    print()
+    print(b["text"])
+    print()
+    citers = [x for x in blocks if handle in (x.get("cites") or [])]
+    if not citers:
+        print("-- cited by nothing --")
+    else:
+        print(f"-- cited by {len(citers)} --")
+        for x in citers:
+            first = x["text"].split("\n")[0][:88]
+            print(f"  {{#{x['handle']}}} ({x.get('author') or '-'}) {first}")
+    return 0
+
+
+def cmd_last(args) -> int:
+    """
+    Print recent turns as `{#handle}` plus text.
+
+    This exists so the human can paste a turn into an agent's interface and get
+    an answer that cites exact blocks back. The whole conversation file is half
+    a megabyte; one turn is not.
+    """
+    st = store_mod.find(args.root)
+    blocks = _blocks_json(st)
+    if blocks is None:
+        return 1
+
+    # A turn is a div carrying an author; `contains` counts the blocks under it.
+    turns = [(i, b) for i, b in enumerate(blocks)
+             if b["type"] == "div" and b.get("author") and "contains" in b]
+    if not turns:
+        print("no turns in this base", file=sys.stderr)
+        return 1
+
+    if args.handle:
+        wanted = re.sub(r"[{}#+@]", "", args.handle)[:8]
+        chosen = [t for t in turns if t[1]["handle"] == wanted]
+        if not chosen:
+            print(f"no turn with handle {wanted}", file=sys.stderr)
+            return 1
+    else:
+        chosen = turns[-args.count:]
+        if args.author:
+            chosen = [t for t in turns if t[1]["author"] == args.author][-args.count:]
+
+    for i, div in chosen:
+        n = div["contains"]
+        print(f"{{#{div['handle']}}}  turn by {div['author']}  "
+              f"({n} blocks)  {div['source']}")
+        print()
+        for b in blocks[i + 1: i + 1 + n]:
+            if b["type"] == "div":
+                continue
+            print(f"{{#{b['handle']}}}")
+            print(b["text"])
+            print()
+    return 0
+
+
+def _blocks_json(st):
+    """The rendered corpus, or a pointed message about why it is missing."""
+    path = st.site / "blocks.json"
+    if not path.exists():
+        print(f"no {path} — run `kgb render` first", file=sys.stderr)
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def main_deprecated_kg(argv=None) -> int:
+    """The pre-v0.1.4 entry point. Same tool, one line of warning."""
+    print("`kg` was renamed to `kgb` in v0.1.4. This alias still works and "
+          "will be removed in a later release.", file=sys.stderr)
+    return main(argv)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """
+    The whole command surface, in one place.
+
+    Built by a function rather than inline in `main` so the man-page test can
+    walk it. A man page that nothing checks drifts from the tool the first time
+    a flag is added, and this project has already been bitten by exactly that
+    with `mvp-design.md`.
+    """
+    p = argparse.ArgumentParser(prog="kgb",
+                                description="conversations → addressable wiki")
+    p.add_argument("--version", action="version",
+                   version=f"kgb {__version__}")
     p.add_argument("--root", help="knowledge base directory (overrides KG_HOME)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -301,6 +406,22 @@ def main(argv=None) -> int:
     s.add_argument("-p", "--port", type=int, default=8000)
     s.set_defaults(fn=cmd_serve)
 
+    s = sub.add_parser("lookup", help="resolve a handle and show what cites it")
+    s.add_argument("handle", help="a handle, bare or as {#handle+++}")
+    s.set_defaults(fn=cmd_lookup)
+
+    s = sub.add_parser("last", help="print recent turns as {#handle} plus text")
+    s.add_argument("-n", "--count", type=int, default=1,
+                   help="how many turns (default: 1)")
+    s.add_argument("--author", help="only turns by this author")
+    s.add_argument("--handle", help="a specific turn, by its div handle")
+    s.set_defaults(fn=cmd_last)
+
+    return p
+
+
+def main(argv=None) -> int:
+    p = build_parser()
     args = p.parse_args(argv)
     try:
         return args.fn(args)
