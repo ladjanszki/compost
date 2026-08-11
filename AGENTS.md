@@ -1,6 +1,6 @@
-# Using a kg knowledge base
+# Using a kgb knowledge base
 
-You are working with a project knowledge base built by `kg`. This file is all
+You are working with a project knowledge base built by `kgb`. This file is all
 you need — do not read the tool's source to use it.
 
 **Read the base, not the repo's markdown.** `site/blocks.json` is the corpus;
@@ -10,7 +10,7 @@ four of the artifacts, so reading both is reading the same thing twice. Anything
 under `archive/` is historical and must not be followed.
 
 A base is a directory containing `.kg`, `conversations/`, `artifacts/`, `raw/`
-and `site/`. Find it with `--root <dir>` or `$KG_HOME`, or by running `kg` from
+and `site/`. Find it with `--root <dir>` or `$KG_HOME`, or by running `kgb` from
 inside it.
 
 ---
@@ -34,7 +34,7 @@ written today resolves forever.
 ## Reading
 
 **Start with `site/blocks.json`.** It is the whole corpus in one file, written
-by `kg render`, one record per block:
+by `kgb render`, one record per block:
 
 ```json
 {"handle": "43942d3c", "hash": "ce617538c3b715e2", "type": "list_item",
@@ -60,21 +60,21 @@ one without running the tool.
 You write markdown and submit it. You never write `.dj` files by hand.
 
 ```bash
-kg submit reply.md --author claude          # thread inferred from citations
-kg submit reply.md --author claude -c <id>  # or name the conversation
+kgb submit reply.md --author claude          # thread inferred from citations
+kgb submit reply.md --author claude -c <id>  # or name the conversation
 ```
 
 The conversation is inferred from the blocks your draft cites, because a reply
 is normally *about* something. Cite blocks from two different conversations and
 it will refuse rather than guess.
 
-Then `kg render` to rebuild the site and `blocks.json`.
+Then `kgb render` to rebuild the site and `blocks.json`.
 
 ### Rules
 
 1. **Cite real handles.** Copy them from `blocks.json`; never invent one. A note
    is immutable, so a wrong reference can never be corrected in place — it stays
-   in the corpus forever. `kg check` reports them, but the point is not to
+   in the corpus forever. `kgb check` reports them, but the point is not to
    create them.
 2. **One idea per block.** Whatever should be referenceable on its own gets its
    own paragraph or list item. This is the single biggest thing you can do to
@@ -87,11 +87,11 @@ Then `kg render` to rebuild the site and `blocks.json`.
 
 | | |
 |---|---|
-| `kg render` | rebuild `site/` and `site/blocks.json` |
-| `kg check` | dangling references and handle collisions; non-zero on failure |
-| `kg submit <file> --author <who>` | append a turn |
-| `kg import <session.jsonl>` | import a closed Claude Code session |
-| `kg serve` | render, then serve on localhost |
+| `kgb render` | rebuild `site/` and `site/blocks.json` |
+| `kgb check` | dangling references and handle collisions; non-zero on failure |
+| `kgb submit <file> --author <who>` | append a turn |
+| `kgb import <session.jsonl>` | import a closed Claude Code session |
+| `kgb serve` | render, then serve on localhost |
 
 ## The two content types
 
@@ -119,5 +119,5 @@ unless you have been asked to and know how the handles will be carried across.
 - Do not put a block's authorship, or anything else you want kept, in
   `blocks.json`. It is regenerated on every render. Durable data lives in the
   `.dj` files, which are the source of truth and are in git.
-- Do not use `kg new` — it opens an editor.
+- Do not use `kgb new` — it opens an editor.
 - Do not reformat or "tidy" existing files.

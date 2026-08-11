@@ -3,6 +3,52 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.1.4 — 2026-08-11 — kgb, and a man page that cannot drift
+
+**The tool is called `kgb` now.** Knowledge graph blocks, and a system whose
+premise is that it knows exactly who said what and when has earned the joke.
+`kg` remains as an alias that prints a notice, so every note, doc and shell
+history written before the rename still runs.
+
+Renamed only where a wrong command breaks someone: `README.md`, `AGENTS.md`,
+`CLAUDE.md`, `DEVELOPMENT.md`. `CHANGELOG.md` and the completed sections of
+`TODO.md` keep saying `kg`, because they record what the tool was called at the
+time, and 501 blocks across the conversations say it immutably and always will.
+Measured before deciding: only 4 cited artifact blocks mention the name, so the
+rename cost four handles rather than eighty.
+
+**New commands**, both absorbed from shell scripts that had accumulated:
+
+- `kgb lookup HANDLE` — resolve a handle to its block, and list everything that
+  cites it. Accepts `{#handle+++}` as well as a bare handle. Replaces the
+  `tools/kgb.sh` function, which is deleted.
+- `kgb last` — print recent turns as `{#handle}` plus text, so a turn can be
+  pasted into an agent's interface and the agent can cite exact blocks back. A
+  conversation file can be half a megabyte; one turn is not. `-n`, `--author`
+  and `--handle` select which.
+- `kgb --version`.
+
+**The version has one source, and it is the code.** `__version__` lives in
+`src/__init__.py` and `pyproject.toml` reads it with `dynamic`. The usual
+arrangement is the reverse, and it failed here in the ordinary way: with an
+editable install, packaging metadata only refreshes on reinstall, so `pip show`
+reported 0.1.0 through three releases while the code was current. Nothing
+visible reported a version at all, which is why nobody noticed.
+
+**A man page, verified against the CLI.** `artifacts/man-kgb.dj`, published from
+`raw/artifacts/man-kgb.md` and readable in the index as *man kgb*. One long
+searchable document rather than help by level: the concepts, every command,
+files, environment and examples.
+
+`tests/test_manpage/` walks `build_parser()` and requires every subcommand and
+every long option to appear in the page, and anything whose help says it is
+deprecated to be marked as such. Sabotage-verified with a parser carrying an
+invented command and flag. A reference document nothing checks drifts the first
+time a flag is added, and this project has already paid for that once with
+`mvp-design.md`.
+
+The argparse tree moved into `build_parser()` so the test can walk it.
+
 ## v0.1.3 — 2026-08-11 — the base keeps its own sources
 
 `kg import` now copies the session log into `raw/<conv>/<session>.jsonl` before

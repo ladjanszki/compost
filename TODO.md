@@ -15,7 +15,8 @@ change that is genuinely a one-way door. The em-dash entry below was the
 standing candidate and turned out not to be one at all: it was render-time, and
 v0.1.2 shipped it on `main` in an afternoon.
 
-Tags so far: `v0-graph-architecture`, `v0.1`, `v0.1.1`, `v0.1.2`, `v0.1.3`.
+Tags so far: `v0-graph-architecture`, `v0.1`, `v0.1.1`, `v0.1.2`, `v0.1.3`,
+`v0.1.4`.
 
 Before adding anything here, decide whether it is a **render-time** change
 (backward compatible, works on old notes for free) or a **canonization-time**
@@ -174,6 +175,42 @@ the evidence is inside the base, so a later version can go back for it.
       setting for it, `CLAUDE_CONFIG_DIR` moves credentials and plugins too,
       and it would tie the base's durability to another tool's layout while
       solving nothing for any other kind of source
+
+## v0.1.4 — kgb, and a man page that cannot drift ✓
+
+Everything here is cheaper now than after v0.2, and the rename is cheaper now
+than after a remote exists, so it goes first.
+
+- [x] **The tool is `kgb`.** `kg` stays as an alias that prints a notice.
+      Renamed only in the docs where a wrong command breaks someone; the
+      changelog, the completed sections here, and 501 immutable conversation
+      blocks keep saying `kg`, correctly. Cost four handles, measured first
+- [x] `kgb lookup HANDLE` — the block, and everything citing it. Absorbs
+      `tools/kgb.sh`, now deleted
+- [x] `kgb last` — recent turns as `{#handle}` plus text, so a turn can be
+      pasted into an agent and cited back exactly
+- [x] `kgb --version`
+- [x] **One source for the version, and it is the code.** `__version__` in the
+      package, `pyproject.toml` reads it with `dynamic`. The reverse is normal
+      and failed here: editable installs only refresh metadata on reinstall, so
+      `pip show` said 0.1.0 for three releases
+- [x] **A man page**, `artifacts/man-kgb.dj`, in the index as *man kgb*. One
+      long searchable document, not help by level
+- [x] **A test that the man page cannot drift** — every subcommand and long
+      option must appear in it, and anything deprecated must be marked.
+      Sabotage-verified
+
+Deferred out of this release on purpose:
+
+- The rescan subcommand (`kgb import --all` or similar). The general shape is a
+  *source*: a directory plus a matcher plus an importer, so the next kind of
+  input is configuration rather than code. Written up in the field notes
+- Hiding the scaffolding under `.kgb/`, superseding `.kg`. Its own patch
+  release, after this one
+- Crediting pandoc and djot properly somewhere visible. They do the heavy
+  lifting — pandoc untangles whatever markdown was actually typed, djot
+  supplies a real linear-time parser with native block attributes — and the
+  man page's SEE ALSO says so in one paragraph, which is not enough
 
 ## Next
 

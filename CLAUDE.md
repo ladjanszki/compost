@@ -1,4 +1,4 @@
-# kg — start here
+# kgb — start here
 
 This repo is a tool **and its own knowledge base**. Both matter, and the
 knowledge base is where the reasoning lives.
@@ -6,8 +6,8 @@ knowledge base is where the reasoning lives.
 ## Do this first
 
 ```bash
-kg render          # rebuilds site/ and site/blocks.json
-kg check           # must report 0 dangling, 0 collisions
+kgb render          # rebuilds site/ and site/blocks.json
+kgb check           # must report 0 dangling, 0 collisions
 ```
 
 Then read, in this order:
@@ -27,7 +27,7 @@ Then read, in this order:
 |---|---|
 | `conversations/` | **why** every decision was made. Immutable, so it cannot drift. |
 | `artifacts/` | **what is true now.** Rewritten as understanding improves. |
-| `README.md`, `DEVELOPMENT.md`, `TODO.md`, `CHANGELOG.md` | the markdown sources for four of those artifacts. Edit these, then `kg artifact <file>.md`. |
+| `README.md`, `DEVELOPMENT.md`, `TODO.md`, `CHANGELOG.md` | the markdown sources for four of those artifacts. Edit these, then `kgb artifact <file>.md`. |
 | `archive/` | **historical. Not current. Do not follow it.** |
 
 Code comments cite `mvp-design.md` section numbers. That document is archived —
@@ -44,7 +44,7 @@ the citations are historical and its content is superseded.
 - **Render-time changes are free; canonization-time changes are one-way.**
   Ask which a change is before building it. `DEVELOPMENT.md` explains the
   difference and it decides urgency more than anything else.
-- **Republish after editing a doc** (`kg artifact README.md`), or the served
+- **Republish after editing a doc** (`kgb artifact README.md`), or the served
   copy drifts from the file.
 - **Never rewrite a conversation.** They are append-only.
 
@@ -52,8 +52,15 @@ the citations are historical and its content is superseded.
 
 They write in nvim, click blocks in the served HTML to copy handles, and reply
 by citing them. When they paste a `{#handle}`, resolve it from `blocks.json`
-before answering. Reply as a turn:
+before answering — or run `kgb lookup <handle>`.
+
+**This section is under revision and the instruction below is known to be
+wrong.** A Claude Code agent should answer normally in its own interface and
+let the human import the round; submitting a turn as well makes two output
+channels for one answer. The replacement needs a specification, which is
+written up in `artifacts/field-notes.dj`, and lands after v0.2. Until then:
+answer in your interface, and do not submit a turn unless asked.
 
 ```bash
-kg submit reply.md --author claude
+kgb submit reply.md --author claude   # under revision: see above
 ```
