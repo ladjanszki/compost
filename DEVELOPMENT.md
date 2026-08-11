@@ -115,6 +115,7 @@ tests/
   test_importer/      a session log -> a conversation
   test_render/        base -> clickable site, blocks.json, kg check
   test_inlines/       nothing the author typed is silently dropped
+  test_preserve/      the base keeps its own copy of what it ingested
   test_03/            djot -> blocks -> djot roundtrip
 tools/                scratch prototypes and one-off migrations
 ```
@@ -128,6 +129,7 @@ for t in tests/test_canonize/test_canonize.py \
          tests/test_importer/test_importer.py \
          tests/test_render/test_site.py \
          tests/test_inlines/test_inlines.py \
+         tests/test_preserve/test_preserve.py \
          tests/test_03/test_roundtrip.py; do
   conda run -n knowledge-graph python "$t" || echo "FAILED: $t"
 done
@@ -228,6 +230,14 @@ them will silently break addressability.
   v0.1.2). Smart punctuation is therefore resolved to its character while
   structural markup stays djot source, so an em dash and a literal `---` remain
   distinguishable.
+- **An importer that drops is only safe if the source is kept.** `SKIP_TYPES`
+  discards every `type: "system"` line, which is right for a readable
+  conversation and wrong as a permanent decision: it takes the slash-command
+  events that record where a session was branched, `turn_duration`, and
+  `away_summary` with it. `sessionId` and `parentUuid` are on every line and
+  are never stored, so the log's tree structure is flattened to a list. Since
+  v0.1.3 the log is copied into `raw/` first, so what the importer throws away
+  is still in the base for a later version to model.
 - **A missing branch must raise, never fall through.** This is the same defect
   three times: `task_list` dropped, a div's children swallowed, punctuation
   deleted. Silence is what made all three invisible — the element is absent

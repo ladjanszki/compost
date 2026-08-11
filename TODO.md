@@ -15,7 +15,7 @@ change that is genuinely a one-way door. The em-dash entry below was the
 standing candidate and turned out not to be one at all: it was render-time, and
 v0.1.2 shipped it on `main` in an afternoon.
 
-Tags so far: `v0-graph-architecture`, `v0.1`, `v0.1.1`, `v0.1.2`.
+Tags so far: `v0-graph-architecture`, `v0.1`, `v0.1.1`, `v0.1.2`, `v0.1.3`.
 
 Before adding anything here, decide whether it is a **render-time** change
 (backward compatible, works on old notes for free) or a **canonization-time**
@@ -143,6 +143,37 @@ symmetrically, so no handle moves and no citation breaks.
       Sabotage-verified by deleting a branch and confirming failure
 - [x] Republish the artifacts so the served text is correct
 - [x] `CHANGELOG.md`, tag `v0.1.2`
+
+## v0.1.3 — the base keeps its own sources ✓
+
+Found by trying to see where this conversation had been branched, and failing.
+The `/branch` event is in the log as two `type: "system"` lines naming the
+parent session; `SKIP_TYPES` drops every one of those. So does it drop
+`turn_duration` and `away_summary`. And `sessionId` is on every line and was
+never stored, so nothing in the base recorded that one conversation was a
+branch of another.
+
+The importer dropping things is fine. The importer dropping things from a file
+the base does not keep is not: it made the loss permanent, since the source
+lived only in `~/.claude/projects/`, outside git and owned by another tool's
+layout.
+
+Not fixed here, deliberately: modelling those fields is graph work. Fixed here:
+the evidence is inside the base, so a later version can go back for it.
+
+- [x] `kg import` copies the log to `raw/<conv>/<session>.jsonl` before
+      deriving anything from it. 10 MB for seven sessions
+- [x] **A refresh may only grow the copy.** A log is append-only upstream, so
+      content that is not a continuation means it was rewritten underneath us,
+      and the import refuses rather than overwriting the record of what was
+      actually ingested
+- [x] An unchanged log is a no-op, so the refresh loop stays cheap
+- [x] `tests/test_preserve/` — storage, growth, idempotence, the rewrite
+      refusal, and that the dropped fields are recoverable from the copy
+- [x] Rejected: redirecting Claude Code's log output into the repo. There is no
+      setting for it, `CLAUDE_CONFIG_DIR` moves credentials and plugins too,
+      and it would tie the base's durability to another tool's layout while
+      solving nothing for any other kind of source
 
 ## Next
 

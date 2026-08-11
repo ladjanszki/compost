@@ -3,6 +3,37 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.1.3 — 2026-08-11 — the base keeps its own sources
+
+`kg import` now copies the session log into `raw/<conv>/<session>.jsonl` before
+deriving anything from it.
+
+Until now an imported conversation's source lived only in
+`~/.claude/projects/`: outside the base, outside git, and owned by another
+tool's storage layout. The importer discards a great deal on purpose — every
+`type: "system"` line — and none of it was recoverable, because the base had
+never held the file it was discarded from.
+
+Found by trying to locate where a conversation had been branched and failing.
+The `/branch` event is in the log as two `type: "system"` lines carrying the
+parent session id, and `SKIP_TYPES` drops them. Also dropped, per session: 34
+`turn_duration` records, 10 `away_summary`, 8 `local_command`. And `sessionId`
+sits on every line and was never stored, so the base held no record that one
+conversation was a branch of another.
+
+None of that is fixed here, and it is not meant to be — the graph milestone is
+where those become nodes and edges. What is fixed is that the evidence now
+lives inside the base, so a later version can go back and read it. 10 MB for
+seven sessions.
+
+- **A refresh may only grow the copy.** A log is append-only upstream, so if
+  new content is not a continuation of the stored copy, the log was rewritten
+  underneath us and the import refuses rather than overwriting. The stored copy
+  is the only record of what was actually ingested.
+- Re-importing an unchanged log is a no-op, so the refresh loop stays cheap.
+- `tests/test_preserve/` — storage, growth, idempotence, the rewrite refusal,
+  and that the dropped fields are recoverable from the copy.
+
 ## v0.1.2 — 2026-08-10 — punctuation, and a bug class closed
 
 Every em dash, en dash, ellipsis and curly quote an author had typed was being

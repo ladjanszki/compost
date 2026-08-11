@@ -10,7 +10,7 @@ same base, answers into the same conversation, and its answer is addressable
 too. Closed Claude Code sessions can be imported whole, so past chats stop being
 stranded.
 
-**Status: v0.1.2.** The loop runs with a human and an agent in it. Artifact
+**Status: v0.1.3.** The loop runs with a human and an agent in it. Artifact
 generation — an agent writing a README or TODO from the conversations — is not
 built yet.
 
@@ -87,6 +87,7 @@ marker in the current directory or any parent.
 
 ```
 raw/<conv>/<turn>.md      drafts exactly as written, frozen
+raw/<conv>/<session>.jsonl  an imported session log, exactly as ingested
 conversations/<conv>.dj   turns, appended; no block in one ever changes
 artifacts/<name>.dj       documents, rewritten in place
 site/                     generated HTML + blocks.json (disposable, gitignored)
