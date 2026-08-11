@@ -196,6 +196,13 @@ than after a remote exists, so it goes first.
       `pip show` said 0.1.0 for three releases
 - [x] **A man page**, `artifacts/man-kgb.dj`, in the index as *man kgb*. One
       long searchable document, not help by level
+- [x] **Fix the behavioural expectation in every place it is stated.** An agent
+      with its own interface answers there; it does not also submit a turn. The
+      human imports the round, which is where the handles come from anyway.
+      Corrected in `CLAUDE.md`, `AGENTS.md`, `README.md`, `man kgb` and
+      `state-of-play`; `kgb submit --author` stays correct for an agent with
+      nowhere else to write. The specification for *how a submitted note
+      reaches the agent* is still open and still lands after v0.2
 - [x] **A test that the man page cannot drift** — every subcommand and long
       option must appear in it, and anything deprecated must be marked.
       Sabotage-verified

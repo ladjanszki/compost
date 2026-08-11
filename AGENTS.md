@@ -57,7 +57,18 @@ one without running the tool.
 
 ## Writing
 
-You write markdown and submit it. You never write `.dj` files by hand.
+**If you are an agent with your own interface — a Claude Code session or
+similar — answer there. Do not submit your reply as a turn.** The human imports
+the round afterwards, which makes your answer addressable anyway. Submitting as
+well produces two copies of one answer in two places, and it is the human who
+has to read both.
+
+What does not change: resolve every handle before you answer, and cite handles
+in your answer. The import turns those into real citations, which is where the
+value was all along.
+
+Submit a turn only when you are asked to, or when you have no interface of your
+own. You never write `.dj` files by hand.
 
 ```bash
 kgb submit reply.md --author claude          # thread inferred from citations
@@ -81,7 +92,8 @@ Then `kgb render` to rebuild the site and `blocks.json`.
    make a note useful later.
 3. **Never edit a conversation file.** They are append-only. React by submitting
    a new turn.
-4. **Say `--author`.** Turns record who wrote them. Do not submit as `human`.
+4. **Say `--author`** on any turn you do submit. Turns record who wrote them.
+   Never submit as `human`.
 
 ## Commands
 

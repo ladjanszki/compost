@@ -60,12 +60,18 @@ target grows a **Referenced by** section. That is the loop.
 
 ```bash
 kgb import ~/.claude/projects/<slug>/<session>.jsonl   # a past session
-kgb submit reply.md --author claude                    # an agent's turn
+kgb last                                               # hand a turn to an agent
 ```
 
 Point the agent at `AGENTS.md` and the base. It reads `site/blocks.json` — the
-whole corpus in one file, with the hashes it cannot compute itself — and submits
-turns back. It never needs this repository.
+whole corpus in one file, with the hashes it cannot compute itself. It never
+needs this repository.
+
+**An agent with its own interface answers there rather than submitting a turn.**
+You import the round, and its answer becomes addressable that way. Two output
+channels for one answer is worse than one, and the import is where the handles
+come from regardless. `kgb submit --author <who>` stays for you, and for an
+agent that has nowhere else to write.
 
 ## Commands
 

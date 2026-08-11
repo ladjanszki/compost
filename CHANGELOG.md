@@ -35,6 +35,24 @@ editable install, packaging metadata only refreshes on reinstall, so `pip show`
 reported 0.1.0 through three releases while the code was current. Nothing
 visible reported a version at all, which is why nobody noticed.
 
+**The behavioural expectation is corrected everywhere it was stated.** An agent
+with its own interface answers there and does not submit its reply as a turn;
+the human imports the round, which makes the answer addressable anyway. Two
+output channels for one answer is worse than one, and it is the human who has
+to read both.
+
+This came from days of use rather than from the design, and it does contradict
+"everything is a turn" — knowingly. Nothing is lost, because the import is
+where the handles came from in either case. What does not change: an agent
+resolves every handle before answering and cites handles in its answer, so the
+import produces real citations.
+
+Corrected in `CLAUDE.md` (which an agent loads first, and which had been
+carrying a marker saying its own instruction was wrong), `AGENTS.md`,
+`README.md`, `man kgb`, and `state-of-play`. `kgb submit --author` remains
+correct for an agent with nowhere else to write, and for when a turn is asked
+for deliberately.
+
 **A man page, verified against the CLI.** `artifacts/man-kgb.dj`, published from
 `raw/artifacts/man-kgb.md` and readable in the index as *man kgb*. One long
 searchable document rather than help by level: the concepts, every command,

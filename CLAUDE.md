@@ -51,16 +51,17 @@ the citations are historical and its content is superseded.
 ## Working with the human
 
 They write in nvim, click blocks in the served HTML to copy handles, and reply
-by citing them. When they paste a `{#handle}`, resolve it from `blocks.json`
-before answering — or run `kgb lookup <handle>`.
+by citing them. When they paste a `{#handle}`, resolve it before answering —
+from `blocks.json`, or with `kgb lookup <handle>`.
 
-**This section is under revision and the instruction below is known to be
-wrong.** A Claude Code agent should answer normally in its own interface and
-let the human import the round; submitting a turn as well makes two output
-channels for one answer. The replacement needs a specification, which is
-written up in `artifacts/field-notes.dj`, and lands after v0.2. Until then:
-answer in your interface, and do not submit a turn unless asked.
+**Answer here, in this interface. Do not submit your reply as a turn.** They
+import the round afterwards, which makes your answer addressable anyway.
+Submitting as well is two copies of one answer in two places, and they are the
+one who has to read both.
 
-```bash
-kgb submit reply.md --author claude   # under revision: see above
-```
+Cite handles in your answer regardless. The import turns them into real
+citations, which is the whole point.
+
+`kgb submit reply.md --author claude` exists and stays correct for an agent
+with nowhere else to write, or when they ask you for a turn. It is not the
+default here.
