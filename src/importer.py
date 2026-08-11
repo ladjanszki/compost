@@ -73,6 +73,42 @@ def _result_text(blk: dict) -> str:
     return str(body or "")
 
 
+def preserve_source(raw_dir: Path, conv_id: str, path: Path) -> dict:
+    """
+    Copy the session log into `raw/<conv>/` so the base holds its own source.
+
+    Until this existed, an imported conversation's source lived only in
+    `~/.claude/projects/`: outside the base, outside git, and owned by another
+    tool's storage layout. Everything the importer drops — `sessionId`,
+    `parentUuid`, `turn_duration`, the slash-command events that record where a
+    conversation was branched — existed nowhere the base could reach.
+
+    A log is append-only upstream, so a refresh may only ever *grow* the copy.
+    If the new content is not a continuation of the stored one, the log was
+    rewritten underneath us and that is worth refusing over: the stored copy is
+    the only evidence of what was actually ingested.
+    """
+    dest = raw_dir / conv_id / path.name
+    new = path.read_bytes()
+
+    if dest.exists():
+        old = dest.read_bytes()
+        if old == new:
+            return {"status": "unchanged", "path": dest, "added": 0}
+        if not new.startswith(old):
+            raise ValueError(
+                f"{path.name} is not an extension of the copy in "
+                f"{dest.parent.name}/: the log was rewritten, not appended to. "
+                "Refusing to overwrite the record of what was ingested.")
+        grew = new.count(b"\n") - old.count(b"\n")
+        dest.write_bytes(new)
+        return {"status": "grew", "path": dest, "added": grew}
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(new)
+    return {"status": "stored", "path": dest, "added": new.count(b"\n")}
+
+
 def turns_from_session(path: Path) -> list[dict]:
     """
     Ordered turns: author, uuid, prose, folded parts.

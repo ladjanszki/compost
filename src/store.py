@@ -5,6 +5,7 @@ A knowledge base is a directory created by `kg init`:
 
     <root>/
       raw/<conv>/<turn>.md      drafts exactly as written, frozen
+      raw/<conv>/<session>.jsonl  an imported session log, exactly as ingested
       conversations/<conv>.dj   turns, appended; every block frozen once written
       artifacts/<name>.dj       agent-written and regenerated; mutable
       site/                     generated HTML (disposable)

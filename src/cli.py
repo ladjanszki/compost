@@ -190,6 +190,16 @@ def cmd_import(args) -> int:
                   "Pass --force to overwrite anyway.", file=sys.stderr)
             return 1
 
+    # Preserve the log inside the base before deriving anything from it. The
+    # importer drops a great deal on purpose, and without this the discarded
+    # part exists only in ~/.claude, where the base cannot reach it and git
+    # never sees it.
+    try:
+        kept = import_mod.preserve_source(st.raw, conv_id, path)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
     md = import_mod.session_markdown(turns)
     # Same mechanism as an artifact: unchanged blocks keep their handles, so a
     # refresh does not orphan every comment written about the conversation.
@@ -206,6 +216,10 @@ def cmd_import(args) -> int:
     if stats["kept"]:
         print(f"  refreshed: {stats['kept']} blocks kept their handles, "
               f"{stats['added']} new, {stats['removed']} gone")
+    if kept["status"] == "stored":
+        print(f"  source kept: raw/{conv_id}/{path.name} ({kept['added']} lines)")
+    elif kept["status"] == "grew":
+        print(f"  source kept: raw/{conv_id}/{path.name} (+{kept['added']} lines)")
     return 0
 
 
