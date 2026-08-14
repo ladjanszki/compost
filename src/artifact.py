@@ -21,7 +21,7 @@ position so that inserting a paragraph does not renumber everything after it.
 What this does **not** do is track a block across an edit: change a word and the
 hash changes, so it is a new block and references to the old one dangle. That is
 correct — the old text is what was commented on, and pretending otherwise would
-silently reattach a comment to something it was not about. `kg check` reports
+silently reattach a comment to something it was not about. `pandig check` reports
 the dangling reference, which is the honest outcome.
 """
 import re

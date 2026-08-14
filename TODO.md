@@ -16,7 +16,7 @@ standing candidate and turned out not to be one at all: it was render-time, and
 v0.1.2 shipped it on `main` in an afternoon.
 
 Tags so far: `v0-graph-architecture`, `v0.1`, `v0.1.1`, `v0.1.2`, `v0.1.3`,
-`v0.1.4`.
+`v0.1.4`, `v0.1.5`. A tag goes on the **last** commit of its release.
 
 Before adding anything here, decide whether it is a **render-time** change
 (backward compatible, works on old notes for free) or a **canonization-time**
@@ -218,6 +218,22 @@ Deferred out of this release on purpose:
   lifting — pandoc untangles whatever markdown was actually typed, djot
   supplies a real linear-time parser with native block attributes — and the
   man page's SEE ALSO says so in one paragraph, which is not enough
+
+## v0.1.5 — pandig ✓
+
+- [x] **Renamed from `kgb` to `pandig`.** `kgb` lasted a day: cheesy at best,
+      and given what the KGB was, potentially offensive at worst — not
+      something to find out after publishing under it. `pandig` names what the
+      tool stands on, pandoc and djot
+- [x] `kg` and `kgb` both survive as aliases that print a notice
+- [x] Renamed in code, packaging and the documents that instruct. Not in the
+      changelog, the completed sections here, the 39 immutable conversation
+      blocks, or the verbatim transcripts in the field notes — those record
+      what the tool was called at the time
+- [x] Measured first: no cited block mentions `kgb`, so the rename cost zero
+      handles
+- [x] `man kgb` becomes `man pandig`; the drift test retargeted
+- [x] `v0.1.4`'s tag moved to the last commit of that release
 
 ## Next
 

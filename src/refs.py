@@ -16,7 +16,7 @@ order, and *note* ids stay UUIDv7 so `_when()` and chronological sorting still
 work.
 
 8 hex is ~4.3e9 values. At the projected corpus ceiling of 100k blocks that is
-roughly one expected collision, which `kg check` reports rather than prevents —
+roughly one expected collision, which `pandig check` reports rather than prevents —
 so minting a handle stays a pure function and canonization never has to read the
 corpus. A shorter handle would need a registry file mapping handle to block, and
 that file could not be rebuilt from the `.dj` files: losing it would break every
@@ -75,7 +75,7 @@ def citations(block: dict) -> list[str]:
 
 
 def new_handle() -> str:
-    """A fresh block handle. Pure — collisions are reported by `kg check`."""
+    """A fresh block handle. Pure — collisions are reported by `pandig check`."""
     return secrets.token_hex(4)
 
 

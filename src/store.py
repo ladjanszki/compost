@@ -1,7 +1,7 @@
 """
 store.py — locating and describing a knowledge base on disk.
 
-A knowledge base is a directory created by `kg init`:
+A knowledge base is a directory created by `pandig init`:
 
     <root>/
       raw/<conv>/<turn>.md      drafts exactly as written, frozen
@@ -27,7 +27,7 @@ KG_HOME, then an explicit --root, then by walking up from the current
 directory looking for a `.kg` marker.
 
 Keeping the root outside the tool's own directory is possible but not
-required: `kg init .` puts them together, `kg init ~/knowledge` separates
+required: `pandig init .` puts them together, `pandig init ~/knowledge` separates
 them. Deferring that choice is deliberate.
 """
 import os

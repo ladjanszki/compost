@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kgb"
+name = "pandig"
 dynamic = ["version"]
 description = "Conversations to an addressable, agent-writable wiki"
 requires-python = ">=3.12"
@@ -14,9 +14,11 @@ dependencies = ["uuid6"]
 #   node >= 18      the djot.js reference parser, via npx
 
 [project.scripts]
-kgb = "src.cli:main"
-# `kg` was the name until v0.1.4. Kept as an alias so every doc, note and shell
-# history written before the rename still runs; it prints a deprecation notice.
+pandig = "src.cli:main"
+# Former names. Kept as aliases that print a notice, so every doc, note and
+# shell history written before each rename still runs. `kg` was the name until
+# v0.1.4, `kgb` for one day in v0.1.4.
+kgb = "src.cli:main_deprecated_kgb"
 kg = "src.cli:main_deprecated_kg"
 
 [tool.setuptools]

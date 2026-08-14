@@ -43,7 +43,7 @@ Three ideas carry everything:
 not.** Ask which side a change falls on *before* building it.
 
 A **render-time** change reads the corpus and produces output. It applies to
-every note ever written, for free, the next time you run `kgb render`. Backlinks
+every note ever written, for free, the next time you run `pandig render`. Backlinks
 were added after notes already existed and immediately worked on all of them.
 Views, styling, click behaviour, new indexes — all free.
 
@@ -81,14 +81,14 @@ grows.
 ## Layout
 
 The repo is also a knowledge base: `.kg`, `conversations/`, `artifacts/` and
-`raw/` live at the root, so `kgb` works anywhere in the tree without `KG_HOME`.
-The docs are published into it with `kgb artifact <file>.md`; the markdown is the
+`raw/` live at the root, so `pandig` works anywhere in the tree without `KG_HOME`.
+The docs are published into it with `pandig artifact <file>.md`; the markdown is the
 source and the `.dj` is its addressable form. **Republish after editing a doc**,
 or the served copy drifts from the file.
 
 ```
 src/
-  cli.py              the `kgb` entry point (argparse, one function per command)
+  cli.py              the `pandig` entry point (argparse, one function per command)
   store.py            locating a base; conversations/ and artifacts/
   refs.py             THE handle and reference format, and what counts as a
                       citation — one source of truth
@@ -106,14 +106,14 @@ src/
     block_schema.py   block records (legacy; canonize does its own)
   render/
     to_html.py        base -> static site, backlinks, click-to-copy, folds
-    index.py          blocks.json + the check behind `kgb check`
+    index.py          blocks.json + the check behind `pandig check`
     blocks_to_djot.py blocks -> djot text (not on the canonize path; needed
                       when agents start generating artifacts)
 tests/
   test_canonize/      markdown -> addressable turn
   test_conversation/  appending turns without disturbing them
   test_importer/      a session log -> a conversation
-  test_render/        base -> clickable site, blocks.json, kgb check
+  test_render/        base -> clickable site, blocks.json, pandig check
   test_inlines/       nothing the author typed is silently dropped
   test_preserve/      the base keeps its own copy of what it ingested
   test_manpage/       the man page is checked against the CLI surface
@@ -306,7 +306,7 @@ whether a machine guessed it or a human asserted it.
 
 **5. Housekeeping.** No pytest/CI wiring. `npx` spawns a Node process per parse
 (~1 s measured), which one-file-per-conversation keeps tolerable but which still
-dominates `kgb render`. `src/ingest/block_schema.py` is legacy.
+dominates `pandig render`. `src/ingest/block_schema.py` is legacy.
 
 ---
 

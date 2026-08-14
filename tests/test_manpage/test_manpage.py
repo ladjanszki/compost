@@ -21,7 +21,7 @@ sys.path.insert(0, ".")
 
 from src.cli import build_parser
 
-MAN = Path("raw/artifacts/man-kgb.md")
+MAN = Path("raw/artifacts/man-pandig.md")
 
 FAILURES = []
 
@@ -84,7 +84,7 @@ def tm1_commands_documented():
     commands, _, _ = surface(build_parser())
     check("the parser exposes commands", len(commands) > 0, str(commands))
 
-    missing = [c for c in commands if not re.search(rf"\bkgb {re.escape(c)}\b", text)]
+    missing = [c for c in commands if not re.search(rf"\bpandig {re.escape(c)}\b", text)]
     check(f"all {len(commands)} commands documented", not missing,
           f"missing: {missing}")
 
@@ -128,8 +128,8 @@ def tm3_deprecated_marked():
 
     # The rename alias is not an argparse item, so assert it explicitly:
     # it is the one deprecation that exists right now.
-    check("the `kg` alias is recorded in a DEPRECATED section",
-          "## deprecated" in text and re.search(r"`kg`", text) is not None)
+    check("the former names are recorded in a DEPRECATED section",
+          "## deprecated" in text and re.search(r"`kgb?`", text) is not None)
 
 
 # --------------------------------------------------------------------------
@@ -139,14 +139,14 @@ def tm4_sabotage():
     print("\nTM-4: sabotage — an undocumented command and flag are caught")
     text = MAN.read_text(encoding="utf-8") if MAN.exists() else ""
 
-    p = argparse.ArgumentParser(prog="kgb")
+    p = argparse.ArgumentParser(prog="pandig")
     p.add_argument("--invented-flag", help="not in the page")
     sub = p.add_subparsers(dest="cmd")
     sub.add_parser("invented", help="not in the page either")
 
     commands, options, _ = surface(p)
     missing_cmd = [c for c in commands
-                   if not re.search(rf"\bkgb {re.escape(c)}\b", text)]
+                   if not re.search(rf"\bpandig {re.escape(c)}\b", text)]
     missing_opt = [o for o in options if o not in text and o != "--help"]
 
     check("an undocumented command is detected", missing_cmd == ["invented"],
@@ -155,7 +155,7 @@ def tm4_sabotage():
           str(missing_opt))
 
     # and a deprecated item with no marking
-    p2 = argparse.ArgumentParser(prog="kgb")
+    p2 = argparse.ArgumentParser(prog="pandig")
     p2.add_argument("--old-thing", help="deprecated, use --new-thing")
     _, _, dep = surface(p2)
     check("a deprecated flag is recognised as deprecated", dep == {"--old-thing"},

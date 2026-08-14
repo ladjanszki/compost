@@ -1,17 +1,19 @@
 """
-cli.py — the `kg` command.
+cli.py — the `pandig` command.
 
-    kg init [dir]     create a knowledge base
-    kg new            write a turn, append it on editor exit
-    kg submit <file>  append an existing markdown file as a turn
-    kg render         build the static site and blocks.json
-    kg check          report dangling references and handle collisions
-    kg import <log>   import a closed Claude Code session as a conversation
-    kg artifact <md>  publish a document as an artifact, handles preserved
-    kg serve [-p]     render, then serve site/ on localhost
+    pandig init [dir]     create a knowledge base
+    pandig new            write a turn, append it on editor exit
+    pandig submit <file>  append an existing markdown file as a turn
+    pandig render         build the static site and blocks.json
+    pandig check          report dangling references and handle collisions
+    pandig import <log>   import a closed Claude Code session as a conversation
+    pandig artifact <md>  publish a document as an artifact, handles preserved
+    pandig serve [-p]     render, then serve site/ on localhost
+    pandig lookup <h>     resolve a handle and show what cites it
+    pandig last           print recent turns as {#handle} plus text
 
 The base is found via --root, then $KG_HOME, then a `.kg` marker in the
-current directory or any parent — so `kg` works from anywhere.
+current directory or any parent — so `pandig` works from anywhere.
 """
 import argparse
 import json
@@ -143,7 +145,7 @@ def cmd_artifact(args) -> int:
         print(f"  {stats['kept']} blocks kept their handles, "
               f"{stats['added']} new, {stats['removed']} gone")
         if stats["removed"]:
-            print("  run `kg check`: references to removed blocks now dangle")
+            print("  run `pandig check`: references to removed blocks now dangle")
     else:
         print(f"  {stats['added']} blocks")
     return 0
@@ -334,16 +336,25 @@ def _blocks_json(st):
     """The rendered corpus, or a pointed message about why it is missing."""
     path = st.site / "blocks.json"
     if not path.exists():
-        print(f"no {path} — run `kgb render` first", file=sys.stderr)
+        print(f"no {path} — run `pandig render` first", file=sys.stderr)
         return None
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def main_deprecated_kg(argv=None) -> int:
-    """The pre-v0.1.4 entry point. Same tool, one line of warning."""
-    print("`kg` was renamed to `kgb` in v0.1.4. This alias still works and "
-          "will be removed in a later release.", file=sys.stderr)
+def _deprecated(old: str, dropped: str, argv):
+    """An old entry-point name. Same tool, one line of warning."""
+    print(f"`{old}` stopped being the name in {dropped}; the tool is `pandig`. "
+          "This alias still works and will be removed in a later release.",
+          file=sys.stderr)
     return main(argv)
+
+
+def main_deprecated_kg(argv=None) -> int:
+    return _deprecated("kg", "v0.1.4", argv)
+
+
+def main_deprecated_kgb(argv=None) -> int:
+    return _deprecated("kgb", "v0.1.5", argv)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -355,10 +366,10 @@ def build_parser() -> argparse.ArgumentParser:
     a flag is added, and this project has already been bitten by exactly that
     with `mvp-design.md`.
     """
-    p = argparse.ArgumentParser(prog="kgb",
+    p = argparse.ArgumentParser(prog="pandig",
                                 description="conversations → addressable wiki")
     p.add_argument("--version", action="version",
-                   version=f"kgb {__version__}")
+                   version=f"pandig {__version__}")
     p.add_argument("--root", help="knowledge base directory (overrides KG_HOME)")
     sub = p.add_subparsers(dest="cmd", required=True)
 

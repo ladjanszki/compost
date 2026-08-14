@@ -1,4 +1,4 @@
-# kgb — start here
+# pandig — start here
 
 This repo is a tool **and its own knowledge base**. Both matter, and the
 knowledge base is where the reasoning lives.
@@ -6,8 +6,8 @@ knowledge base is where the reasoning lives.
 ## Do this first
 
 ```bash
-kgb render          # rebuilds site/ and site/blocks.json
-kgb check           # must report 0 dangling, 0 collisions
+pandig render          # rebuilds site/ and site/blocks.json
+pandig check           # must report 0 dangling, 0 collisions
 ```
 
 Then read, in this order:
@@ -27,7 +27,7 @@ Then read, in this order:
 |---|---|
 | `conversations/` | **why** every decision was made. Immutable, so it cannot drift. |
 | `artifacts/` | **what is true now.** Rewritten as understanding improves. |
-| `README.md`, `DEVELOPMENT.md`, `TODO.md`, `CHANGELOG.md` | the markdown sources for four of those artifacts. Edit these, then `kgb artifact <file>.md`. |
+| `README.md`, `DEVELOPMENT.md`, `TODO.md`, `CHANGELOG.md` | the markdown sources for four of those artifacts. Edit these, then `pandig artifact <file>.md`. |
 | `archive/` | **historical. Not current. Do not follow it.** |
 
 Code comments cite `mvp-design.md` section numbers. That document is archived —
@@ -44,7 +44,7 @@ the citations are historical and its content is superseded.
 - **Render-time changes are free; canonization-time changes are one-way.**
   Ask which a change is before building it. `DEVELOPMENT.md` explains the
   difference and it decides urgency more than anything else.
-- **Republish after editing a doc** (`kgb artifact README.md`), or the served
+- **Republish after editing a doc** (`pandig artifact README.md`), or the served
   copy drifts from the file.
 - **Never rewrite a conversation.** They are append-only.
 
@@ -52,7 +52,7 @@ the citations are historical and its content is superseded.
 
 They write in nvim, click blocks in the served HTML to copy handles, and reply
 by citing them. When they paste a `{#handle}`, resolve it before answering —
-from `blocks.json`, or with `kgb lookup <handle>`.
+from `blocks.json`, or with `pandig lookup <handle>`.
 
 **Answer here, in this interface. Do not submit your reply as a turn.** They
 import the round afterwards, which makes your answer addressable anyway.
@@ -62,6 +62,6 @@ one who has to read both.
 Cite handles in your answer regardless. The import turns them into real
 citations, which is the whole point.
 
-`kgb submit reply.md --author claude` exists and stays correct for an agent
+`pandig submit reply.md --author claude` exists and stays correct for an agent
 with nowhere else to write, or when they ask you for a turn. It is not the
 default here.
