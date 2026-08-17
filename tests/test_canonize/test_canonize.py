@@ -185,7 +185,7 @@ def tc6_injection_is_inert():
     from src.canonize.md_to_djot import md_to_djot
     from src.canonize.inject_ids import inject_ids
 
-    md = open("archive/my-workflow.md").read()
+    md = open("tests/test_canonize/fixtures/my-workflow.md").read()
     plain = md_to_djot(md)
     injected = inject_ids(plain)
 
@@ -209,7 +209,8 @@ def tc6_injection_is_inert():
 # --------------------------------------------------------------------------
 def tc7_real_notes():
     print("\nTC-7: the author's real files")
-    for path in ("archive/my-workflow.md", "archive/mvp-interview.md"):
+    for path in ("tests/test_canonize/fixtures/my-workflow.md",
+                 "tests/test_canonize/fixtures/mvp-interview.md"):
         try:
             r = canonize_text(open(path).read())
         except Exception as e:
