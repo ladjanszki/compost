@@ -1,4 +1,4 @@
-# kgb — conversations to an addressable wiki
+# compost — conversations to an addressable wiki
 
 A local-first knowledge base for people who run many projects at once and need
 to get back into one cheaply after weeks away.
@@ -26,16 +26,16 @@ conda activate knowledge-graph
 pip install -e .
 ```
 
-Verify: `kgb --help`, `pandoc --version` (3.x), `npx @djot/djot --version`.
+Verify: `compost --help`, `pandoc --version` (3.x), `npx @djot/djot --version`.
 
 ## Quickstart
 
 ```bash
-kgb init ~/my-project/kb        # a base per project
+compost init ~/my-project/kb        # a base per project
 export KG_HOME=~/my-project/kb
 
-kgb new                         # opens $EDITOR; submits when you close it
-kgb serve                       # build the site and serve it on :8000
+compost new                         # opens $EDITOR; submits when you close it
+compost serve                       # build the site and serve it on :8000
 ```
 
 Open <http://localhost:8000>, click a block, and the reference lands on your
@@ -52,15 +52,15 @@ subtree instead — hold Shift while hovering and the subtree highlights:
 {#a3f9c2d1+++}
 ```
 
-Paste it into your next turn. `kgb` works out which conversation you are
+Paste it into your next turn. `compost` works out which conversation you are
 replying to from the blocks you cite, so there is nothing else to copy. The
 target grows a **Referenced by** section. That is the loop.
 
 ## Bringing an agent in
 
 ```bash
-kgb import ~/.claude/projects/<slug>/<session>.jsonl   # a past session
-kgb last                                               # hand a turn to an agent
+compost import ~/.claude/projects/<slug>/<session>.jsonl   # a past session
+compost last                                               # hand a turn to an agent
 ```
 
 Point the agent at `AGENTS.md` and the base. It reads `site/blocks.json` — the
@@ -70,20 +70,20 @@ needs this repository.
 **An agent with its own interface answers there rather than submitting a turn.**
 You import the round, and its answer becomes addressable that way. Two output
 channels for one answer is worse than one, and the import is where the handles
-come from regardless. `kgb submit --author <who>` stays for you, and for an
+come from regardless. `compost submit --author <who>` stays for you, and for an
 agent that has nowhere else to write.
 
 ## Commands
 
 | | |
 |---|---|
-| `kgb init [dir]` | create a knowledge base |
-| `kgb new` | write a turn in `$EDITOR`; submits on exit |
-| `kgb submit <file>` | append an existing markdown file as a turn |
-| `kgb import <log>` | import a closed Claude Code session |
-| `kgb render` | build the static site and `blocks.json` |
-| `kgb check` | report dangling references and handle collisions |
-| `kgb serve [-p PORT]` | render, then serve on localhost |
+| `compost init [dir]` | create a knowledge base |
+| `compost new` | write a turn in `$EDITOR`; submits on exit |
+| `compost submit <file>` | append an existing markdown file as a turn |
+| `compost import <log>` | import a closed Claude Code session |
+| `compost render` | build the static site and `blocks.json` |
+| `compost check` | report dangling references and handle collisions |
+| `compost serve [-p PORT]` | render, then serve on localhost |
 
 `--author` records who wrote a turn; `-c` names the conversation when it cannot
 be inferred. The base is found via `--root`, then `$KG_HOME`, then a `.kg`
@@ -110,15 +110,15 @@ is derived and can be deleted.
 
 ## This repo is its own knowledge base
 
-`kgb` is developed inside the base it built. `conversations/`, `artifacts/` and
-`raw/` sit at the repo root next to `src/`, and a `.kg` marker there means `kgb`
+`compost` is developed inside the base it built. `conversations/`, `artifacts/` and
+`raw/` sit at the repo root next to `src/`, and a `.kg` marker there means `compost`
 resolves the base from anywhere in the tree with no `KG_HOME` set.
 
 The documents you are reading are published into it:
 
 ```bash
-kgb artifact README.md      # republish after editing
-kgb render && kgb serve      # read and comment on them at localhost:8000
+compost artifact README.md      # republish after editing
+compost render && compost serve      # read and comment on them at localhost:8000
 ```
 
 **The `.md` file is the source; `artifacts/<name>.dj` is its canonized,

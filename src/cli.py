@@ -1,17 +1,17 @@
 """
-cli.py — the `kg` command.
+cli.py — the `compost` command.
 
-    kg init [dir]     create a knowledge base
-    kg new            write a turn, append it on editor exit
-    kg submit <file>  append an existing markdown file as a turn
-    kg render         build the static site and blocks.json
-    kg check          report dangling references and handle collisions
-    kg import <log>   import a closed Claude Code session as a conversation
-    kg artifact <md>  publish a document as an artifact, handles preserved
-    kg serve [-p]     render, then serve site/ on localhost
+    compost init [dir]     create a knowledge base
+    compost new            write a turn, append it on editor exit
+    compost submit <file>  append an existing markdown file as a turn
+    compost render         build the static site and blocks.json
+    compost check          report dangling references and handle collisions
+    compost import <log>   import a closed Claude Code session as a conversation
+    compost artifact <md>  publish a document as an artifact, handles preserved
+    compost serve [-p]     render, then serve site/ on localhost
 
 The base is found via --root, then $KG_HOME, then a `.kg` marker in the
-current directory or any parent — so `kg` works from anywhere.
+current directory or any parent — so `compost` works from anywhere.
 """
 import argparse
 import json
@@ -143,7 +143,7 @@ def cmd_artifact(args) -> int:
         print(f"  {stats['kept']} blocks kept their handles, "
               f"{stats['added']} new, {stats['removed']} gone")
         if stats["removed"]:
-            print("  run `kg check`: references to removed blocks now dangle")
+            print("  run `compost check`: references to removed blocks now dangle")
     else:
         print(f"  {stats['added']} blocks")
     return 0
@@ -334,16 +334,9 @@ def _blocks_json(st):
     """The rendered corpus, or a pointed message about why it is missing."""
     path = st.site / "blocks.json"
     if not path.exists():
-        print(f"no {path} — run `kgb render` first", file=sys.stderr)
+        print(f"no {path} — run `compost render` first", file=sys.stderr)
         return None
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def main_deprecated_kg(argv=None) -> int:
-    """The pre-v0.1.4 entry point. Same tool, one line of warning."""
-    print("`kg` was renamed to `kgb` in v0.1.4. This alias still works and "
-          "will be removed in a later release.", file=sys.stderr)
-    return main(argv)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -355,10 +348,10 @@ def build_parser() -> argparse.ArgumentParser:
     a flag is added, and this project has already been bitten by exactly that
     with `mvp-design.md`.
     """
-    p = argparse.ArgumentParser(prog="kgb",
+    p = argparse.ArgumentParser(prog="compost",
                                 description="conversations → addressable wiki")
     p.add_argument("--version", action="version",
-                   version=f"kgb {__version__}")
+                   version=f"compost {__version__}")
     p.add_argument("--root", help="knowledge base directory (overrides KG_HOME)")
     sub = p.add_subparsers(dest="cmd", required=True)
 

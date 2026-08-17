@@ -3,6 +3,36 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.1.6 — 2026-08-17 — pandig reverted, the tool is `compost`
+
+**v0.1.5 never worked.** It renamed `kgb` to `pandig` and is reverted here in
+full — one commit, cleanly undone, nothing else changed underneath it. Kept in
+history rather than erased: `git log` still shows the attempt and that it
+didn't pan out, which is the same reasoning that keeps every conversation in
+this base immutable in the first place.
+
+**The tool is `compost` now.** Conversations pile up append-only, get turned
+into artifacts, and what's fully superseded settles into `archive/` — the name
+finally matches the shape of the system instead of punning at it. `kgb` (and
+`kg` before it, and `pandig` for its few days) are gone **without an alias**.
+Every prior rename kept the old name working with a deprecation notice; this
+one doesn't, on purpose — v0.2 is about to break the storage format and the
+importer from nothing, so there is no reason to carry three dead names into it
+for the sake of continuity that's about to end anyway.
+
+Renamed only where a wrong command breaks someone, same rule as last time:
+`README.md`, `AGENTS.md`, `CLAUDE.md`, `DEVELOPMENT.md`, `man compost`
+(`raw/artifacts/man-compost.md`, moved from `man-kgb.md`), `state-of-play`, and
+`src/cli.py`. `CHANGELOG.md`, the completed `v0.1.4` section of `TODO.md`, and
+`field-notes`' account of the day two handles nearly broke all still say `kg`
+or `kgb`, because that is what the tool was called when those things happened.
+`.kg` and `$KG_HOME` are untouched — renaming an env var breaks a shell profile
+silently, which is a worse kind of break than a stale command name.
+
+Also removed: `archive/` (moved to a personal notes directory outside the
+repo) and `sample_data/math/` (demo content superseded by the conversation
+corpus as a source of real sample data).
+
 ## v0.1.4 — 2026-08-11 — kgb, and a man page that cannot drift
 
 **The tool is called `kgb` now.** Knowledge graph blocks, and a system whose
