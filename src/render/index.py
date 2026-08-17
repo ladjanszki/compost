@@ -2,7 +2,7 @@
 index.py — blocks.json, the machine-readable view of the corpus.
 
 Every block in one file: handle, hash, type, where it lives, what it says.
-Written by `pandig render`, so it is **derived and disposable** — delete it, render
+Written by `kg render`, so it is **derived and disposable** — delete it, render
 again, it is back. That is what lets it exist at all without violating the rule
 that `.dj` files in git are the only source of truth.
 
@@ -12,7 +12,7 @@ It earns its place three times over:
     SHA-256 over the *parsed* block, so it needs the djot AST. Without this file
     a fresh agent can read the corpus but cannot cite it, which is the whole
     loop.
-  * `pandig check` is a set difference over it.
+  * `kg check` is a set difference over it.
   * At a few hundred blocks it is the entire corpus in one read, which is the
     context assembly mvp-design.md 8.1 assumes and needs no embeddings.
 

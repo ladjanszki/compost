@@ -3,34 +3,6 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.1.5 — 2026-08-14 — pandig
-
-**The tool is called `pandig`.** `kgb` lasted one day. The joke was cheesy at
-best and, given what the KGB actually was, potentially offensive at worst —
-which is not a thing to discover after publishing a repository under the name.
-`pandig` says what the tool stands on instead: pandoc and djot do the heavy
-lifting underneath, and neither is incidental.
-
-Both former names survive as aliases that print a notice: `kg` (the name until
-v0.1.4) and `kgb` (the name during v0.1.4). Nothing anyone has typed or written
-stops working.
-
-Renamed in the code, the packaging, and the documents that instruct — README,
-AGENTS, CLAUDE, DEVELOPMENT, state-of-play and the man page, which is now
-`artifacts/man-pandig.dj`. Measured first: **no cited block mentions `kgb`**, so
-this cost zero handles.
-
-Deliberately not renamed: this changelog and the completed sections of the TODO,
-which record what the tool was called at the time; 39 conversation blocks, which
-are immutable and will say `kgb` forever; and inside the field notes, the
-verbatim terminal transcript in the refresh bug report and the sentence
-describing the `kg` to `kgb` rename that broke a cited block. A record of what
-happened is not a place to apply a rename.
-
-Also in this release: `v0.1.4`'s tag moved forward to the last commit of that
-release rather than the first, so a checkout of the tag contains everything the
-changelog attributes to it.
-
 ## v0.1.4 — 2026-08-11 — kgb, and a man page that cannot drift
 
 **The tool is called `kgb` now.** Knowledge graph blocks, and a system whose
