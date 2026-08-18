@@ -18,3 +18,7 @@ build/
 
 # Knowledge base backups — the pre-migration corpus lives in the old repo
 _pre-handles-backup/
+
+# Vendored reference: the pandoc AST grammar ground truth. Cloned, not tracked.
+#   git clone --depth 1 https://github.com/jgm/pandoc-types.git text-importer/pandoc-types
+text-importer/pandoc-types/
