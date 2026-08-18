@@ -359,3 +359,80 @@ def to_jsonl(records: list) -> str:
 
 def from_jsonl(text: str) -> list:
     return [json.loads(l) for l in text.splitlines() if l.strip()]
+
+
+# --------------------------------------------------------------------------
+# Whole-graph checks
+# --------------------------------------------------------------------------
+
+def check(records: list) -> list[str]:
+    """
+    Everything the format promises, over a whole loaded graph.
+
+    Returns a list of problems, empty when the graph is sound. Kept here
+    rather than in the test suite because the loader needs it too: a graph
+    that fails these is not a graph we should serve a view from.
+    """
+    problems: list[str] = []
+    nodes = {r["guid"]: r for r in records if r["record"] == "node"}
+    edges = [r for r in records if r["record"] == "edge"]
+
+    seen: dict[str, dict] = {}
+    for r in records:
+        g = r["guid"]
+        if g in seen and canonical(seen[g]) != canonical(r):
+            problems.append(f"guid {g} carries two different records")
+        seen[g] = r
+
+    for e in edges:
+        for end in ("source", "destination"):
+            if e[end] not in nodes:
+                problems.append(f"edge {e['guid']} has a dangling {end}")
+
+    kids: dict[str, list[str]] = {}
+    parents: dict[str, int] = {}
+    for e in edges:
+        if e["type"] == "contains":
+            kids.setdefault(e["source"], []).append(e["destination"])
+            parents[e["destination"]] = parents.get(e["destination"], 0) + 1
+
+    roots = {g for g, n in nodes.items() if n["type"] == "document"}
+    for g, n in nodes.items():
+        count = parents.get(g, 0)
+        if g in roots and count:
+            problems.append(f"document {g} has a parent")
+        elif g not in roots and count != 1:
+            problems.append(f"{n['type']} {g} has {count} parents, expected 1")
+
+    colour: dict[str, int] = {}
+
+    def visit(g):
+        colour[g] = 1
+        for k in kids.get(g, []):
+            if colour.get(k) == 1:
+                return True
+            if not colour.get(k) and visit(k):
+                return True
+        colour[g] = 2
+        return False
+
+    for r in roots:
+        if visit(r):
+            problems.append("cycle in the contains graph")
+            break
+
+    g = Graph(records)
+    for parent in kids:
+        try:
+            g.children(parent)
+        except ValueError as e:
+            problems.append(str(e))
+
+    for n in nodes.values():
+        want = "content" in n or n["type"] in TEXT_IN_PARAMS
+        if want != ("content_hash" in n):
+            problems.append(
+                f"{n['type']} {n['guid']}: content_hash should "
+                f"{'be present' if want else 'be absent'}")
+
+    return problems
