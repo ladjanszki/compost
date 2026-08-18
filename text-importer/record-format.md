@@ -89,11 +89,10 @@ render.
 {
   "record": "edge",
   "guid": "6b4e5bfa-d8bf-4dc5-9581-70f8d38a2af9",
-  "layer": "structure",
+  "layer": "pandoc-ast",
   "type": "contains",
   "source": "1218c3a0-d84e-4900-92db-ed29a915d7bd",
-  "destination": "d826c4dd-eb36-4da9-acab-f6f424a90803",
-  "index": 4
+  "destination": "d826c4dd-eb36-4da9-acab-f6f424a90803"
 }
 ```
 
@@ -107,21 +106,25 @@ Edges carry a `guid` in this version, as decided: an `identity_hash` for
 free deduplication is attractive but has to wait until the hash input is
 pinned down, and a guid cannot lose information to an unforeseen case.
 
-## Ordering: an index on containment, not a `next` edge
+## Ordering: `next` edges, in the `pandoc-ast` layer
 
-`index` is the child's position in its parent's block list. The earlier draft
-put reading order in a separate `order` layer as `next` edges.
+Sibling order is a chain of `next` edges, not an index field. An index would
+be a denormalisation that this project does not need: deriving a fact from
+several nodes and edges is what a graph is for, and the first hack of that
+kind sets the precedent for the next twenty.
 
-**Recommendation: drop the `order` layer.** Two structures encoding one fact
-can disagree, and this pair can disagree in ways nothing catches — a `next`
-chain that skips a child, or orders two children of different parents. An
-index cannot contradict itself. `next` is a one-line derivation in the loader,
-where it cannot drift, which is exactly the argument the draft already makes
-for storing `next` in one direction only rather than storing `prev` too.
+Stored in one direction only. `prev` is the same fact twice and two copies of
+one fact can disagree; the loader reverses it, where it cannot drift.
 
-The cost is that inserting a child renumbers its siblings. That is a rewrite of
-`contains` edges, which are derived and freely rewritable, so nothing
-immutable moves.
+What an index gave for free and a chain does not, so it becomes a check:
+
+- exactly one head per parent — one child with no incoming `next` from a
+  sibling
+- the chain reaches every child exactly once: no forks, no skips, no cycles
+- no `next` edge ever joins children of different parents
+
+Those three are cheap to verify and catch every corruption an index made
+structurally impossible.
 
 ## Node types compost has to invent
 
@@ -134,6 +137,42 @@ a list item is exactly the thing this corpus cites most.
 | `ListItem` | one `[Block]` inside `BulletList`/`OrderedList` | 920 of them in the corpus. Un-addressable list items would gut the whole point |
 | `DefinitionTerm` | the `[Inline]` of a definition pair | pandoc names neither half |
 | `DefinitionItem` | one `[Block]` definition body | a term may have several |
+
+### `Plain` versus `Para` is list tightness
+
+These two constructors are not two names for a paragraph. Inside a list item
+they are how pandoc records whether the list is tight or loose:
+
+```
+- first item          ->  BulletList [[Plain], [Plain]]     tight
+- second item
+
+- first item          ->  BulletList [[Para], [Para]]       loose
+
+- second item
+```
+
+So they stay distinct, and not merely because keeping them is free — merging
+them would erase list tightness, which is a visible difference in every
+rendered view.
+
+This is also what decides the shape of `ListItem`. A `ListItem` wrapping a
+single `Plain` is two nodes for one citable meaning, and it is the *common*
+case, not an edge case:
+
+| list item shape | count | share |
+|---|---|---|
+| single `Plain` | 818 | 89% |
+| single `Para` | 12 | 1% |
+| multi-block | 90 | 10% |
+
+**Rule: an item holding exactly one `Plain` or `Para` collapses into the
+`ListItem` node**, which takes the inlines as its own `content` and records
+which wrapper it was in `params.wrap`. Items holding anything else keep their
+children. That removes 830 redundant nodes, keeps the citable thing and the
+clicked thing the same node, and stays exactly reversible — the `wrap` field
+is what makes it reversible rather than merely convenient, because without it
+the collapse would silently loosen every tight list.
 
 Table structure needs no invention — `Row`, `Cell`, `TableHead`, `TableBody`,
 `TableFoot` and `Caption` are all real pandoc-types constructors, so they keep
@@ -191,35 +230,51 @@ canonical_json: sort_keys=True, separators=(',', ':'),
 Children are excluded — they have their own identity, and including them makes
 every ancestor's hash change when a leaf is edited.
 
-The consequence to accept deliberately: **container nodes collide en masse.**
-Every `BulletList` has empty params and no content, so they all share one hash.
-That is fine, because the hash is a dedup key and identity is the `guid` — but
-it means the hash answers "is this the same paragraph" and not "is this the
-same subtree". If subtree comparison is wanted later, add a separate
-`subtree_hash` as a Merkle fold; do not redefine this one.
+**A node with no content gets no `content_hash`.** Container nodes —
+`BulletList`, `BlockQuote`, `Div`, the table structure — have nothing of their
+own to hash, and a field that is the same constant on every container is worse
+than an absent one. Its absence is the honest statement that this node's
+meaning lives entirely in its children.
 
-## Open questions
+The hash answers "is this the same paragraph", not "is this the same subtree".
+If subtree comparison is wanted later, add a separate `subtree_hash` as a
+Merkle fold; do not redefine this one.
 
-1. **Do `Plain` and `Para` stay distinct?** They differ only in whether a
-   paragraph break is rendered, and `Plain` is 1272 nodes, almost all of them
-   list item bodies. Keeping them distinct is free and lossless. Collapsing
-   them would break the round-trip. Raised only because the distinction will
-   look like noise in a view.
-2. **Is a `ListItem` worth a node when it holds exactly one `Plain`?** That is
-   the common case — the item and its text would be two nodes with one
-   citable meaning, and a human clicking the text probably means the item.
-   Options: keep both, or collapse single-`Plain` items into the `ListItem`
-   and re-expand on write. The second is lossy-looking but provably reversible.
-3. **Where does `index` live** — on the edge, as proposed, or as a field on the
-   child node? On the edge is right if a node can ever have two parents; the
-   draft's invariants say it cannot.
-4. **Does `document` get a `content_hash`?** It has no content of its own.
-5. **What happens to the three synthesised-content defects** from
-   `decisions.md` — the callout title `Div`, the `<!-- -->` separators, the
-   tight-list code block. They are pandoc's, but our writer decides whether to
-   reproduce, suppress or repair them. Suppressing on read means the AST
-   round-trip fails by construction; repairing on write means our output stops
-   matching pandoc's. This needs a decision before the writer is built.
+**Duplicate imports are expected to sit side by side.** Importing the same
+document twice mints fresh guids and produces identical `content_hash` values,
+and both copies stay. Recognising them as multiples of one thing is a later
+layer, not a constraint on the importer, and nothing here should try to be
+clever about it in advance.
+
+## Settled
+
+1. **`Plain` and `Para` stay distinct** — they encode list tightness, so
+   merging them is a loss, not a simplification.
+2. **`ListItem` collapses** when it holds a single `Plain` or `Para`, carrying
+   `params.wrap` so the collapse is reversible. 89% of items take this path.
+   The goal is a knowledge graph, not a second copy of pandoc's tree: nodes are
+   cheap, but a node that is never the thing anyone means is not worth minting.
+3. **Order is a `next` chain in the `pandoc-ast` layer**, one direction only,
+   with three loader checks replacing what an index made impossible.
+4. **No `content_hash` on a node with no content.**
+5. **The three pandoc defects are recorded and not worked around.** This costs
+   nothing here, and the reason is worth stating: they live in pandoc's
+   *writer*, downstream of everything this document describes. Our property is
+   `records_to_ast(ast_to_records(ast)) == ast`, which is AST-to-AST, so the
+   defects sit outside the boundary being tested. Suppressing them on read
+   would have pulled them inside it and broken the round-trip by construction.
+
+## Still open
+
+- **Re-import identity.** Nothing here says how a second import recognises that
+  a block is the block it saw last time. Deferred deliberately — it is the
+  identity question — but it is the first thing that will hurt, because until
+  it is answered every re-import is a fresh set of guids.
+- **Where citations attach.** A `{#handle}` lives inside an inline array, and
+  inlines are not nodes. The citation edge's `source` is therefore the block,
+  not the reference itself, which means two citations in one paragraph are
+  indistinguishable as edges. Fine for now; worth knowing before the citation
+  layer is built.
 
 ## How this gets tested
 
@@ -227,13 +282,15 @@ Extend `tools/roundtrip.py` with a second stage, reusing every fixture:
 
 1. `ast_to_records`, then `records_to_ast`, assert equality with the input AST.
 2. Assert every node has exactly one incoming `contains`, except document roots.
-3. Assert the `contains` graph is acyclic and `index` is dense from 0 per parent.
+3. Assert the `contains` graph is acyclic, and that the `next` chain under each
+   parent has exactly one head and reaches every child exactly once.
 4. Assert no `guid` appears twice with different content.
-5. Assert a re-import of an unchanged file produces identical `content_hash`
-   values — and *different* `guid`s, since guids are minted, which is the first
-   thing that will need a stable-identity answer.
+5. Assert a collapsed `ListItem` re-expands to the wrapper it came from, and
+   that a tight list never comes back loose.
+6. Assert a re-import of an unchanged file produces identical `content_hash`
+   values and *different* `guid`s — the expected behaviour, not a defect, until
+   re-import identity is answered.
 
-Item 5 is where the design will first hurt: nothing here says how a re-import
-recognises that a block is the same block it saw last time. That is deliberate
-— it is the identity question, and it stays deferred — but the test should
-exist and be expected to fail until it is answered.
+Item 1 is the whole design in one assertion. If it passes on every fixture and
+every document in `corpus/`, the format is faithful to the AST and everything
+else is a question of what we choose to build on top.
