@@ -24,6 +24,9 @@ import uuid
 
 LAYER = "pandoc-ast"
 
+# Length of the short handle a view shows and a human pastes.
+HANDLE_LEN = 8
+
 # Constructors whose own payload is text rather than inlines, and which
 # therefore still deserve a content hash.
 TEXT_IN_PARAMS = {"CodeBlock", "RawBlock"}
@@ -199,13 +202,16 @@ def _block(b: Builder, blk: dict) -> str:
     raise NotImplementedError(f"no mapping for block constructor {t!r}")
 
 
-def ast_to_records(doc: dict, mint=None):
+def ast_to_records(doc: dict, mint=None, source: str | None = None):
     """Return (records, root_guid) for a whole pandoc document."""
     b = Builder(mint)
-    root = b.node("document", {
+    params = {
         "meta": doc.get("meta", {}),
         "pandoc_api_version": doc.get("pandoc-api-version"),
-    })
+    }
+    if source:
+        params["source"] = source
+    root = b.node("document", params)
     b.children(root, [_block(b, blk) for blk in doc["blocks"]])
     return b.records, root
 
@@ -215,7 +221,17 @@ def ast_to_records(doc: dict, mint=None):
 # --------------------------------------------------------------------------
 
 class Graph:
+    """
+    The loaded records, addressable as a tree.
+
+    `wrap` is an optional hook a *view* installs: given a node and the blocks
+    it produced, it returns the blocks to emit in its place. That is how a
+    handle gets into a rendered document without the translation knowing
+    anything about views. Left unset, reconstruction is the exact identity.
+    """
+
     def __init__(self, records):
+        self.wrap = None
         self.nodes = {r["guid"]: r for r in records if r["record"] == "node"}
         self._kids: dict[str, list[str]] = {}
         self._next: dict[str, str] = {}
@@ -256,7 +272,11 @@ def _p(n, key, default=None):
 
 
 def _blocks_of(g: Graph, guid: str) -> list:
-    return [_to_block(g, k) for k in g.children(guid)]
+    out = []
+    for k in g.children(guid):
+        blocks = [_to_block(g, k)]
+        out.extend(g.wrap(g.nodes[k], blocks) if g.wrap else blocks)
+    return out
 
 
 def _to_caption(g: Graph, guid: str):
@@ -278,10 +298,10 @@ def _to_row(g: Graph, guid: str):
 def _to_item(g: Graph, guid: str) -> list:
     """A ListItem back to `[Block]`, re-expanding a collapsed one."""
     n = g.nodes[guid]
-    wrap = _p(n, "wrap")
-    if wrap:
-        return [{"t": wrap, "c": n["content"]}]
-    return _blocks_of(g, guid)
+    wrapper = _p(n, "wrap")
+    blocks = ([{"t": wrapper, "c": n["content"]}] if wrapper
+              else _blocks_of(g, guid))
+    return g.wrap(n, blocks) if g.wrap else blocks
 
 
 def _to_block(g: Graph, guid: str) -> dict:
@@ -427,6 +447,13 @@ def check(records: list) -> list[str]:
             g.children(parent)
         except ValueError as e:
             problems.append(str(e))
+
+    short: dict[str, str] = {}
+    for g_ in nodes:
+        h = g_[:HANDLE_LEN]
+        if h in short and short[h] != g_:
+            problems.append(f"handle {h} is shared by two nodes")
+        short[h] = g_
 
     for n in nodes.values():
         want = "content" in n or n["type"] in TEXT_IN_PARAMS

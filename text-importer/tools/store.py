@@ -174,7 +174,7 @@ def main(argv):
         total_n = total_e = 0
         for arg in argv[2:]:
             src = Path(arg)
-            recs, root = R.ast_to_records(_ast_of(src))
+            recs, root = R.ast_to_records(_ast_of(src), source=src.name)
             s.keep_source(src)
             dest = s.write(f"{src.stem}.jsonl", recs)
             n = sum(1 for r in recs if r["record"] == "node")
