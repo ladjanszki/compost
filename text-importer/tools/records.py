@@ -25,6 +25,12 @@ import uuid
 
 LAYER = "pandoc-ast"
 
+# Nodes that sit at the top of a containment tree rather than inside one.
+ROOT_TYPES = {"document", "session"}
+# Nodes that are entities rather than content: a file is *referenced* by the
+# calls that touched it, and belongs to none of them.
+UNCONTAINED = {"file"}
+
 # Length of the short handle a view shows and a human pastes.
 HANDLE_LEN = 8
 
@@ -417,12 +423,16 @@ def check(records: list) -> list[str]:
             kids.setdefault(e["source"], []).append(e["destination"])
             parents[e["destination"]] = parents.get(e["destination"], 0) + 1
 
-    roots = {g for g, n in nodes.items() if n["type"] == "document"}
+    roots = {g for g, n in nodes.items() if n["type"] in ROOT_TYPES}
     for g, n in nodes.items():
         count = parents.get(g, 0)
-        if g in roots and count:
-            problems.append(f"document {g} has a parent")
-        elif g not in roots and count != 1:
+        if n["type"] in UNCONTAINED:
+            if count:
+                problems.append(f"{n['type']} {g} is contained by something")
+        elif g in roots:
+            if count:
+                problems.append(f"{n['type']} {g} has a parent")
+        elif count != 1:
             problems.append(f"{n['type']} {g} has {count} parents, expected 1")
 
     colour: dict[str, int] = {}

@@ -34,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import records as R  # noqa: E402
+import session as SESS  # noqa: E402
 
 MARKER = ".compost"
 
@@ -174,7 +175,10 @@ def main(argv):
         total_n = total_e = 0
         for arg in argv[2:]:
             src = Path(arg)
-            recs, root = R.ast_to_records(_ast_of(src), source=src.name)
+            if src.suffix == ".jsonl":
+                recs, root = SESS.session_to_records(src)
+            else:
+                recs, root = R.ast_to_records(_ast_of(src), source=src.name)
             s.keep_source(src)
             dest = s.write(f"{src.stem}.jsonl", recs)
             n = sum(1 for r in recs if r["record"] == "node")
