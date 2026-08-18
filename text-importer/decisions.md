@@ -59,6 +59,35 @@ Verified surviving a full read/write/read cycle: handles plain and expanded,
 all four dash forms, checked and unchecked task items, all five callout types,
 and comma-bearing fence info strings.
 
+## Citations
+
+A reference is written **`{@a1b2c3d4}`**, not `{#a1b2c3d4}`.
+
+`{#x}` means "this element *has* id x" in every markup language that knows the
+notation, and both pandoc and djot act on it. Using it to mean "points at x"
+was backwards, and any reader with `attributes` enabled silently agreed with
+the language rather than with us. The two notations now say what they mean:
+`{#x}` assigns, `{@x}` refers. Verified unescaped through a full read/write
+cycle, plain and expanded.
+
+**Citation edges are derived, not asserted.** The draft classed them as
+asserted alongside `derived_from`, but the stated reason `derived_from` must be
+asserted is that no parser can recover it — and a citation is the exact
+opposite, sitting in the text where a regex finds it every time.
+
+That is what dissolves the duplication worry. Two copies of a fact can diverge
+only if both are authoritative. The text is the source of truth and the edge is
+a projection of it, so a stale edge is a rebuild to run rather than a conflict
+to resolve — exactly like `contains`. The original text is never rewritten to
+remove the reference, and the graph still gets real edges.
+
+**The existing corpus is normalised during migration, not by editing history.**
+A line that is exactly `{#xxxxxxxx}` is an assignment and stays one; every
+other occurrence is a citation and becomes `{@xxxxxxxx}` in the records the
+migration produces. The conversation files on disk are never rewritten, so the
+append-only rule holds — the change happens in the translation to a new store,
+with the originals preserved.
+
 ## Decisions taken
 
 - **Inlines are not nodes.** A block node stores its pandoc inline array

@@ -20,6 +20,7 @@ and DefinitionItem.
 """
 import hashlib
 import json
+import re
 import uuid
 
 LAYER = "pandoc-ast"
@@ -463,3 +464,73 @@ def check(records: list) -> list[str]:
                 f"{'be present' if want else 'be absent'}")
 
     return problems
+
+
+# --------------------------------------------------------------------------
+# Citations
+# --------------------------------------------------------------------------
+
+CITATION = re.compile(r"\{@([0-9a-f]{%d})(\+*)\}" % HANDLE_LEN)
+CITATION_LAYER = "citation"
+
+
+def plain_text(node: dict) -> str:
+    """The node's own text, inlines flattened. Derived, never stored."""
+    out: list[str] = []
+
+    def go(x):
+        if isinstance(x, dict):
+            c = x.get("c")
+            if x.get("t") == "Str" and isinstance(c, str):
+                out.append(c)
+            elif x.get("t") in ("Space", "SoftBreak", "LineBreak"):
+                out.append(" ")
+            else:
+                go(c)
+        elif isinstance(x, list):
+            for v in x:
+                go(v)
+
+    go(node.get("content") or [])
+    if node["type"] in TEXT_IN_PARAMS:
+        out.append(node.get("params", {}).get("text", ""))
+    return "".join(out)
+
+
+def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
+    """
+    Read `{@handle}` out of the text and turn each into an edge.
+
+    These edges are **derived**, not asserted. The draft classed citations as
+    asserted alongside `derived_from`, but the reason `derived_from` has to be
+    asserted is that no parser can recover it — and a citation is the exact
+    opposite, sitting in the text where a five-line regex finds it every time.
+
+    That distinction is what dissolves the duplication worry. Two copies of a
+    fact can only diverge if both are authoritative. The text is the source of
+    truth and the edge is a projection of it, so a stale edge is not a conflict
+    to resolve but a rebuild to run — exactly like `contains`.
+
+    Returns (edges, unresolved handles).
+    """
+    b = Builder(mint)
+    nodes = [r for r in records if r["record"] == "node"]
+    by_handle: dict[str, list[str]] = {}
+    for n in nodes:
+        by_handle.setdefault(n["guid"][:HANDLE_LEN], []).append(n["guid"])
+
+    edges, unresolved = [], []
+    for n in nodes:
+        for m in CITATION.finditer(plain_text(n)):
+            handle = m.group(1)
+            targets = by_handle.get(handle)
+            if not targets:
+                unresolved.append(handle)
+                continue
+            if len(targets) > 1:          # check() reports this separately
+                unresolved.append(handle)
+                continue
+            edges.append({"record": "edge", "guid": b._mint(),
+                          "layer": CITATION_LAYER, "type": "cites",
+                          "source": n["guid"], "destination": targets[0]})
+    return edges, unresolved
