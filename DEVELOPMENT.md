@@ -40,6 +40,13 @@ toolchain used to fail here.
 ## Conventions
 
 
+- **A version is a batch, not a commit.** Let several things accumulate before
+  closing one, patch levels included. Three patch versions were once cut in a
+  single day, which is what a tag stops meaning anything: it should mark a
+  change in what the tool can do, not a change in the working tree. Finish a
+  piece of work, commit it, and stop — the tag comes when the version has a
+  theme somebody could describe. `v0.2.1` is the next one open, and `TODO.md`
+  lists what it is waiting for.
 - **Work on `main`; tag each version.** No feature branches. One developer, no
   CI, no review gate — a branch buys isolation from nothing and
   costs a stale trunk. This was learned the direct way: a `conversations`
