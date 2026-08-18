@@ -219,7 +219,94 @@ Deferred out of this release on purpose:
   supplies a real linear-time parser with native block attributes — and the
   man page's SEE ALSO says so in one paragraph, which is not enough
 
-## Next
+## v0.2.1 — what v0.2 knowingly lacks
+
+v0.2 is usable on its own: import text and transcripts, check, render three
+views. Everything below is a real gap, listed because it was found and named
+rather than discovered later.
+
+### The migration
+
+The one thing that makes v0.2 replace v0.1 rather than sit beside it.
+
+1. **Build the handle dictionary first.** Parse `conversations/*.dj` and
+   `artifacts/*.dj` textually: a line that is exactly `{#xxxxxxxx}` assigns the
+   following block. 5839 assignments, recovered with certainty. This must happen
+   before anything is rewritten, since the `.dj` files are the only record that
+   the old handles ever existed.
+   - Re-deriving them from `raw/` instead does **not** work: text matching
+     recovers 103 of 217, because the old canonization normalised text on the way
+     to `.dj`. Zero were wrong, half simply do not match.
+2. **Ingest the `.dj` files**, not `raw/`, for the same reason.
+3. **Rewrite citations in one pass**: `{#x}` alone on a line stays an
+   assignment; every other occurrence becomes `[-](#<new-uuid>)`. This does the
+   syntax change and the target change together, so no runtime side table is
+   needed afterwards.
+4. **Commit the dictionary.** Old handle to new uuid, no prose, so it survives
+   any purge of the corpus and outlives any single backup.
+5. **Verify:** every handle resolvable before the migration resolves after; zero
+   dangling; the rendered corpus is equivalent.
+6. Optionally update the archived copies so the readable backup stays internally
+   consistent. The pristine bytes stay in `compost-full-history.bundle`.
+
+### Sidechains, which nothing has ever tested
+
+The corpus contains **zero** sidechain lines, so log order and reply order are
+indistinguishable in every fixture, and subagent nesting has never been
+exercised. Needs a hand-built session fixture, not a bleached one — there is
+nothing to bleach.
+
+### `file` nodes have no view
+
+134 of them, deliberately uncontained, so they appear in no document tree. Either
+the session view grows a "files touched" section assembled from `touches` edges,
+or files get an index of their own. Also: the same path can later be imported
+and become a `document`, so one file becomes two nodes. Keep them separate and
+add a `represents` edge when it matters.
+
+### Short handles
+
+The measured cost of full uuids is 21.7% of a djot view, and 60–75% on small
+structurally dense files. The prefix optimisation is non-breaking — a resolver
+already accepts any unambiguous length, and there is a test for it — so this is
+purely a size win whenever it is wanted. Collision is the trigger: 0.5% at
+today's ~6,700 blocks, 17% at 40,000, 68% at 100,000, and `check` already
+rejects a base where two nodes share a handle.
+
+### Subcommands v0.1 had and v0.2 does not
+
+`submit`, `lookup`, `serve`, `new`, `last`, `artifact`. `lookup` and `serve` are
+the two that the daily loop actually misses: resolving a pasted handle without
+grepping, and reading the HTML view without opening a file manager.
+
+### Smaller, but named
+
+- **Empty `thinking` nodes** are stored and not rendered. All 491 carry no text
+  because Claude Code persists only a signature; other agents do emit text. The
+  view will need to show them the day one does.
+- **Re-import identity.** A second import of an unchanged file mints fresh guids
+  and produces matching `content_hash` values that sit beside the first set.
+  Expected, tested, and still the unanswered identity question.
+- **Citations attach to blocks, not to references.** A `{@}`-era limitation that
+  survives the move to links: two citations in one paragraph are two edges from
+  the same source node, and nothing distinguishes which reference is which.
+- **`tests/corpus/` and `vendor/` are cloned, not tracked.** A fresh checkout
+  runs 41 of the 520 round-trip documents until they are cloned. The commands
+  are in `.gitignore`.
+- **One pandoc call per text block** on session import — 19s for 7 sessions.
+  Batching is available if it ever matters.
+
+### Three pandoc defects, recorded and not worked around
+
+They live in pandoc's *writer*, downstream of an AST-to-AST property, so they
+sit outside the boundary the tests check. Repairing them would pull them inside
+it and break the round-trip by construction.
+
+- a code block inside a **tight** list item is destroyed; a loose list survives
+- `<!-- -->` injected between adjacent lists re-reads as a `RawBlock`
+- inline code adjacent to raw inline HTML is merged into it
+
+## Next — inherited from v0.1, mostly superseded
 
 - [ ] **Are the root markdown files views, and should they be tracked?** If
       `artifacts/*.dj` is the source and the `.md` is generated, then

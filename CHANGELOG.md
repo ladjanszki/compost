@@ -3,6 +3,133 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2 — 2026-08-18 — nodes and edges, and none of the old code
+
+**Everything was rewritten.** Not a refactor: no line of the v0.1
+implementation survives. `src/` is a different program with a different storage
+format, and the v0.1 corpus is no longer readable by it.
+
+### The waist
+
+Storage is **nodes and edges as JSONL**, and every view is generated from those
+records and from nothing else. Djot is gone as a storage format; `blocks.json`
+is gone; the `.dj` files under `conversations/` and `artifacts/` are no longer
+written or read.
+
+One rule does the translation: a node stores the pandoc constructor tag and
+every non-block field verbatim, and block-valued fields become children joined
+by `contains` edges. So there is no per-constructor special casing and no
+mapping table to drift. `records_to_ast(ast_to_records(ast)) == ast` holds
+exactly over 520 documents, covering all fourteen `Block` constructors.
+
+### Every read and every write goes through pandoc
+
+djot.js and the `npx` spawn are gone; pandoc reads and writes djot natively.
+Markdown is read as `commonmark_x` with `attributes`, `smart` and `fancy_lists`
+disabled.
+
+This deleted three repair passes rather than fixing them. The em dash is not
+restored, because `-smart` means it was never corrupted. Checkboxes are not
+patched, because `-fancy_lists` means they parse the first time. There is no
+fence tracking. **The pipeline contains no repair code at all** — every fix is
+a flag, chosen once against a measured corpus.
+
+Choosing that corpus reversed a decision mid-flight. `gfm` and `commonmark_x`
+score identically on this repo's 25 documents, so gfm won on having safe
+defaults; across 152 including a real documentation site it is 71 against 140,
+because the gfm writer drops code fence info strings containing a comma —
+`rust,ignore` becomes nothing — which is how every mdBook and Docusaurus corpus
+annotates its examples. Twenty-five documents could not see it.
+
+### Transcripts
+
+Session JSONL is imported directly. Prose in a turn goes through the same path
+a markdown file takes, so a paragraph of an answer is a node like any other;
+tool output is stored whole, because parsing 60 real tool outputs as markdown
+invented a Header, a BulletList and a Div out of terminal text.
+
+Tool results fold into the call that produced them, matched on `tool_use_id`
+rather than order. Attribution has a number now: **161 human turns out of 1060
+`user` lines** — the other 899 are the transcript's envelopes around tool
+results, which is the bug the old importer shipped.
+
+Both orderings are stored, because they diverge on sidechains and this corpus
+has none to test with: `session`/`next` is log order, which regenerates the
+file, and `claude-code`/`replies_to` is the reply chain.
+
+### Identity and citations
+
+A handle is a **UUIDv4**. That costs 21.7% of a djot view against 7.7% at eight
+characters, and up to 75% on small dense files — accepted, because a resolver
+takes any unambiguous length, so shortening later needs no pass over stored
+text: long and short citations coexist as full and abbreviated SHAs do in a git
+log.
+
+**A citation is a link:** `[-](#<guid>)`. The old `{#x}` meant "this element
+*has* id x" in every markup language that knows the notation, so using it for
+"points at x" was backwards, and any reader with `attributes` on agreed with the
+language rather than with us. `{@x}` fixed the meaning but not the mechanism —
+it was still text, so a handle quoted inside a code block became a real edge, in
+a corpus that quotes its own syntax constantly. A `Link` is a node and a code
+block has no inlines, so the rule that had been broken three times is now a
+property of the format.
+
+### Views
+
+Three, all generated from records: `default-djot` for agents, `default-html`
+for people, `default-md` clean enough to commit as `README.md`. Handles go on
+prose and list items, not on the containers holding them — marking everything
+produced a page with more handles than words. Tool output is shown in full in
+djot, which has no collapse, and wrapped in `<details>` in HTML.
+
+### Storage
+
+`.compost/` is both the layout and the marker, replacing the `.kg` file, so a
+base cannot be half-configured. Writes go through a temp file and an atomic
+rename; only `*.jsonl` is loaded; filenames carry no meaning and load order
+cannot change the result; the loaded file list is printed rather than hidden.
+
+### Tests, and what they caught
+
+Eight suites, 74 stated guarantees, each made to fail on purpose. Findings worth
+recording because they were all silent:
+
+- a fenced code block inside a **tight** list item is destroyed by pandoc's
+  writer — emitted with no preceding blank line, so it re-reads as paragraph
+  text. A loose list survives. Writer-independent, documented, unfixed.
+- pandoc **synthesises** callout titles: `> [!IMPORTANT]` produces a `Div`
+  containing the word `Important`, which no author typed.
+- pandoc injects `<!-- -->` between adjacent lists, which re-reads as a
+  `RawBlock` nobody wrote.
+- document metadata lives outside `blocks` and every writer drops it without
+  `--standalone`.
+- `importing thing.md` and `thing.jsonl` wrote the same graph file and the second
+  silently discarded the first, while the summary reported both.
+- all 491 `thinking` blocks in the corpus carry **no text**: Claude Code
+  persists only a signature. The node type stays, because other agents emit
+  text into it.
+
+### Fixtures that outlive their sources
+
+`tests/fixtures/` holds 19 bleached notes, 21 edge cases, 7 bleached session
+transcripts and two hand-built ASTs. Bleaching replaces every word with a lorem
+word of the same length and leaves every character markdown gives meaning to
+exactly where it was; correctness is checkable rather than eyeballed, since the
+result must parse to the same tree of block types as the original.
+
+It caught two leaks of its own: 57 absolute paths surviving in *key* position
+inside `file-history-snapshot`, and a git branch name on the preserved list. A
+vocabulary diff now shows 71,893 distinct words reduced to 4,104, all of them
+JSON schema keys, enum values or tool names.
+
+### Gone
+
+`src/` and `tests/` from v0.1, `tools/`, the `.kg` marker, `site/`, the
+`compost`/`kg`/`kgb`/`pandig` egg-info directories, the `uuid6` dependency, and
+the `new`, `submit`, `serve`, `lookup`, `last` and `artifact` subcommands.
+`conversations/`, `artifacts/` and `raw/` remain on disk as the input for a
+migration that is not written yet, and are not readable by this version.
+
 ## v0.1.6 — 2026-08-17 — pandig reverted, the tool is `compost`
 
 **v0.1.5 never worked.** It renamed `kgb` to `pandig` and is reverted here in

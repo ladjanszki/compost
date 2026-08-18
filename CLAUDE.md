@@ -1,67 +1,65 @@
 # compost — start here
 
-This repo is a tool **and its own knowledge base**. Both matter, and the
-knowledge base is where the reasoning lives.
+This repo is a tool **and its own knowledge base**. As of v0.2 the tool was
+rewritten from nothing and the base has not been migrated yet, so those two
+things are temporarily out of step. Read this before assuming either.
 
 ## Do this first
 
 ```bash
-compost render          # rebuilds site/ and site/blocks.json
-compost check           # must report 0 dangling, 0 collisions
+./tests/run.sh          # eight suites, all should pass
+compost --help
 ```
 
 Then read, in this order:
 
-1. **`site/blocks.json`** — the whole corpus, one record per block: handle, hash,
-   type, source, author, text, citations. This is how you read *and cite* the
-   base; the hash is not in the `.dj` files, so nothing else lets you build a
-   reference.
-2. **`artifacts/state-of-play.dj`** — where the work actually stands, written
-   for you. Start here for "what should I do next".
-3. **`AGENTS.md`** — how to read and write the base. Short. Read it before
-   submitting anything.
+1. **`docs/man-compost.md`** — the five working subcommands, verified against
+   the program rather than remembered.
+2. **`docs/decisions.md`** — what was decided and why, with the measurements.
+   Every non-obvious flag in this codebase is justified there.
+3. **`docs/record-format.md`** — the node and edge design.
+4. **`TODO.md`**, section `v0.2.1` — what is knowingly missing. Start here for
+   "what should I do next".
 
 ## What is authoritative
 
 | Source | Status |
 |---|---|
-| `conversations/` | **why** every decision was made. Immutable, so it cannot drift. |
-| `artifacts/` | **what is true now.** Rewritten as understanding improves. |
-| `README.md`, `DEVELOPMENT.md`, `TODO.md`, `CHANGELOG.md` | the markdown sources for four of those artifacts. Edit these, then `compost artifact <file>.md`. |
-| `archive/` | **historical. Not current. Do not follow it.** |
+| `docs/` | **what is true now.** Rewritten as understanding improves. |
+| `CHANGELOG.md` | what happened, and what it cost. Append-only in spirit. |
+| `conversations/`, `artifacts/`, `raw/` | the **v0.1 corpus**. Immutable, and *not readable by v0.2* — kept as the input for a migration that has not been written. Do not follow its instructions; do read it for reasoning. |
+| `docs/spec.md`, `docs/design-answers.md` | the human's own v0.2 drafts. Historical, superseded by `decisions.md`, worth reading for intent. |
 
-Code comments cite `mvp-design.md` section numbers. That document is archived —
-the citations are historical and its content is superseded.
+The v0.1 corpus still describes `.dj` storage, `blocks.json`, `compost lookup`
+and `compost submit`. **None of that exists.** It is the record of why v0.2 is
+shaped the way it is, not a description of the current tool.
 
 ## The rules that bite
 
 - **Work on `main`, tag each version.** No feature branches; see
-  `DEVELOPMENT.md` Conventions for why this was learned the hard way.
-- **Scan parsed blocks, never raw file text.** References are escaped on disk,
-  handles inside code blocks are not citations, and this corpus *quotes its own
-  syntax* in its own content. This rule has been violated three times and cost
-  something every time.
-- **Render-time changes are free; canonization-time changes are one-way.**
-  Ask which a change is before building it. `DEVELOPMENT.md` explains the
-  difference and it decides urgency more than anything else.
-- **Republish after editing a doc** (`compost artifact README.md`), or the served
-  copy drifts from the file.
-- **Never rewrite a conversation.** They are append-only.
+  `DEVELOPMENT.md` for why this was learned the hard way.
+- **Never scan raw file text for citations.** A citation is a `Link` node, and
+  reading the parsed content is what makes "handles inside code blocks are not
+  citations" true by construction. This rule was violated three times under the
+  old text-based syntax and cost something every time.
+- **Every flag in the pandoc invocations is load-bearing.** `-smart`,
+  `-attributes` and `-fancy_lists` each prevent a specific silent corruption,
+  measured. Do not tidy them away. `docs/decisions.md` has the numbers.
+- **The round-trip property is the acceptance test.** If
+  `records_to_ast(ast_to_records(ast)) == ast` fails on any fixture, the change
+  is wrong regardless of what else passes.
+- **A view of a broken graph is worse than no view.** `render` refuses when
+  `check` fails, on purpose.
+- **Sources are immutable.** `storage/` refuses to overwrite a file whose bytes
+  differ.
 
 ## Working with the human
 
 They write in nvim, click blocks in the served HTML to copy handles, and reply
-by citing them. When they paste a `{#handle}`, resolve it before answering —
-from `blocks.json`, or with `compost lookup <handle>`.
+by citing them. A citation looks like `[-](#d826c4dd-eb36-4da9-acab-f6f424a90803)`.
+When they paste one, resolve it from the graph before answering.
 
 **Answer here, in this interface. Do not submit your reply as a turn.** They
-import the round afterwards, which makes your answer addressable anyway.
+import the round afterwards, which makes the answer addressable anyway.
 Submitting as well is two copies of one answer in two places, and they are the
 one who has to read both.
-
-Cite handles in your answer regardless. The import turns them into real
-citations, which is the whole point.
-
-`compost submit reply.md --author claude` exists and stays correct for an agent
-with nowhere else to write, or when they ask you for a turn. It is not the
-default here.

@@ -13,22 +13,17 @@ compost import FILE...
 compost ls
 compost check
 compost render
+compost version
 ```
 
 ## STATUS
 
-**There is no installed `compost` entry point yet.** The v0.2 tooling is two
-scripts, and every command below is real and tested under those names:
+Installed and working as `compost`, version 0.2.0. The five subcommands below
+are the whole program.
 
-| documented as | actually run as |
-|---|---|
-| `compost init` / `import` / `ls` / `check` | `python3 text-importer/tools/store.py …` |
-| `compost render` | `python3 text-importer/tools/views.py` |
-
-The `compost` on your `PATH` today is v0.1.6, a different program on a
-different store. It has subcommands this page does not describe — `new`,
-`submit`, `serve`, `lookup`, `last`, `artifact` — and none of them exist in
-v0.2 yet.
+The v0.1 subcommands `new`, `submit`, `serve`, `lookup`, `last` and `artifact`
+no longer exist. `lookup` and `serve` are the two the daily loop misses; both
+are in `TODO.md` under v0.2.1.
 
 ## DESCRIPTION
 
@@ -129,6 +124,11 @@ output is clean enough to commit.
 In the HTML view every citable block is an anchor; clicking a handle copies
 `[-](#guid)` to the clipboard. `default-html/index.html` lists the documents.
 
+### version
+
+Print the version. Also `--version` and `-V`. With no arguments at all, or with
+`--help`, compost prints its usage and exits 2 or 0 respectively.
+
 ## FILES
 
 ```
@@ -181,6 +181,7 @@ cd ~/notes
 compost import draft.md ~/.claude/projects/-Users-me-notes/*.jsonl
 compost check
 compost render
+compost version
 ```
 
 ## NOT YET IMPLEMENTED

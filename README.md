@@ -1,144 +1,88 @@
-# compost — conversations to an addressable wiki
+# compost — conversations and text to an addressable graph
 
 A local-first knowledge base for people who run many projects at once and need
 to get back into one cheaply after weeks away.
 
-You write in your editor and submit. Every paragraph, list item and todo gets a
-permanent handle. You read it as a static site, click any block to copy a
-reference to it, and write your next turn *about* that block. An agent reads the
-same base, answers into the same conversation, and its answer is addressable
-too. Closed Claude Code sessions can be imported whole, so past chats stop being
-stranded.
-
-**Status: v0.1.4.** The loop runs with a human and an agent in it. Artifact
-generation — an agent writing a README or TODO from the conversations — is not
-built yet.
-
----
-
-## Install
-
-Requires `conda`, plus `node` 18+ on your PATH for the djot reference parser.
-
-```bash
-conda env create -f environment.yml
-conda activate knowledge-graph
-pip install -e .
-```
-
-Verify: `compost --help`, `pandoc --version` (3.x), `npx @djot/djot --version`.
-
-## Quickstart
-
-```bash
-compost init ~/my-project/kb        # a base per project
-export KG_HOME=~/my-project/kb
-
-compost new                         # opens $EDITOR; submits when you close it
-compost serve                       # build the site and serve it on :8000
-```
-
-Open <http://localhost:8000>, click a block, and the reference lands on your
-clipboard:
+You write in your editor and submit. Every paragraph, list item, todo, tool call
+and answer becomes a node with a permanent identifier, so you and an agent can
+point at the same sentence and argue about it. Nothing is summarised away: the
+conversation that produced a decision stays readable next to the decision.
 
 ```
-{#a3f9c2d1}
+compost init
+compost import notes.md ~/.claude/projects/<slug>/*.jsonl
+compost check
+compost render
 ```
 
-**Shift-click** a heading, a parent list item or a whole turn to copy its
-subtree instead — hold Shift while hovering and the subtree highlights:
+## What v0.2 is
+
+v0.2 replaced everything. The tool no longer stores documents as text files
+with identifiers written into them; it stores **nodes and edges** as JSONL, and
+generates every view from those records and from nothing else.
 
 ```
-{#a3f9c2d1+++}
+sources ──► pandoc AST ──► records ──► views/default-djot   (agents)
+            session JSONL ─┘           views/default-html   (people)
+                                       views/default-md     (README, TODO, …)
 ```
 
-Paste it into your next turn. `compost` works out which conversation you are
-replying to from the blocks you cite, so there is nothing else to copy. The
-target grows a **Referenced by** section. That is the loop.
+The middle is the waist. Everything downstream reads two record types and never
+an AST, which is what keeps the graph from drifting away from what is displayed:
+a missing edge is a visibly broken page the same day.
 
-## Bringing an agent in
-
-```bash
-compost import ~/.claude/projects/<slug>/<session>.jsonl   # a past session
-compost last                                               # hand a turn to an agent
-```
-
-Point the agent at `AGENTS.md` and the base. It reads `site/blocks.json` — the
-whole corpus in one file, with the hashes it cannot compute itself. It never
-needs this repository.
-
-**An agent with its own interface answers there rather than submitting a turn.**
-You import the round, and its answer becomes addressable that way. Two output
-channels for one answer is worse than one, and the import is where the handles
-come from regardless. `compost submit --author <who>` stays for you, and for an
-agent that has nowhere else to write.
-
-## Commands
+## What it holds
 
 | | |
 |---|---|
-| `compost init [dir]` | create a knowledge base |
-| `compost new` | write a turn in `$EDITOR`; submits on exit |
-| `compost submit <file>` | append an existing markdown file as a turn |
-| `compost import <log>` | import a closed Claude Code session |
-| `compost render` | build the static site and `blocks.json` |
-| `compost check` | report dangling references and handle collisions |
-| `compost serve [-p PORT]` | render, then serve on localhost |
+| **nodes** | pandoc's own constructor names — `Para`, `Header`, `CodeBlock`, `Table` — plus `ListItem` and two others where pandoc's grammar is anonymous, plus `session`, `turn`, `toolcall`, `tooloutput`, `thinking`, `file`, `document` |
+| **edges** | `contains` and `next` per layer, `touches`, `replies_to`, `cites` |
+| **identity** | a UUIDv4 per node, and a SHA256 `content_hash` where a node has content of its own |
+| **citations** | `[-](#<guid>)` — a link, so a handle quoted inside a code block cannot become an edge |
 
-`--author` records who wrote a turn; `-c` names the conversation when it cannot
-be inferred. The base is found via `--root`, then `$KG_HOME`, then a `.kg`
-marker in the current directory or any parent.
+## Guarantees, and how they are kept
 
-## What's on disk
+The design is only worth what its tests hold. Each suite states a property and
+each has been made to fail on purpose:
 
 ```
-raw/<conv>/<turn>.md      drafts exactly as written, frozen
-raw/<conv>/<session>.jsonl  an imported session log, exactly as ingested
-conversations/<conv>.dj   turns, appended; no block in one ever changes
-artifacts/<name>.dj       documents, rewritten in place
-site/                     generated HTML + blocks.json (disposable, gitignored)
-.kg                       marker identifying the base root
+$ ./tests/run.sh
+test_records             520/520 identity round-trip | 19567 nodes, 35308 edges
+test_sabotage            6/6 sabotages caught
+test_store               10/10 storage guarantees hold
+test_views               5/5 view guarantees hold
+test_citations           7/7 citation guarantees hold
+test_bleach_session      7/7 session-fixture guarantees hold
+test_session             9/9 session-import guarantees hold
+test_session_views       10/10 session-view guarantees hold
 ```
 
-The split is by **mutability, not authorship**. Either you or an agent can write
-either kind. What protects you is that a conversation is append-only: nothing
-already written can be altered, whoever wrote it. Authorship is recorded on each
-turn as a djot attribute, so it lives in the file and therefore in git.
+The first line is the whole format in one assertion:
+`records_to_ast(ast_to_records(ast)) == ast`, exact equality, over 520
+documents — the fixtures, a 112-document documentation site, and two hand-built
+ASTs reaching the constructors no markdown reader can produce.
 
-Keep your base in git. The `.dj` files are the source of truth; everything else
-is derived and can be deleted.
+## Requirements
 
-## This repo is its own knowledge base
+Python 3.12 and **pandoc 3.10 or newer**, which does every read and every
+write. Nothing from PyPI. Node is no longer needed: djot goes through pandoc
+like everything else.
 
-`compost` is developed inside the base it built. `conversations/`, `artifacts/` and
-`raw/` sit at the repo root next to `src/`, and a `.kg` marker there means `compost`
-resolves the base from anywhere in the tree with no `KG_HOME` set.
+Markdown is read as `commonmark_x` with three extensions **off**, each for a
+measured reason — `attributes` would eat citations, `smart` would merge `—`,
+`---` and `--` before anything is stored, and `fancy_lists` silently disables
+task lists. `docs/decisions.md` has the numbers.
 
-The documents you are reading are published into it:
+## Documentation
 
-```bash
-compost artifact README.md      # republish after editing
-compost render && compost serve      # read and comment on them at localhost:8000
-```
+| file | what it is |
+|---|---|
+| `docs/man-compost.md` | the command, verified against the program rather than remembered |
+| `docs/decisions.md` | what was decided and why, with the measurements behind it |
+| `docs/record-format.md` | the node and edge design, and the AST translation |
+| `DEVELOPMENT.md` | how to work on it |
+| `TODO.md` | what is next, and what is knowingly missing |
+| `CHANGELOG.md` | what happened |
 
-**The `.md` file is the source; `artifacts/<name>.dj` is its canonized,
-addressable form** — the same relationship `raw/` has to a conversation turn.
-Edit the markdown, republish, and unchanged blocks keep their handles, so
-comments written about them survive.
-
-## Design
-
-- [CLAUDE.md](CLAUDE.md) — what an agent loads first; the routing table
-- [AGENTS.md](AGENTS.md) — how to read and write the base; an agent needs this
-  and the base, not this repo
-- `artifacts/state-of-play.dj` — **where the work actually stands.** Read it in
-  the served site, or from `site/blocks.json`
-- [DEVELOPMENT.md](DEVELOPMENT.md) — the code, the non-obvious parts, and where
-  the next work is
-- [TODO.md](TODO.md) — what is next
-- [CHANGELOG.md](CHANGELOG.md) — history
-- [archive/](archive/) — the v0.1 spec and the interviews that produced it.
-  **Historical. Superseded. Do not follow it.**
-
-The reasoning behind every decision is in `conversations/`, not in a spec.
-A spec drifts; an immutable conversation cannot.
+`conversations/`, `artifacts/` and `raw/` are the v0.1 corpus, kept as the input
+for a migration that has not been written yet. They are not readable by v0.2.
