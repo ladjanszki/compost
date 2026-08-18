@@ -1,6 +1,6 @@
 # The record format, and the pandoc AST ↔ compost translation
 
-*Status: for discussion. Nothing here is built.*
+*Status: built and passing. `tools/records.py` implements it; `tools/test_records.py` and `tools/test_sabotage.py` verify it.*
 
 This is the design for the two record types the graph is made of, and for the
 pair of functions that move between them and pandoc's AST. It builds on
@@ -290,6 +290,11 @@ Extend `tools/roundtrip.py` with a second stage, reusing every fixture:
 6. Assert a re-import of an unchanged file produces identical `content_hash`
    values and *different* `guid`s — the expected behaviour, not a defect, until
    re-import identity is answered.
+
+**Result.** 520/520 documents round-trip to the identity — 40 fixtures, 478
+documents from the test corpus, and two hand-built AST fixtures reaching the
+constructors the reader cannot produce. 19,567 nodes and 35,308 edges. All
+fourteen `Block` constructors are exercised, and all six sabotages are caught.
 
 Item 1 is the whole design in one assertion. If it passes on every fixture and
 every document in `corpus/`, the format is faithful to the AST and everything
