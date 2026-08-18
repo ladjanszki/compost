@@ -7,33 +7,57 @@ in this step. Everything is measured against pandoc 3.10.1 / pandoc-types
 
 ## The dialect
 
-`.md` input is read as **gfm**, with no extension surgery.
+`.md` input is read as **commonmark_x**, with three extensions disabled.
 
 ```
-read:   pandoc -f gfm -t json
-write:  pandoc -f json -t gfm --wrap=preserve
+read:   pandoc -f commonmark_x-smart-attributes-fancy_lists -t json
+write:  pandoc -f json -t commonmark_x-smart --wrap=preserve
 ```
 
-Chosen over `markdown`, `commonmark` and `commonmark_x` because its defaults
-are the safe ones — `attributes` off, `smart` off, `fancy_lists` off — and
-those three are exactly the settings that silently corrupt this corpus.
-Measured: 1625 addressable blocks (bare `markdown` finds 1488), AST fixed
-point on 25/25 files, zero normalisation rules needed.
+*This reverses an earlier decision to use `gfm`, and the reversal is the
+reason to keep a corpus around.* On the 25 documents of this repo both score
+identically — 1625 addressable blocks, fixed point everywhere — so gfm won on
+having the safe defaults. Measured against 112 more documents from a real
+documentation site, they separate sharply:
 
-Two invariants that outrank the flag list. Any reader satisfying both is a
-legitimate choice; gfm satisfies both without configuration.
+| read / write | fixed point |
+|---|---|
+| `commonmark_x` tuned | **140 / 152** |
+| `markdown` + list extension | 119 / 152 |
+| `gfm` | 71 / 152 |
 
-- `{#...}` must stay **literal text**. With `attributes` on, `commonmark_x`
-  parses `{#fce6a885}` as an attribute and turns a *citation* into an anchor
-  *definition* — an empty `Span` carrying that id, colliding with the real
-  block that owns it. Silent, and retroactive across every stored note.
-- `---` must stay **three hyphens**. With `smart` on, the reader collapses
-  `—`, `---` and `--` into two typographic characters before anything is
-  stored. This is reader-side, so it is unrecoverable.
+The gfm *writer* loses data that the commonmark_x writer keeps — most of all
+code fence info strings containing a comma, which is how every mdBook, Jekyll
+and Docusaurus corpus annotates its examples:
 
-Enabling either later is a canonization-time change disguised as a flag.
-Extensions may be added *additively* (`gfm+fenced_divs+definition_lists`)
-because those change text that was previously inert.
+```
+source        ```rust,ignore        classes: ["rust,ignore"]
+gfm writes    ```                   classes: []            <- lost
+cmx writes    ``` rust,ignore       classes: ["rust,ignore"]
+```
+
+The three disabled extensions each prevent a silent corruption, and none of
+them is optional:
+
+- `-attributes` — otherwise `{#fce6a885}` parses as an attribute and a
+  *citation* becomes an anchor *definition*: an empty `Span` carrying that id,
+  colliding with the real block that owns it.
+- `-smart` — otherwise the reader collapses `—`, `---` and `--` into two
+  typographic characters before anything is stored. Reader-side, so
+  unrecoverable.
+- `-fancy_lists` — otherwise it silently suppresses `task_lists` and every
+  `- [x]` stays literal text. `--list-extensions` reports `+task_lists` the
+  whole time; there is no warning.
+
+The two invariants that outrank the flag list, and that any replacement reader
+must satisfy: **`{#...}` stays literal text** and **`---` stays three
+hyphens**. Enabling either extension later is a canonization-time change
+disguised as a flag. Extensions may be added *additively* because those change
+text that was previously inert.
+
+Verified surviving a full read/write/read cycle: handles plain and expanded,
+all four dash forms, checked and unchecked task items, all five callout types,
+and comma-bearing fence info strings.
 
 ## Decisions taken
 
@@ -100,6 +124,20 @@ because those change text that was previously inert.
   `IMPORTANT`, `WARNING`, `CAUTION` map to a `Div`. `> [!HEUREKA]` becomes a
   plain `BlockQuote`; the text survives and the AST is still a fixed point,
   but it writes back with escaped brackets as `\[!HEUREKA\]`.
+- **Pandoc's writer injects `<!-- -->` separators.** Two adjacent lists that
+  would otherwise merge — a task list beside an ordinary list, a list followed
+  by a code block inside a quote — are separated by an HTML comment. It
+  re-reads as a `RawBlock` that nobody wrote. Same class as the callout title:
+  synthesised content the source never contained. Writer-independent.
+- **A code block inside a *tight* list item is destroyed.** The writer emits it
+  as an indented block with no preceding blank line, and an indented code block
+  requires one, so it re-reads as lazy paragraph continuation and the
+  `CodeBlock` node is gone. A *loose* list — blank lines between items —
+  survives intact. Writer-independent.
+- **Inline code adjacent to raw inline HTML is mangled.** `<span>` … `` `a` ``
+  … `</span>` comes back with the code merged into the raw inline as
+  `` a``</span> ``. Accounts for 5 of the 9 remaining failures on the test
+  corpus.
 - **Document metadata lives outside `blocks` and is dropped by default.** A
   YAML frontmatter block is parsed into the AST's `meta` field, not into
   `blocks`, and every writer omits it unless `--standalone` is passed:
