@@ -126,6 +126,21 @@ def main():
                 return True, "refuses to overwrite a source with different bytes"
         case("stored sources are immutable", immutable_source)
 
+        def no_stem_collision():
+            (tmp / "src").mkdir(exist_ok=True)
+            a = tmp / "src" / "thing.md"
+            a.write_text("# a document\n\nwith a paragraph.\n")
+            b = tmp / "src" / "thing.jsonl"
+            b.write_text(FIXTURES[0].read_text() and "")   # empty is fine here
+            recs, _ = R.ast_to_records(S._ast_of(a), source=a.name)
+            st.write(f"{a.stem}-{a.suffix.lstrip('.')}.jsonl", recs)
+            before = len(st.load()[0])
+            st.write(f"{b.stem}-{b.suffix.lstrip('.')}.jsonl", [])
+            after = len(st.load()[0])
+            return before == after and before > 0, \
+                "two sources sharing a stem do not overwrite each other"
+        case("same-stem sources get distinct graph files", no_stem_collision)
+
         def find_from_below():
             deep = tmp / "a" / "b" / "c"
             deep.mkdir(parents=True)

@@ -165,6 +165,11 @@ def main(argv):
         print(f"initialised {s.base}")
         return 0
 
+    if cmd not in ("import", "ls", "check"):
+        print(f"unknown command {cmd!r}")
+        print("usage: store.py init [dir] | import <file>... | ls | check")
+        return 2
+
     try:
         s = Store.find()
     except NotABase as e:
@@ -172,6 +177,9 @@ def main(argv):
         return 1
 
     if cmd == "import":
+        if len(argv) < 3:
+            print("usage: store.py import <file>...")
+            return 2
         total_n = total_e = 0
         for arg in argv[2:]:
             src = Path(arg)
@@ -179,8 +187,18 @@ def main(argv):
                 recs, root = SESS.session_to_records(src)
             else:
                 recs, root = R.ast_to_records(_ast_of(src), source=src.name)
-            s.keep_source(src)
-            dest = s.write(f"{src.stem}.jsonl", recs)
+            try:
+                s.keep_source(src)
+            except ValueError as e:
+                # A refusal is an outcome, not a crash: the man page promises
+                # this behaviour, so it should read like a decision.
+                print(f"  {src.name}: {e}")
+                return 1
+            # The suffix is part of the name because two sources with the same
+            # stem — thing.md and thing.jsonl — otherwise write the same graph
+            # file and the second silently discards the first. Filenames under
+            # graph/ carry no meaning, so making them unambiguous costs nothing.
+            dest = s.write(f"{src.stem}-{src.suffix.lstrip('.')}.jsonl", recs)
             n = sum(1 for r in recs if r["record"] == "node")
             total_n += n
             total_e += len(recs) - n
@@ -194,9 +212,9 @@ def main(argv):
         for f in files:
             print(f"  {f.relative_to(s.root)}")
         nodes = sum(1 for r in recs if r["record"] == "node")
-        docs = sum(1 for r in recs
-                   if r["record"] == "node" and r["type"] == "document")
-        print(f"{len(files)} files, {docs} documents, "
+        roots = sum(1 for r in recs if r["record"] == "node"
+                    and r["type"] in R.ROOT_TYPES)
+        print(f"{len(files)} files, {roots} documents and sessions, "
               f"{nodes} nodes, {len(recs) - nodes} edges")
         return 0
 
@@ -213,6 +231,7 @@ def main(argv):
         return 1 if problems else 0
 
     print(f"unknown command {cmd!r}")
+    print("usage: store.py init [dir] | import <file>... | ls | check")
     return 2
 
 

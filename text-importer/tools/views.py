@@ -347,10 +347,20 @@ def render_all(st: S.Store):
 
 
 def main(argv):
-    st = S.Store.find()
-    written, ndocs, files = render_all(st)
+    try:
+        st = S.Store.find()
+    except S.NotABase as e:
+        print(e)
+        return 1
+    try:
+        written, ndocs, files = render_all(st)
+    except RuntimeError as e:
+        # A refusal, not a crash. Rendering a broken graph would produce a page
+        # that looks fine and is wrong, which is worse than no page.
+        print(f"  refusing to render: {e}")
+        return 1
     print(f"  loaded {len(files)} graph files")
-    print(f"  {ndocs} documents -> {len(written)} files under "
+    print(f"  {ndocs} documents and sessions -> {len(written)} files under "
           f"{st.views.relative_to(st.root)}/")
     for sub in ("default-djot", "default-html", "default-md"):
         n = len(list((st.views / sub).glob("*")))
