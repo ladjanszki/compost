@@ -25,10 +25,18 @@ conversations themselves points at nothing.
 | `raw/artifacts/*.md` | 7 | markdown sources for 7 of the 14 |
 | `raw/<id>/*.md` | 19 | the human's submitted drafts |
 
-Two gaps worth naming immediately: **`graph.dj` has no markdown source
-anywhere** — it exists only as a canonized `.dj` — and two conversations
-(`019fe816…`, `019ff180…`) have no JSONL, so their `.dj` is the only record
-they ever happened.
+**`graph.dj` has no markdown source anywhere** — it exists only as a canonized
+`.dj`.
+
+**The two conversations without a JSONL are not missing one.** Their ids are
+UUIDv7 (`019fe816…`, `019ff180…` — version nibble `7`), minted by compost's own
+`uuid6` dependency; all seven real session logs are UUIDv4. Their `raw/`
+directories hold only submitted `.md` files, each with its own v7 id. Searching
+`~/.claude` finds no log for either, and Claude Code only ever writes v4 ids.
+
+So these are conversations compost *built* from submitted files, back when the
+file channel and the session transcript were both in use for the same purpose.
+Nothing was lost, and no route can give them session structure they never had.
 
 The backup is verified: 49/49 files byte-identical in
 `corpus-removed-before-v0_2/`, and `compost-full-history.bundle` restores 95
@@ -57,6 +65,32 @@ than v0.2 makes nodes for.
 uuids exist as lines in the matching JSONL. Structure recovered from the `.dj`
 by the djot reader: 1,460 `turn` Divs and 935 `tool-call` Divs.
 
+### The fork, and 529 duplicated turns
+
+`9bc18568` was forked from `a7d175f9`. All **529** of the parent's lines appear
+in the fork with byte-identical content — 67% of the fork — and they carry the
+**same line uuids** in both logs.
+
+Importing both as they stand duplicates that entire prefix: 529 turns of
+content as two sets of nodes with matching `content_hash` values and different
+guids. That is the deferred re-import identity question arriving in the
+migration rather than after it.
+
+It also suggests its own answer. The log line `uuid` is already stored on every
+turn as `params.uuid`, and it is stable across both logs, so an importer that
+looked a turn up by it would make the fork and its parent *share* their common
+prefix instead of copying it. That is the first concrete identity key this
+corpus has offered, it costs one lookup, and it is worth deciding before the
+migration rather than as a consequence of it.
+
+### Four logs that were never imported
+
+The project directory holds 11 session logs; `raw/` has 7. The unimported ones
+are `155721f1` (75 lines), `d54085ed` (47), `8b6a710f` (633) and `44564a21`
+(1807, and still being written — it is the session this document was drafted
+in). Whether the migration is also the moment to take them in is a separate
+choice from how the existing corpus moves.
+
 ## Route A — ingest the `.dj` files
 
 Feed `conversations/*.dj` and `artifacts/*.dj` to the importer. Pandoc's djot
@@ -67,7 +101,8 @@ whatever v0.2 makes of it.
 
 - uniform: one path for all 9 conversations and all 14 artifacts
 - handles are exact, with nothing to verify beyond a count
-- the two JSONL-less conversations survive
+- the two file-only conversations survive, which matters because no other
+  route can reconstruct what they never had
 - `graph.dj` survives, which no other route manages
 
 What it gives up: the `.dj` text is the *old* rendering, with the em dashes
@@ -86,8 +121,8 @@ this is plausible where measurement 3 failed.
 - full session fidelity for the 7 conversations that have logs
 - the corpus arrives through exactly the path new conversations use
 
-What it gives up: the two JSONL-less conversations, unless they fall back to
-Route A — which means two of nine conversations have a different shape from the
+What it gives up: the two file-only conversations, which have no log to import
+and must fall back to Route A — which means two of nine conversations have a different shape from the
 rest, permanently. All 14 artifacts still need Route A regardless. And the
 within-turn matching rule is a new thing that can be subtly wrong, where Route A
 has nothing to get wrong.
@@ -187,3 +222,7 @@ record.
    from the dictionary, or accept them as historical.
 5. **Does the migration run once and get deleted, or stay as a command?** Once is
    honest; a command is testable.
+6. **Does the fork share its parent's turns or duplicate them?** Keying turn
+   identity on the log line uuid makes them share, and answers re-import
+   identity for transcripts at the same time.
+7. **Do the four unimported logs come in with the migration** or separately?
