@@ -1,127 +1,238 @@
+#!/usr/bin/env python3
 """
-store.py — locating and describing a knowledge base on disk.
+store.py — the on-disk graph.
 
-A knowledge base is a directory created by `kg init`:
+    .compost/
+      storage/    immutable sources, exactly as ingested
+      graph/      *.jsonl records, committed
+      views/      generated, disposable
 
-    <root>/
-      raw/<conv>/<turn>.md      drafts exactly as written, frozen
-      raw/<conv>/<session>.jsonl  an imported session log, exactly as ingested
-      conversations/<conv>.dj   turns, appended; every block frozen once written
-      artifacts/<name>.dj       agent-written and regenerated; mutable
-      site/                     generated HTML (disposable)
-      .kg                       marker file identifying the root
+`.compost/` is also the marker: the root is found by walking up until a
+directory of that name appears. Nothing else identifies a base, so a base
+cannot be half-configured.
 
-The split is by **mutability**, not by author. A conversation is append-only:
-turns are added, but no block already in the file ever changes, which is what
-keeps handles stable and references resolvable. An artifact is rewritten in
-place and needs id-preserving regeneration. Either party can write either kind;
-authorship is recorded per turn as a `{.turn author=...}` attribute, so it lives
-in the .dj and therefore in git.
+Three rules the loader depends on, each of which exists because breaking it
+is silent rather than loud:
 
-A conversation is one file rather than a directory of turns because turns get
-concatenated for reading anyway, and because one file is one djot parse: an
-imported session of ~70 turns costs about a second instead of two minutes.
+- **Only `*.jsonl` is loaded.** A `.jsonl~` editor backup, a `.bak`, a
+  half-written temp file — none of them are the graph.
+- **Writes are a temp file plus an atomic rename.** A partial write never
+  holds the extension, so a crash mid-write cannot produce a file the loader
+  would believe.
+- **Filenames carry no meaning and load order is irrelevant.** Records are
+  concatenated from every matching file; grouping is for humans to read, and
+  shuffling the file order must produce an identical graph.
 
-`kg` is meant to be run from anywhere, so the root is resolved in order:
-KG_HOME, then an explicit --root, then by walking up from the current
-directory looking for a `.kg` marker.
-
-Keeping the root outside the tool's own directory is possible but not
-required: `kg init .` puts them together, `kg init ~/knowledge` separates
-them. Deferring that choice is deliberate.
+The loaded file list is returned rather than hidden, because the failure mode
+of "everything in graph/ is the graph" is surprise about what was in there.
 """
+import json
 import os
-from dataclasses import dataclass
+import sys
+import tempfile
 from pathlib import Path
 
-MARKER = ".kg"
-SUBDIRS = ("raw", "conversations", "artifacts", "site")
+from . import records as R
+from . import session as SESS
+
+MARKER = ".compost"
 
 
-class StoreError(Exception):
+class NotABase(Exception):
     pass
 
 
-@dataclass(frozen=True)
 class Store:
-    root: Path
+    def __init__(self, root: Path):
+        self.root = Path(root).resolve()
+
+    # -- locating ----------------------------------------------------------
+    @classmethod
+    def find(cls, start: Path | None = None) -> "Store":
+        here = Path(start or Path.cwd()).resolve()
+        for d in [here, *here.parents]:
+            if (d / MARKER).is_dir():
+                return cls(d)
+        raise NotABase(f"no {MARKER}/ in {here} or any parent")
+
+    @classmethod
+    def init(cls, root: Path) -> "Store":
+        s = cls(root)
+        for d in (s.graph, s.storage, s.views):
+            d.mkdir(parents=True, exist_ok=True)
+        return s
 
     @property
-    def raw(self) -> Path:
-        return self.root / "raw"
+    def base(self) -> Path:
+        return self.root / MARKER
 
     @property
-    def conversations(self) -> Path:
-        return self.root / "conversations"
+    def graph(self) -> Path:
+        return self.base / "graph"
 
     @property
-    def artifacts(self) -> Path:
-        return self.root / "artifacts"
+    def storage(self) -> Path:
+        return self.base / "storage"
 
     @property
-    def site(self) -> Path:
-        return self.root / "site"
+    def views(self) -> Path:
+        return self.base / "views"
 
-    def conversation_paths(self) -> list[Path]:
-        """Conversations, oldest first — uuid7 sorts chronologically."""
-        return sorted(self.conversations.glob("*.dj"))
+    # -- writing -----------------------------------------------------------
+    def write(self, relpath: str, recs: list) -> Path:
+        """Write records to graph/<relpath>, atomically."""
+        dest = self.graph / relpath
+        if dest.suffix != ".jsonl":
+            raise ValueError(f"graph files must be .jsonl, got {dest.name}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=".tmp-", suffix=".part")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(R.to_jsonl(recs))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, dest)      # atomic within a filesystem
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+        return dest
 
-    def artifact_paths(self) -> list[Path]:
-        """Artifacts, by name — they are titles, not timestamps."""
-        return sorted(self.artifacts.glob("*.dj"))
+    def keep_source(self, path: Path) -> Path:
+        """Copy a source into storage/, refusing to overwrite a different one."""
+        dest = self.storage / path.name
+        data = Path(path).read_bytes()
+        if dest.exists() and dest.read_bytes() != data:
+            raise ValueError(
+                f"{dest.name} already in storage/ with different content; "
+                "sources are immutable")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        return dest
 
-    def source_paths(self) -> list[Path]:
-        """Everything with addressable blocks in it."""
-        return self.conversation_paths() + self.artifact_paths()
+    # -- loading -----------------------------------------------------------
+    def files(self) -> list[Path]:
+        return sorted(p for p in self.graph.rglob("*.jsonl") if p.is_file())
 
-    def drafts_for(self, conv_id: str) -> list[Path]:
-        """The turns of a conversation, as they were written."""
-        return sorted((self.raw / conv_id).glob("*.md"))
+    def load(self) -> tuple[list, list[Path]]:
+        """
+        Every record under graph/, deduplicated.
+
+        Byte-identical duplicates collapse silently — two writers asserting the
+        same fact is agreement, not conflict. A guid carrying two *different*
+        records is a hard error and is left for `check` to report rather than
+        resolved here, because picking a winner is how a corpus starts lying.
+        """
+        seen: dict[bytes, dict] = {}
+        out: list = []
+        for f in self.files():
+            for rec in R.from_jsonl(f.read_text(encoding="utf-8")):
+                key = R.canonical(rec)
+                if key in seen:
+                    continue
+                seen[key] = rec
+                out.append(rec)
+        return out, self.files()
+
+    def check(self) -> list[str]:
+        recs, _ = self.load()
+        return R.check(recs)
 
 
-def init(root: str | os.PathLike) -> Store:
-    """Create a knowledge base. Safe to run on an existing one."""
-    root = Path(root).expanduser().resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    for name in SUBDIRS:
-        (root / name).mkdir(exist_ok=True)
-    (root / MARKER).touch()
+# --------------------------------------------------------------------------
+# CLI
+# --------------------------------------------------------------------------
 
-    gitignore = root / ".gitignore"
-    if not gitignore.exists():
-        gitignore.write_text("site/\n")
-    return Store(root)
-
-
-def _walk_up(start: Path) -> Path | None:
-    for d in [start, *start.parents]:
-        if (d / MARKER).exists():
-            return d
-    return None
+def _ast_of(path: Path) -> dict:
+    import subprocess
+    r = subprocess.run(
+        ["pandoc", "-f", "commonmark_x-smart-attributes-fancy_lists",
+         "-t", "json", str(path)], capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip())
+    return json.loads(r.stdout)
 
 
-def find(explicit: str | None = None) -> Store:
-    """
-    Resolve the knowledge base root, or raise with an actionable message.
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__.strip().splitlines()[0])
+        print("usage: store.py init [dir] | import <file.md> | check | ls")
+        return 2
+    cmd = argv[1]
 
-    Order: explicit --root, then $KG_HOME, then a `.kg` marker in the current
-    directory or any parent.
-    """
-    for candidate in (explicit, os.environ.get("KG_HOME")):
-        if candidate:
-            root = Path(candidate).expanduser().resolve()
-            if not (root / MARKER).exists():
-                raise StoreError(
-                    f"{root} is not a knowledge base (no {MARKER} marker).\n"
-                    f"Create one with:  kg init {root}"
-                )
-            return Store(root)
+    if cmd == "init":
+        s = Store.init(Path(argv[2]) if len(argv) > 2 else Path.cwd())
+        print(f"initialised {s.base}")
+        return 0
 
-    found = _walk_up(Path.cwd().resolve())
-    if found:
-        return Store(found)
+    if cmd not in ("import", "ls", "check"):
+        print(f"unknown command {cmd!r}")
+        print("usage: store.py init [dir] | import <file>... | ls | check")
+        return 2
 
-    raise StoreError(
-        "No knowledge base found.\n"
-        "Set KG_HOME, pass --root, or run `kg init <dir>` to create one."
-    )
+    try:
+        s = Store.find()
+    except NotABase as e:
+        print(e)
+        return 1
+
+    if cmd == "import":
+        if len(argv) < 3:
+            print("usage: store.py import <file>...")
+            return 2
+        total_n = total_e = 0
+        for arg in argv[2:]:
+            src = Path(arg)
+            if src.suffix == ".jsonl":
+                recs, root = SESS.session_to_records(src)
+            else:
+                recs, root = R.ast_to_records(_ast_of(src), source=src.name)
+            try:
+                s.keep_source(src)
+            except ValueError as e:
+                # A refusal is an outcome, not a crash: the man page promises
+                # this behaviour, so it should read like a decision.
+                print(f"  {src.name}: {e}")
+                return 1
+            # The suffix is part of the name because two sources with the same
+            # stem — thing.md and thing.jsonl — otherwise write the same graph
+            # file and the second silently discards the first. Filenames under
+            # graph/ carry no meaning, so making them unambiguous costs nothing.
+            dest = s.write(f"{src.stem}-{src.suffix.lstrip('.')}.jsonl", recs)
+            n = sum(1 for r in recs if r["record"] == "node")
+            total_n += n
+            total_e += len(recs) - n
+            print(f"  {src.name} -> {dest.relative_to(s.root)}  "
+                  f"({n} nodes, {len(recs) - n} edges, root {root[:8]})")
+        print(f"{total_n} nodes, {total_e} edges")
+        return 0
+
+    if cmd == "ls":
+        recs, files = s.load()
+        for f in files:
+            print(f"  {f.relative_to(s.root)}")
+        nodes = sum(1 for r in recs if r["record"] == "node")
+        roots = sum(1 for r in recs if r["record"] == "node"
+                    and r["type"] in R.ROOT_TYPES)
+        print(f"{len(files)} files, {roots} documents and sessions, "
+              f"{nodes} nodes, {len(recs) - nodes} edges")
+        return 0
+
+    if cmd == "check":
+        recs, files = s.load()
+        problems = R.check(recs)
+        for f in files:
+            print(f"  loaded {f.relative_to(s.root)}")
+        nodes = sum(1 for r in recs if r["record"] == "node")
+        for p in problems[:20]:
+            print(f"  PROBLEM {p}")
+        print(f"{nodes} nodes, {len(recs) - nodes} edges, "
+              f"{len(problems)} problems")
+        return 1 if problems else 0
+
+    print(f"unknown command {cmd!r}")
+    print("usage: store.py init [dir] | import <file>... | ls | check")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

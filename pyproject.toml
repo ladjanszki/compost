@@ -5,22 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "compost"
 dynamic = ["version"]
-description = "Conversations to an addressable, agent-writable wiki"
+description = "Conversations and text to an addressable, agent-writable graph"
 requires-python = ">=3.12"
-dependencies = ["uuid6"]
+# Nothing from PyPI: identifiers come from the stdlib uuid module.
+dependencies = []
 
 # System dependencies, not installable from PyPI:
-#   pandoc >= 3.0   markdown -> djot  (declared in environment.yml)
-#   node >= 18      the djot.js reference parser, via npx
+#   pandoc >= 3.10  every read and every write goes through it
 
 [project.scripts]
-# `kg` (through v0.1.4) and `kgb` (v0.1.4-v0.1.5, briefly `pandig`) are gone
-# without a trace as of this rename — v0.2 breaks everything else anyway, so
-# no alias is kept this time.
 compost = "src.cli:main"
 
 [tool.setuptools]
-packages = ["src", "src.canonize", "src.ingest", "src.render"]
+packages = ["src"]
 
 [tool.setuptools.dynamic]
 version = {attr = "src.__version__"}

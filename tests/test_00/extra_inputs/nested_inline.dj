@@ -1,9 +1,0 @@
-# Inline formatting tests
-
-This paragraph has *bold text* in the middle.
-
-This one has _italic text_ at the start and end _like so_.
-
-Here we have *bold with _italic inside_ it* which is nested.
-
-A plain paragraph with no formatting at all.

@@ -11,7 +11,6 @@ __pycache__/
 
 # Temporary archive — local only
 tmp/
-site/
 .DS_Store
 *.egg-info/
 build/
@@ -20,9 +19,12 @@ build/
 _pre-handles-backup/
 
 # Vendored reference: the pandoc AST grammar ground truth. Cloned, not tracked.
-#   git clone --depth 1 https://github.com/jgm/pandoc-types.git text-importer/pandoc-types
-text-importer/pandoc-types/
+#   git clone --depth 1 https://github.com/jgm/pandoc-types.git vendor/pandoc-types
+vendor/
 
 # Round-trip test corpus: cloned documentation sites, not tracked.
-#   git clone --depth 1 https://github.com/rust-lang/book.git text-importer/corpus/rust-book
-text-importer/corpus/
+#   git clone --depth 1 https://github.com/rust-lang/book.git tests/corpus/rust-book
+tests/corpus/
+
+# The generated graph and views of this repo's own base
+.compost/views/
