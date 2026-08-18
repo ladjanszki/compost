@@ -1,6 +1,6 @@
 # The record format, and the pandoc AST ↔ compost translation
 
-*Status: built and passing. `tools/records.py` implements it; `tools/test_records.py` and `tools/test_sabotage.py` verify it.*
+*Status: built and passing, now covering transcripts as well as text. `tools/records.py` implements it; `tools/test_records.py` and `tools/test_sabotage.py` verify it.*
 
 This is the design for the two record types the graph is made of, and for the
 pair of functions that move between them and pandoc's AST. It builds on
@@ -299,3 +299,48 @@ fourteen `Block` constructors are exercised, and all six sabotages are caught.
 Item 1 is the whole design in one assertion. If it passes on every fixture and
 every document in `corpus/`, the format is faithful to the AST and everything
 else is a question of what we choose to build on top.
+
+
+## Rendering nodes that never came from pandoc
+
+`turn`, `toolcall`, `tooloutput`, `thinking`, `file` and `session` have no
+pandoc constructor, so `_to_block` cannot render them and should not learn to:
+its value is being exactly reversible, and a transcript node's reverse is
+JSONL, not pandoc AST.
+
+So the two concerns are separated, which is the `to_string` analogy made
+precise:
+
+- **reconstruction** is a property of a *source pair* — pandoc↔records,
+  session↔records. Each importer owns its own round-trip.
+- **viewing** is a dispatch on node *type*, in `views.py`, shared by every
+  view. A type with no renderer raises rather than vanishing, which is the
+  div-swallowing defect caught by construction.
+
+Session containers carry their handle in their own `Attr` rather than in a
+wrapper, which is tidier and is what the previous renderer did:
+
+```
+{#376c3ce7 .turn author="human" turn="019ff17b-..."}
+```
+
+`turn`, `toolcall`, `tooloutput` and `session` all have an `Attr` slot, so they
+label themselves. Only pandoc types without one — `Para`, `Plain`, `BulletList`
+— need the raw-block or wrapper trick.
+
+Prose inside a turn falls through to the ordinary block translation, so a
+paragraph of an answer renders exactly as a paragraph of a markdown file: same
+node types, same handles, one code path. That is the whole reason to parse it
+rather than store it as a payload.
+
+**Tool output is kept whole and shown differently per view.** Djot shows
+everything, because djot has no collapse and an agent that cannot see the
+output cannot reason about it. HTML wraps each output in `<details>` with a line
+count, because a human is scrolling. Same graph, two readings — which is the
+point of generating views from records rather than from a document.
+
+**Empty thinking nodes are kept in the graph and omitted from views.** All 491
+in this corpus carry no text, because Claude Code persists only a signature;
+other agents do emit text, so the node type stays. Rendering 491 empty markers
+would be inventing content the log never had — the same mistake as pandoc's
+synthesised callout titles.

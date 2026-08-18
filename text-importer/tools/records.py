@@ -31,8 +31,12 @@ ROOT_TYPES = {"document", "session"}
 # calls that touched it, and belongs to none of them.
 UNCONTAINED = {"file"}
 
-# Length of the short handle a view shows and a human pastes.
-HANDLE_LEN = 8
+# What a view shows and a human pastes. The full guid for now: a shorter
+# prefix is a later optimisation, and it needs no pass over stored text
+# because a resolver accepts any unambiguous length — long and short
+# citations coexist, exactly as full and abbreviated SHAs do in a git log.
+HANDLE_LEN = 36
+HANDLE_RE = r"[0-9a-f][0-9a-f-]{7,35}"
 
 # Constructors whose own payload is text rather than inlines, and which
 # therefore still deserve a content hash.
@@ -63,17 +67,17 @@ class Builder:
         self.records.append(n)
         return n["guid"]
 
-    def edge(self, type_, src, dst):
+    def edge(self, type_, src, dst, layer: str = LAYER):
         self.records.append({"record": "edge", "guid": self._mint(),
-                             "layer": LAYER, "type": type_,
+                             "layer": layer, "type": type_,
                              "source": src, "destination": dst})
 
-    def children(self, parent: str, kids: list[str]):
+    def children(self, parent: str, kids: list[str], layer: str = LAYER):
         """`contains` for each child, plus the `next` chain between them."""
         for k in kids:
-            self.edge("contains", parent, k)
+            self.edge("contains", parent, k, layer)
         for a, b in zip(kids, kids[1:]):
-            self.edge("next", a, b)
+            self.edge("next", a, b, layer)
 
 
 # --------------------------------------------------------------------------
@@ -480,7 +484,7 @@ def check(records: list) -> list[str]:
 # Citations
 # --------------------------------------------------------------------------
 
-CITATION = re.compile(r"\{@([0-9a-f]{%d})(\+*)\}" % HANDLE_LEN)
+CITATION_TARGET = re.compile(r"^#(%s)$" % HANDLE_RE)
 CITATION_LAYER = "citation"
 
 
@@ -507,40 +511,63 @@ def plain_text(node: dict) -> str:
     return "".join(out)
 
 
+def _links(node: dict) -> list[str]:
+    """Link targets in a node's own inline content."""
+    out: list[str] = []
+
+    def go(x):
+        if isinstance(x, dict):
+            if x.get("t") == "Link":
+                target = x["c"][2][0] if len(x["c"]) > 2 else ""
+                out.append(target)
+            go(x.get("c"))
+        elif isinstance(x, list):
+            for v in x:
+                go(v)
+
+    go(node.get("content") or [])
+    return out
+
+
 def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
     """
-    Read `{@handle}` out of the text and turn each into an edge.
+    Read citations out of the *parsed* content and turn each into an edge.
 
-    These edges are **derived**, not asserted. The draft classed citations as
-    asserted alongside `derived_from`, but the reason `derived_from` has to be
-    asserted is that no parser can recover it — and a citation is the exact
-    opposite, sitting in the text where a five-line regex finds it every time.
+    A citation is a link whose target is a handle: `[-](#<guid>)`. Reading
+    `Link` nodes rather than regexing text is what makes "handles inside code
+    are not citations" a property of the format instead of a rule to remember.
+    A code block holds text with no inlines, so it contains no links and cannot
+    contribute a citation however often it quotes the syntax — and this corpus
+    quotes its own syntax constantly.
 
-    That distinction is what dissolves the duplication worry. Two copies of a
-    fact can only diverge if both are authoritative. The text is the source of
-    truth and the edge is a projection of it, so a stale edge is not a conflict
-    to resolve but a rebuild to run — exactly like `contains`.
+    The edges are **derived**, not asserted. The draft classed citations as
+    asserted alongside `derived_from`, but the stated reason `derived_from`
+    must be asserted is that no parser can recover it, and a citation is the
+    exact opposite. So the text stays the source of truth, the edge is a
+    projection, and a stale edge is a rebuild rather than a conflict.
 
-    Returns (edges, unresolved handles).
+    Returns (edges, unresolved targets).
     """
     b = Builder(mint)
     nodes = [r for r in records if r["record"] == "node"]
-    by_handle: dict[str, list[str]] = {}
-    for n in nodes:
-        by_handle.setdefault(n["guid"][:HANDLE_LEN], []).append(n["guid"])
+    guids = {n["guid"] for n in nodes}
+    by_prefix: dict[str, list[str]] = {}
+    for g in guids:
+        for length in range(8, len(g) + 1):
+            by_prefix.setdefault(g[:length], []).append(g)
 
     edges, unresolved = [], []
     for n in nodes:
-        for m in CITATION.finditer(plain_text(n)):
+        for target in _links(n):
+            m = CITATION_TARGET.match(target)
+            if not m:
+                continue                      # an ordinary link, not a citation
             handle = m.group(1)
-            targets = by_handle.get(handle)
-            if not targets:
-                unresolved.append(handle)
-                continue
-            if len(targets) > 1:          # check() reports this separately
+            hits = by_prefix.get(handle, [])
+            if len(hits) != 1:
                 unresolved.append(handle)
                 continue
             edges.append({"record": "edge", "guid": b._mint(),
                           "layer": CITATION_LAYER, "type": "cites",
-                          "source": n["guid"], "destination": targets[0]})
+                          "source": n["guid"], "destination": hits[0]})
     return edges, unresolved

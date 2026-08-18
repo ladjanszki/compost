@@ -34,7 +34,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import records as R  # noqa: E402
 
+# Structure any transcript source would have. Kept separate from the
+# source-specific layer below so another agent's log format can reuse it
+# without inheriting Claude Code's threading model.
 LAYER = "session"
+# Facts particular to this log format: the parentUuid chain.
+SOURCE_LAYER = "claude-code"
 READER = "commonmark_x-smart-attributes-fancy_lists"
 
 # Tool inputs that name a file the call touched.
@@ -73,6 +78,7 @@ class SessionImporter:
         self.b = R.Builder(mint)
         self.files: dict[str, str] = {}      # path -> guid, deduped per session
         self.calls: dict[str, str] = {}      # tool_use_id -> toolcall guid
+        self.by_uuid: dict[str, str] = {}    # log line uuid -> turn guid
 
     # -- helpers -----------------------------------------------------------
     def _file_node(self, path: str) -> str:
@@ -95,7 +101,8 @@ class SessionImporter:
         if isinstance(inp, dict):
             for k in PATH_KEYS:
                 if isinstance(inp.get(k), str):
-                    self.b.edge("touches", guid, self._file_node(inp[k]))
+                    self.b.edge("touches", guid, self._file_node(inp[k]),
+                                LAYER)
         return guid
 
     def _tool_result(self, block: dict):
@@ -107,7 +114,7 @@ class SessionImporter:
             "text": _result_text(block),
         })
         if parent:
-            self.b.children(parent, [out])
+            self.b.children(parent, [out], LAYER)
         return out, parent
 
     # -- the walk ----------------------------------------------------------
@@ -121,6 +128,7 @@ class SessionImporter:
         })
 
         turns: list[str] = []
+        pending: list[tuple[str, str]] = []
         for d in lines:
             kind = d.get("type")
             if kind not in ("user", "assistant"):
@@ -171,10 +179,24 @@ class SessionImporter:
                 "timestamp": d.get("timestamp"),
                 "uuid": d.get("uuid"),
             })
-            self.b.children(turn, children + orphan_results)
+            self.b.children(turn, children + orphan_results, LAYER)
             turns.append(turn)
+            if d.get("uuid"):
+                self.by_uuid[d["uuid"]] = turn
+            if d.get("parentUuid"):
+                pending.append((turn, d["parentUuid"]))
 
-        self.b.children(session, turns)
+        self.b.children(session, turns, LAYER)
+
+        # Two orderings, deliberately both. `next` above is *log order*, which
+        # is what regenerates the file; `replies_to` is the conversational
+        # truth, and the two diverge the moment a session has a sidechain.
+        # Storing only one of them means guessing the other.
+        for turn, parent_uuid in pending:
+            parent = self.by_uuid.get(parent_uuid)
+            if parent:
+                self.b.edge("replies_to", turn, parent, SOURCE_LAYER)
+
         return self.b.records, session
 
 

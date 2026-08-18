@@ -48,6 +48,11 @@ UUIDISH = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
 # key position is how 57 of them walked straight through the first version of
 # this script.
 SCHEMA_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# ISO timestamps are structure to anything that renders a transcript, but the
+# actual instants say when someone was working. Shifted by a fixed offset and
+# kept well-formed: the format survives, the schedule does not.
+ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})"
+                 r"(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$")
 
 
 class Remapper:
@@ -71,6 +76,15 @@ class Remapper:
         return out
 
 
+def _shift(stamp: str) -> str:
+    """Same shape, different instant."""
+    m = ISO.match(stamp)
+    y, mo, d, h, mi, se = (int(m.group(i)) for i in range(1, 7))
+    y = 2000 + (y % 7)
+    return (f"{y:04d}-{mo:02d}-{d:02d}T{h:02d}:{mi:02d}:{se:02d}"
+            f"{m.group(7) or ''}{m.group(8) or ''}")
+
+
 def scrub(obj, remap: Remapper, salt: str, key: str | None = None):
     if isinstance(obj, dict):
         return {(k if SCHEMA_KEY.match(k) else bleach(k, salt=salt)):
@@ -85,6 +99,8 @@ def scrub(obj, remap: Remapper, salt: str, key: str | None = None):
             return remap(obj)
         if UUIDISH.match(obj):
             return remap(obj)
+        if ISO.match(obj):
+            return _shift(obj)
         return bleach(obj, salt=salt)
     return obj
 

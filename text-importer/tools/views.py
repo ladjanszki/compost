@@ -44,17 +44,111 @@ import store as S      # noqa: E402
 CITABLE = {"Para", "Plain", "Header", "CodeBlock", "RawBlock", "LineBlock",
            "HorizontalRule", "ListItem", "BlockQuote", "Table"}
 
+# Node types that came from a transcript rather than from pandoc. Each one
+# needs its own view rendering, because there is no pandoc constructor to fall
+# back on — this is the dispatch that replaces "reuse records_to_ast".
+SESSION_TYPES = {"session", "turn", "toolcall", "tooloutput", "thinking", "file"}
+
+# Session containers carry their handle in their own Attr rather than in a
+# wrapper, which is both tidier and what the previous renderer did:
+#   {#376c3ce7 .turn author="human" turn="019ff17b-..."}
+SELF_LABELLING = {"turn", "toolcall", "tooloutput", "session", "thinking"}
+
 
 # A line that is nothing but a handle, optionally behind a list marker. Matched
 # narrowly on purpose: a paragraph of prose may legitimately *end* with a
 # handle, and joining that to the block below would change what the document
 # says.
-HANDLE_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*\{#[0-9a-f]{%d}\}$"
-                         % R.HANDLE_LEN)
+HANDLE_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*\{#%s\}$" % R.HANDLE_RE)
 
 
 def handle(guid: str) -> str:
     return guid[:R.HANDLE_LEN]
+
+
+def _attr(guid, classes, kv):
+    return [guid, classes, [[k, str(v)] for k, v in kv if v is not None]]
+
+
+def _code(text, classes, guid=""):
+    return {"t": "CodeBlock", "c": [_attr(guid, classes, []), text]}
+
+
+def _details(summary, blocks):
+    """HTML-only collapse. Djot has none, so the djot view shows everything."""
+    return [{"t": "RawBlock", "c": ["html",
+             f"<details><summary>{_html.escape(summary)}</summary>"]},
+            *blocks,
+            {"t": "RawBlock", "c": ["html", "</details>"]}]
+
+
+def _render_session(g, n, mode):
+    """A transcript node as pandoc blocks. None means deliberately not shown."""
+    t, guid, p = n["type"], n["guid"], n.get("params", {})
+
+    if t == "file":
+        return None          # uncontained by design; listed separately
+
+    if t == "thinking":
+        # Kept as a node in the graph regardless. Shown only when it carries
+        # text, because rendering 491 empty markers would be inventing content
+        # the log never had — the same mistake as pandoc's callout titles.
+        if not p.get("text"):
+            return None
+        return [{"t": "Div", "c": [_attr(guid, ["thinking"], []),
+                                   [_code(p["text"], ["thinking"])]]}]
+
+    if t == "tooloutput":
+        body = [_code(p.get("text", ""), ["tool-output"], guid)]
+        if mode == "html":
+            n_lines = p.get("text", "").count("\n") + 1
+            err = " (error)" if p.get("is_error") else ""
+            return _details(f"output — {n_lines} lines{err}", body)
+        return body
+
+    if t == "toolcall":
+        inp = json.dumps(p.get("input", {}), indent=1, ensure_ascii=False)
+        blocks = [_code(inp, ["tool-input"])]
+        blocks += _session_children(g, guid, mode)
+        return [{"t": "Div", "c": [_attr(guid, ["tool-call"],
+                                         [("name", p.get("name"))]),
+                                   blocks]}]
+
+    if t == "turn":
+        return [{"t": "Div", "c": [
+            _attr(guid, ["turn"], [("author", p.get("author")),
+                                   ("time", p.get("timestamp")),
+                                   ("turn", p.get("uuid"))]),
+            _session_children(g, guid, mode)]}]
+
+    if t == "session":
+        return [{"t": "Div", "c": [
+            _attr(guid, ["session"], [("source", p.get("source")),
+                                      ("session", p.get("session_id"))]),
+            _session_children(g, guid, mode)]}]
+
+    raise NotImplementedError(f"no view rendering for node type {t!r}")
+
+
+def _session_children(g, guid, mode):
+    """
+    Children of a transcript node, each dispatched on what it is.
+
+    Prose falls through to the ordinary block translation, so a paragraph of an
+    answer renders exactly as a paragraph of a markdown file — same node types,
+    same handles, one code path.
+    """
+    out = []
+    for k in g.children(guid):
+        n = g.nodes[k]
+        if n["type"] in SESSION_TYPES:
+            blocks = _render_session(g, n, mode)
+            if blocks:
+                out.extend(blocks)
+        else:
+            blocks = [R._to_block(g, k)]
+            out.extend(g.wrap(n, blocks) if g.wrap else blocks)
+    return out
 
 
 def pandoc(to: str, ast: dict, *extra) -> str:
@@ -66,13 +160,24 @@ def pandoc(to: str, ast: dict, *extra) -> str:
     return r.stdout
 
 
-def _ast(records, root, wrap=None) -> dict:
+# A session carries no pandoc api version, having never come from pandoc. The
+# view envelope still needs one, so the reconstruction default stands in.
+API_VERSION = [1, 23, 1, 2]
+
+
+def _ast(records, root, wrap=None, mode="djot") -> dict:
     g = R.Graph(records)
     g.wrap = wrap
     n = g.nodes[root]
-    return {"pandoc-api-version": R._p(n, "pandoc_api_version"),
+    if n["type"] == "session":
+        # The file *is* the session, so its turns sit at the top level rather
+        # than inside one more wrapper.
+        blocks = _session_children(g, root, mode)
+    else:
+        blocks = R._blocks_of(g, root)
+    return {"pandoc-api-version": R._p(n, "pandoc_api_version") or API_VERSION,
             "meta": R._p(n, "meta", {}),
-            "blocks": R._blocks_of(g, root)}
+            "blocks": blocks}
 
 
 # -- djot -------------------------------------------------------------------
@@ -95,7 +200,7 @@ def _djot_wrap(node, blocks):
 
 
 def render_djot(records, root) -> str:
-    out = pandoc("djot", _ast(records, root, _djot_wrap))
+    out = pandoc("djot", _ast(records, root, _djot_wrap, "djot"))
     # Pandoc puts a blank line between the raw block and what follows. Djot
     # binds an attribute only to the block immediately after it, so closing
     # that gap turns most handles into real djot ids rather than decoration.
@@ -118,7 +223,7 @@ def render_djot(records, root) -> str:
 # -- markdown ---------------------------------------------------------------
 
 def render_md(records, root) -> str:
-    return pandoc("commonmark_x-smart", _ast(records, root))
+    return pandoc("commonmark_x-smart", _ast(records, root, None, "md"))
 
 
 # -- html -------------------------------------------------------------------
@@ -160,6 +265,17 @@ blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding-left: 1
 @media (max-width: 62rem) {
   .block::before { position: static; display: block; opacity: .45; }
 }
+.turn { border-left: 3px solid var(--line); padding-left: 1rem; margin: 1.6rem 0; }
+.turn[author="human"] { border-left-color: var(--mark); }
+.tool-call { margin: .8rem 0; }
+.tool-call > pre:first-child { background: color-mix(in srgb, var(--mark) 8%, transparent); }
+details { margin: .4rem 0; }
+summary { cursor: pointer; color: var(--dim); font-size: .85rem; }
+.thinking pre { opacity: .7; font-style: italic; }
+/* A citation's link text is a single dash, so the page shows the target. */
+a[href^="#"]::after { content: attr(href); font: 500 11px/1 ui-monospace, Menlo, monospace;
+                      color: var(--dim); }
+a[href^="#"] { text-decoration: none; }
 footer { color: var(--dim); font-size: .85rem; border-top: 1px solid var(--line);
          margin-top: 3rem; padding-top: 1rem; }
 a { color: var(--mark); }
@@ -172,7 +288,7 @@ document.addEventListener('click', function (e) {
   var r = el.getBoundingClientRect();
   var onHandle = e.clientX < r.left || e.clientY < r.top + 24 && e.clientX < r.left + 90;
   if (!onHandle && window.innerWidth > 992) return;
-  navigator.clipboard.writeText('{@' + el.id + '}');
+  navigator.clipboard.writeText('[-](#' + el.id + ')');
   el.classList.add('copied');
   setTimeout(function () { el.classList.remove('copied'); }, 900);
 });
@@ -180,7 +296,7 @@ document.addEventListener('click', function (e) {
 
 
 def render_html(records, root, title: str) -> str:
-    body = pandoc("html", _ast(records, root, _html_wrap))
+    body = pandoc("html", _ast(records, root, _html_wrap, "html"))
     return (f"<!doctype html>\n<html lang=\"en\">\n<head>\n"
             f"<meta charset=\"utf-8\">\n"
             f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
@@ -199,7 +315,8 @@ def render_all(st: S.Store):
         raise RuntimeError(f"graph has {len(problems)} problems; "
                            f"first: {problems[0]}")
     g = R.Graph(recs)
-    docs = [n for n in g.nodes.values() if n["type"] == "document"]
+    docs = [n for n in g.nodes.values()
+            if n["type"] in ("document", "session")]
     written = []
     index = []
     for doc in sorted(docs, key=lambda d: R._p(d, "source") or d["guid"]):

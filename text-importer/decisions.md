@@ -88,6 +88,58 @@ migration produces. The conversation files on disk are never rewritten, so the
 append-only rule holds — the change happens in the translation to a new store,
 with the originals preserved.
 
+## Identifiers and citations, as settled
+
+A handle is the **full UUIDv4** — in records, in views, and in citations.
+A shorter prefix is a later optimisation and is deliberately not taken yet.
+
+It costs something measurable. On the bleached notes, handle text is **21.7%**
+of the djot view at full length against 7.7% at eight characters, and on small
+structurally dense documents it reaches 60–75% of the file. That is real, and
+it is accepted, because deferring commits to nothing: a resolver takes any
+unambiguous length, so when the prefix arrives, old citations stay long, new
+ones are written short, and no pass over stored text is needed. Long and short
+coexist exactly as full and abbreviated SHAs do in a git log. The prefix is a
+prefix, not a second hash — the same relationship git has between an object id
+and what it prints.
+
+Collision is the trigger to watch, since the first eight hex characters of a
+UUIDv4 are 32 random bits: 0.5% at today's ~6,700 blocks, 17% at 40,000, 68% at
+100,000. `records.check` already rejects a base where two nodes share a handle,
+so the failure is loud.
+
+**A citation is a link:** `[-](#<guid>)`.
+
+The link text carries nothing a machine reads and a hex string mid-sentence
+helps nobody, so it is a single dash. `[...]` was rejected because the djot
+writer escapes it to `[\...]`; `-` survives both writers clean.
+
+The form was chosen structurally, not aesthetically. `{@x}` fixed the *meaning*
+of the old `{#x}` but not the mechanism: it was still text, so extraction was a
+regex over flattened content, and a handle quoted inside a code block became a
+real edge — measured, not hypothetical, in a corpus that quotes its own syntax
+constantly. A `Link` is a node; a code block holds text with no inlines, so it
+contains no links and *cannot* contribute a citation. The rule that has been
+broken three times becomes a property of the format rather than a thing to
+remember. Links also render clickable in HTML for free, against blocks that
+already carry the matching `id`.
+
+## Two orderings, both stored
+
+| layer | edges | meaning |
+|---|---|---|
+| `pandoc-ast` | `contains`, `next` | structure and order within parsed prose |
+| `session` | `contains`, `next`, `touches` | transcript structure; `next` is **log order**, which regenerates the file |
+| `claude-code` | `replies_to` | the `parentUuid` chain — the conversational truth |
+| `citation` | `cites` | derived from links in the text |
+
+Log order and reply order are the same until a session has a sidechain, and
+this corpus has **zero** sidechain lines, so neither is exercised by real data.
+Storing only one of them would mean guessing the other forever. The `session`
+layer holds what any transcript format has; `claude-code` holds what is
+specific to this one, so another agent's log can reuse the first without
+inheriting the second.
+
 ## Decisions taken
 
 - **Inlines are not nodes.** A block node stores its pandoc inline array
