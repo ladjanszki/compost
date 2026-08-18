@@ -100,6 +100,20 @@ because those change text that was previously inert.
   `IMPORTANT`, `WARNING`, `CAUTION` map to a `Div`. `> [!HEUREKA]` becomes a
   plain `BlockQuote`; the text survives and the AST is still a fixed point,
   but it writes back with escaped brackets as `\[!HEUREKA\]`.
+- **Document metadata lives outside `blocks` and is dropped by default.** A
+  YAML frontmatter block is parsed into the AST's `meta` field, not into
+  `blocks`, and every writer omits it unless `--standalone` is passed:
+
+  ```
+  pandoc -f gfm -t json note.md | pandoc -f json -t gfm       -> frontmatter gone
+  pandoc -f gfm -t json note.md | pandoc -f json -t gfm -s    -> frontmatter kept
+  ```
+
+  This is not a gfm quirk — `markdown`, `commonmark_x`, `djot` and `html` all
+  behave the same way. No note in `raw/` has frontmatter today, so it is a
+  latent trap rather than a live bug, but the record schema currently models
+  only blocks and has nowhere to put `meta`. The importer must read it
+  explicitly or a whole class of content vanishes without an error.
 - **No PDF reader in pandoc.** `pdf` is an output format only, so PDF input
   needs a separate extractor. Deferred.
 - **djot.js and the `npx` spawn stay for now**, to be removed as part of 0.2
