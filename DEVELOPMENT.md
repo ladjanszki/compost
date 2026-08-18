@@ -42,7 +42,7 @@ toolchain used to fail here.
 
 - **A version is a batch, not a commit.** Let several things accumulate before
   closing one, patch levels included. Three patch versions were once cut in a
-  single day, which is what a tag stops meaning anything: it should mark a
+  single day, which is how a version number stops meaning anything: it should mark a
   change in what the tool can do, not a change in the working tree. Finish a
   piece of work, commit it, and stop — the tag comes when the version has a
   theme somebody could describe. `v0.2.1` is the next one open, and `TODO.md`
