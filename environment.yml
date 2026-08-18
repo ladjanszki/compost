@@ -1,15 +1,20 @@
-name: knowledge-graph
+name: compost
 channels:
   - conda-forge
 dependencies:
+  # Pandoc does every read and every write, including djot. Declared here
+  # rather than assumed on the system PATH: pandoc installed in conda base is
+  # not visible to `conda run -n compost`.
+  #
+  # 3.10 is what the suites are verified against. Earlier 3.x will not do:
+  # `alerts` (GitHub callouts) arrived in 3.2, and the djot writer's behaviour
+  # is what the views depend on.
+  - pandoc>=3.10
   - python=3.12
-  # Markdown -> Djot conversion in the canonize pipeline. Declared here rather
-  # than assumed on the system PATH: pandoc installed in conda base is not
-  # visible to `conda run -n knowledge-graph`.
-  - pandoc>=3.0
   - pip
-  - pip:
-    - uuid6
 
-# Also required, as system dependencies:
-#   node >= 18 and npx  — for the djot.js reference parser (@djot/djot)
+# No pip dependencies and no system dependencies beyond pandoc.
+#
+# Node and npx were required through v0.1.6, for the djot.js reference parser
+# (@djot/djot). v0.2 removed them: pandoc reads and writes djot natively, so
+# there is no second toolchain and no subprocess spawn per canonization.
