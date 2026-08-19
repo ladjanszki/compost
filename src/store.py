@@ -153,9 +153,14 @@ def _ast_of(path: Path) -> dict:
 
 
 def main(argv):
+    # `compost` when the CLI dispatched us, `store.py` when this module was run
+    # directly. Taken from argv rather than hard-coded, so the usage a reader
+    # sees is always a command they can actually type.
+    prog = Path(argv[0]).name
+    usage = f"usage: {prog} init [dir] | import <file>... | ls | check"
     if len(argv) < 2:
         print(__doc__.strip().splitlines()[0])
-        print("usage: store.py init [dir] | import <file.md> | check | ls")
+        print(usage)
         return 2
     cmd = argv[1]
 
@@ -166,7 +171,7 @@ def main(argv):
 
     if cmd not in ("import", "ls", "check"):
         print(f"unknown command {cmd!r}")
-        print("usage: store.py init [dir] | import <file>... | ls | check")
+        print(usage)
         return 2
 
     try:
@@ -177,7 +182,7 @@ def main(argv):
 
     if cmd == "import":
         if len(argv) < 3:
-            print("usage: store.py import <file>...")
+            print(f"usage: {prog} import <file>...")
             return 2
         total_n = total_e = 0
         for arg in argv[2:]:
@@ -230,7 +235,7 @@ def main(argv):
         return 1 if problems else 0
 
     print(f"unknown command {cmd!r}")
-    print("usage: store.py init [dir] | import <file>... | ls | check")
+    print(usage)
     return 2
 
 
