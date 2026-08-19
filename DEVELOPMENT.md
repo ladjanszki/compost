@@ -9,6 +9,7 @@ src/            the implementation
   session.py    Claude Code JSONL -> records
   store.py      the .compost/ base: init, import, ls, check, lookup
   views.py      the three views, and the per-node-type view dispatch
+  serve.py      a static server over the HTML view; renders nothing
   bleach.py     lorem-ise a markdown file, keep the formatting
   bleach_session.py   the same for a transcript
   roundtrip.py  the pandoc-only fixed-point harness

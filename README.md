@@ -13,7 +13,8 @@ compost init
 compost import notes.md ~/.claude/projects/<slug>/*.jsonl
 compost check
 compost render
-compost lookup d826c4dd        # the block a handle names, and what cites it
+compost lookup d826c4dd        # the block a handle names
+compost serve                  # read it at http://127.0.0.1:7373
 ```
 
 ## What v0.2 is
@@ -56,7 +57,8 @@ test_citations           7/7 citation guarantees hold
 test_bleach_session      7/7 session-fixture guarantees hold
 test_session             9/9 session-import guarantees hold
 test_session_views       10/10 session-view guarantees hold
-test_lookup              10/10 lookup guarantees hold
+test_lookup              7/7 lookup guarantees hold
+test_serve               9/9 serve guarantees hold
 test_manpage             6/6 man-page guarantees hold
 ```
 

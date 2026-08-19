@@ -327,9 +327,16 @@ anywhere near the base.
 
 ### Subcommands v0.1 had and v0.2 does not
 
-`submit`, `serve`, `new`, `last`, `artifact`. `lookup` shipped — resolving a
-pasted handle without grepping was the sharper of the two daily-loop gaps.
-`serve` is what remains: reading the HTML view without opening a file manager.
+`submit`, `new`, `last`, `artifact`. Both daily-loop gaps are closed: `lookup`
+resolves a pasted handle without grepping, and `serve` reads the HTML view
+without a file manager. Nothing here is missed yet — `new`, `submit` and `last`
+belonged to a submit path that v0.2 replaced, and `artifact` is its own
+milestone below.
+
+`serve` runs in the foreground. Detaching it — a `--daemon` flag, or a pid file
+with `--stop` and `--status` — is deliberately not built: it is state living
+outside the base, and a terminal tab has covered it so far. Build it when
+leaving a tab open actually becomes the annoyance.
 
 ### Smaller, but named
 

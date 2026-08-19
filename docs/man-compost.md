@@ -14,19 +14,19 @@ compost ls
 compost check
 compost lookup HANDLE
 compost render
+compost serve [-p PORT]
 compost version
 ```
 
 ## STATUS
 
-Version 0.2.0. The seven subcommands below are the whole program.
+Version 0.2.0. The eight subcommands below are the whole program.
 
 `compost` is on PATH inside the `compost` conda env, which `DEVELOPMENT.md`
 describes; from a checkout `python3 -m src.cli` is equivalent.
 
-The v0.1 subcommands `new`, `submit`, `serve`, `last` and `artifact` no longer
-exist. `lookup` is back; `serve` is the one the daily loop still misses, and is
-in `TODO.md` under v0.2.1.
+The v0.1 subcommands `new`, `submit`, `last` and `artifact` no longer exist.
+`lookup` and `serve` are back, the two the daily loop actually missed.
 
 ## DESCRIPTION
 
@@ -147,6 +147,30 @@ output is clean enough to commit.
 In the HTML view every citable block is an anchor; clicking a handle copies
 `[-](#guid)` to the clipboard. `default-html/index.html` lists the documents.
 
+### serve [-p PORT]
+
+Serve `.compost/views/default-html/` on `http://127.0.0.1:7373`. Runs in the
+foreground until interrupted; `-p` or `--port` chooses another port.
+
+**It does not render.** `render` is the only thing that writes views and it
+already refuses on a graph that fails `check`, so every file being served was
+produced from a graph that was sound. The guarantee lives where the files are
+made, and serving them needs no opinion of its own. Run `compost render` in
+another terminal and refresh the page.
+
+The socket is bound to **loopback only**. A knowledge base is not something to
+put on the local network by accident, and `0.0.0.0` is exactly that accident.
+
+Responses carry `Cache-Control: no-store`, and revalidation headers from the
+client are ignored rather than answered. `Last-Modified` is accurate only to
+the second, so a `render` landing in the same second as your last page load
+would otherwise be answered `304 Not Modified` and you would refresh onto
+yesterday's page. These are small local files; there is nothing to gain from
+caching them.
+
+With no views yet, says so and exits 1 rather than serving an empty directory.
+A port already in use is reported the same way.
+
 ### version
 
 Print the version. Also `--version` and `-V`. With no arguments at all, or with
@@ -204,11 +228,11 @@ cd ~/notes
 compost import draft.md ~/.claude/projects/-Users-me-notes/*.jsonl
 compost check
 compost render
-compost version
+compost serve
 ```
 
 ## NOT YET IMPLEMENTED
 
-No `submit`, `serve`, `new` or `artifact`. No view for `file` nodes,
+No `submit`, `new` or `artifact`. No view for `file` nodes,
 which are uncontained and so appear in no document tree. No migration of a
 v0.1 base. Empty `thinking` nodes are stored but not rendered.

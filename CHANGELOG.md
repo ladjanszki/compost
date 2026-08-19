@@ -59,6 +59,38 @@ whole graph is sound, a query answers one question from what is on disk, and
 refusing because an unrelated file has a dangling edge makes a broken base
 harder to debug rather than safer. Seven guarantees.
 
+### `compost serve [-p PORT]`
+
+The HTML view in a browser, on `http://127.0.0.1:7373`, foreground until
+interrupted.
+
+**It does not render**, and that is the difference from v0.1, where `serve`
+meant "render, then serve". Keeping them apart is not only simpler, it puts the
+guarantee in a better place: `render` is the only thing that writes views and it
+already refuses on a graph that fails `check`, so every file being served was
+produced from a graph that was sound. Delivery needs no opinion of its own,
+`serve` is a directory and a port, and it cannot fail for graph reasons. It also
+matches what `lookup` does — queries and views hand you what exists; only
+`render` asserts soundness. Run `render` in another terminal, refresh the page.
+
+Two choices worth their own lines. The socket binds **loopback only**: a
+knowledge base is not something to put on the local network by accident, and
+`0.0.0.0` is exactly that accident. And responses carry `Cache-Control:
+no-store` while revalidation headers from the client are dropped rather than
+answered — `Last-Modified` is accurate only to the second, so a `render` landing
+in the same second as your last page load is otherwise answered `304 Not
+Modified` and you refresh onto yesterday's page. That was reproduced, not
+guessed, and the suite reproduces it: same mtime, different bytes, must serve
+the new bytes.
+
+The default port is 7373 rather than v0.1's 8000, which is `irdmi` in
+`/etc/services` and the default for `python -m http.server` and Django both.
+7373 is unassigned, outside the ephemeral range macOS allocates from, and not
+the default of anything common. `-p` overrides it.
+
+Nine guarantees, five sabotages, including that nothing outside the served
+directory is reachable.
+
 ### Smaller
 
 - `compost import` with no arguments printed `usage: store.py import <file>...`.
