@@ -11,7 +11,7 @@ behaviour here.
     compost import FILE...  ingest markdown or a session transcript
     compost ls              list what is loaded
     compost check           verify the graph
-    compost lookup HANDLE   resolve a handle: the node, and what cites it
+    compost lookup HANDLE   print the node a handle names
     compost render          generate the three views
     compost version         print the version
 
@@ -28,7 +28,7 @@ USAGE = """usage: compost <command> [args]
   import FILE...  ingest markdown (any suffix) or a transcript (*.jsonl)
   ls              list loaded graph files and counts
   check           verify the graph, non-zero if it fails
-  lookup HANDLE   resolve a handle: the node, and what cites it
+  lookup HANDLE   print the node a handle names
   render          generate views/default-{djot,html,md}
   version         print the version
 

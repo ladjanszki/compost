@@ -31,12 +31,14 @@ ROOT_TYPES = {"document", "session"}
 # calls that touched it, and belongs to none of them.
 UNCONTAINED = {"file"}
 
-# What a view shows and a human pastes. The full guid for now: a shorter
-# prefix is a later optimisation, and it needs no pass over stored text
-# because a resolver accepts any unambiguous length — long and short
-# citations coexist, exactly as full and abbreviated SHAs do in a git log.
+# What a view shows, a human pastes, and a citation names: the whole guid.
+# A prefix is not a handle. There was a resolver that accepted any unambiguous
+# length, and it was removed: shortening handles is an optimisation nobody has
+# yet felt the need for, and an abbreviation that silently stops resolving as
+# the base grows is a worse failure than a long citation. When it is wanted it
+# will be designed against a measured pain point, not left lying around.
 HANDLE_LEN = 36
-HANDLE_RE = r"[0-9a-f][0-9a-f-]{7,35}"
+HANDLE_RE = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 # Constructors whose own payload is text rather than inlines, and which
 # therefore still deserve a content hash.
@@ -529,36 +531,6 @@ def _links(node: dict) -> list[str]:
     return out
 
 
-MIN_HANDLE = 8
-
-
-def prefix_index(records: list) -> dict[str, list[str]]:
-    """
-    Every node guid, filed under every prefix long enough to be a handle.
-
-    Citations and `lookup` resolve a handle the same way — at any unambiguous
-    length — so they share one index rather than growing two that could
-    disagree about which prefixes are ambiguous.
-    """
-    by_prefix: dict[str, list[str]] = {}
-    for g in {r["guid"] for r in records if r["record"] == "node"}:
-        for length in range(MIN_HANDLE, len(g) + 1):
-            by_prefix.setdefault(g[:length], []).append(g)
-    return by_prefix
-
-
-def resolve(handle: str, index: dict) -> tuple[str | None, list[str]]:
-    """
-    `(guid, candidates)` for a handle. Exactly one candidate resolves.
-
-    None and many are both returned as "did not resolve", with the candidates,
-    because the caller's answer differs: a citation to an ambiguous handle is
-    unresolved, and a person typing one wants to see what they collided with.
-    """
-    hits = index.get(handle, [])
-    return (hits[0] if len(hits) == 1 else None), hits
-
-
 def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
     """
     Read citations out of the *parsed* content and turn each into an edge.
@@ -580,7 +552,7 @@ def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
     """
     b = Builder(mint)
     nodes = [r for r in records if r["record"] == "node"]
-    index = prefix_index(records)
+    guids = {n["guid"] for n in nodes}
 
     edges, unresolved = [], []
     for n in nodes:
@@ -589,11 +561,10 @@ def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
             if not m:
                 continue                      # an ordinary link, not a citation
             handle = m.group(1)
-            target, _ = resolve(handle, index)
-            if target is None:
+            if handle not in guids:
                 unresolved.append(handle)
                 continue
             edges.append({"record": "edge", "guid": b._mint(),
                           "layer": CITATION_LAYER, "type": "cites",
-                          "source": n["guid"], "destination": target})
+                          "source": n["guid"], "destination": handle})
     return edges, unresolved

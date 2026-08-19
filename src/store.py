@@ -234,17 +234,14 @@ def main(argv):
         # whole graph is sound; a lookup answers one question from whatever is
         # on disk. Refusing to resolve a handle because some other file has a
         # dangling edge would make a broken base harder to debug, not safer.
-        guid, hits = R.resolve(handle, R.prefix_index(recs))
-        if guid is None:
-            for g in sorted(hits)[:10]:
-                print(f"  {g}")
-            if len(hits) > 10:
-                print(f"  … and {len(hits) - 10} more")
-            print(f"{len(hits)} nodes match {handle!r}"
-                  + (", give more characters" if hits else ""))
+        nodes = {r["guid"]: r for r in recs if r["record"] == "node"}
+        # A handle is a whole guid. A prefix is not a shorter handle, it is not
+        # a handle, and there is no resolver to make it one.
+        node = nodes.get(handle)
+        if node is None:
+            print(f"no node with handle {handle!r}")
             return 1
 
-        nodes = {r["guid"]: r for r in recs if r["record"] == "node"}
         parent = {r["destination"]: r["source"] for r in recs
                   if r["record"] == "edge" and r["type"] == "contains"}
 
@@ -256,27 +253,12 @@ def main(argv):
                 g = parent[g]
             return nodes.get(g, {}).get("params", {}).get("source", "?")
 
-        node = nodes[guid]
-        print(f"  {guid}  {node['type']}  in {where(guid)}")
+        print(f"  {handle}  {node['type']}  in {where(handle)}")
         text = R.plain_text(node).strip()
         if text:
             print()
             for line in textwrap.wrap(text, 74):
                 print(f"  {line}")
-
-        # Derived here rather than read from the graph: `cites` edges are a
-        # projection of the text, and nothing persists them. Deriving over the
-        # whole loaded base is also what makes a citation that crosses two
-        # documents resolvable at all — at import time the other file may not
-        # have been imported yet.
-        edges, _unresolved = R.citation_edges(recs)
-        citers = [e["source"] for e in edges if e["destination"] == guid]
-        if citers:
-            print()
-            for c in citers:
-                cn = nodes.get(c, {})
-                print(f"  cited by {c}  {cn.get('type', '?')}  in {where(c)}")
-        print(f"1 node, {len(citers)} citing")
         return 0
 
     if cmd == "check":

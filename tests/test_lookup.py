@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-test_lookup.py — resolving a handle, and finding what cites it.
+test_lookup.py — resolving a handle to the node it names.
 
-`lookup` is the first thing in the program to call `citation_edges`, which
-until now only tests ever called. That matters: `cites` edges are a projection
-of the text and nothing persists them, so the backlinks a lookup prints are
-derived over the whole loaded base at the moment you ask. The cases below pin
-both halves — that a prefix resolves exactly when it is unambiguous, and that
-"what cites this" inherits the property citations already have, namely that a
-handle quoted inside code is not a citation.
+A handle is a whole guid. A prefix of one is not a shorter handle, it is not a
+handle at all, and there is no resolver that would make it one — the cases
+below pin that as a property rather than a convention, because the resolver
+that used to accept any unambiguous length was removed on purpose.
+
+`lookup` prints the node and stops there. What cites a block is a question for
+the citation layer, which does not exist yet; answering it here would have
+meant deriving `cites` edges on every query, and a layer built by accident at
+query time is harder to replace than one that was never built.
 """
 import contextlib
 import io
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -26,7 +29,6 @@ TARGET = "A target paragraph worth citing.\n\nAnother block entirely.\n"
 
 
 def build(tmp: Path):
-    """A base with one cited paragraph, and two decoys that must not count."""
     st = S.Store.init(tmp)
     a = tmp / "a.md"
     a.write_text(TARGET)
@@ -34,21 +36,7 @@ def build(tmp: Path):
     st.write("a-md.jsonl", recs)
     guid = next(r["guid"] for r in recs
                 if r["record"] == "node" and r["type"] == "Para")
-
-    b = tmp / "b.md"
-    b.write_text(f"See [-](#{guid}) for the point.\n\n"
-                 f"Inline code span: `[-](#{guid})` is not a citation.\n\n"
-                 f"```\n[-](#{guid})\n```\n")
-    recs_b, _ = R.ast_to_records(S._ast_of(b), source=b.name)
-    st.write("b-md.jsonl", recs_b)
-    # The one node that really does cite: the prose paragraph, not the span and
-    # not the fence. Named here so a test can assert *which* node cites rather
-    # than how many do — a text-scanning implementation gets the count right by
-    # finding the fenced block and losing the paragraph.
-    citer = next(r["guid"] for r in recs_b
-                 if r["record"] == "node" and r["type"] == "Para"
-                 and R.plain_text(r).startswith("See"))
-    return st, guid, citer
+    return st, guid
 
 
 def run(tmp: Path, *args):
@@ -76,68 +64,50 @@ def main():
 
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        st, guid, citer = build(tmp)
-        recs, _ = st.load()
-        index = R.prefix_index(recs)
+        st, guid = build(tmp)
 
-        def exact():
-            got, _ = R.resolve(guid, index)
-            return got == guid, guid[:8]
-        case("a full guid resolves to itself", exact)
+        def full_guid():
+            code, out = run(tmp, "lookup", guid)
+            return (code == 0 and guid in out and "A target paragraph" in out,
+                    "node and its text")
+        case("a full guid prints the node it names", full_guid)
 
-        def every_prefix():
-            lengths = range(R.MIN_HANDLE, len(guid) + 1)
-            got = {R.resolve(guid[:n], index)[0] for n in lengths}
-            return got == {guid}, f"lengths {R.MIN_HANDLE}..{len(guid)} agree"
-        case("every unambiguous prefix resolves to the same node", every_prefix)
+        def no_prefix_resolves():
+            codes = {run(tmp, "lookup", guid[:n])[0]
+                     for n in range(1, len(guid))}
+            return codes == {1}, f"all {len(guid) - 1} prefixes miss"
+        case("no prefix of a guid resolves, at any length", no_prefix_resolves)
 
-        def too_short():
-            n = R.MIN_HANDLE - 1
-            got, hits = R.resolve(guid[:n], index)
-            return got is None and not hits, f"{n} chars is not a handle"
-        case("a prefix below the minimum resolves to nothing", too_short)
-
-        def ambiguous():
-            # Two guids sharing a prefix cannot be minted, so they are built.
-            twin = [{"record": "node", "guid": guid[:9] + "0" * 27,
-                     "type": "Para"},
-                    {"record": "node", "guid": guid[:9] + "1" * 27,
-                     "type": "Para"}]
-            got, hits = R.resolve(guid[:9], R.prefix_index(twin))
-            return got is None and len(hits) == 2, "2 candidates, no winner"
-        case("an ambiguous prefix resolves to nothing, with candidates",
-             ambiguous)
+        def prefix_is_not_even_a_citation():
+            # HANDLE_RE matches a whole guid only, so a prefix in a link is an
+            # ordinary link: it cannot be an unresolved citation either.
+            return (R.CITATION_TARGET.match("#" + guid) is not None
+                    and R.CITATION_TARGET.match("#" + guid[:8]) is None,
+                    "a prefix does not match HANDLE_RE")
+        case("a prefix is not a handle by construction",
+             prefix_is_not_even_a_citation)
 
         def absent():
-            got, hits = R.resolve("deadbeef", index)
-            return got is None and not hits, "no such handle"
-        case("a handle that exists nowhere resolves to nothing", absent)
+            code, out = run(tmp, "lookup",
+                            "deadbeef-0000-0000-0000-000000000000")
+            return code == 1 and "no node with handle" in out, out.strip()
+        case("a handle that exists nowhere exits 1 and says so", absent)
 
-        def backlinks():
-            edges, _ = R.citation_edges(recs)
-            citers = [e["source"] for e in edges if e["destination"] == guid]
-            # b.md writes the handle three times: prose, code span, fence. Only
-            # the prose one is a citation, and it must be *that* node — asserting
-            # the count alone passes for an implementation that finds the fence
-            # and misses the paragraph.
-            return citers == [citer], f"{len(citers)} citer of 3 written"
-        case("only the prose citation counts, span and fence do not", backlinks)
+        def names_one_node():
+            # The property, not the wording: a lookup mentions the node asked
+            # for and no other. Backlinks would name a second, and that would
+            # mean deriving the citation layer on every query, before it has
+            # been designed. Matching guids rather than the words "cited by"
+            # keeps this true however the output is later reworded.
+            _, out = run(tmp, "lookup", guid)
+            named = set(re.findall(R.HANDLE_RE, out))
+            return named == {guid}, f"{len(named)} guid named"
+        case("lookup names the node asked for and no other", names_one_node)
 
-        def cli_hit():
-            code, out = run(tmp, "lookup", guid[:R.MIN_HANDLE])
-            return (code == 0 and guid in out and "1 node, 1 citing" in out,
-                    out.strip().splitlines()[-1])
-        case("the CLI prints the node and its citer, exit 0", cli_hit)
-
-        def cli_miss():
-            code, out = run(tmp, "lookup", "deadbeef")
-            return code == 1 and "0 nodes match" in out, out.strip()
-        case("a miss exits 1 and says so", cli_miss)
-
-        def cli_no_arg():
+        def no_arg():
             code, out = run(tmp, "lookup")
             return code == 2 and "usage:" in out, out.strip()
-        case("no handle is a usage error, exit 2", cli_no_arg)
+        case("no handle is a usage error, exit 2", no_arg)
 
         def survives_broken_graph():
             # `render` refuses on a broken graph; a query must not. One dangling
@@ -149,7 +119,7 @@ def main():
                 '"destination": "cafe0000-0000-0000-0000-000000000000"}\n')
             broken, _ = st.load()
             problems = bool(R.check(broken))
-            code, out = run(tmp, "lookup", guid[:R.MIN_HANDLE])
+            code, out = run(tmp, "lookup", guid)
             (st.graph / "junk.jsonl").unlink()
             return (problems and code == 0 and guid in out,
                     "check fails, lookup answers")

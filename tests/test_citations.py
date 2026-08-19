@@ -109,15 +109,19 @@ def main():
             "an invented handle is reported, not silently dropped"
     case("an unresolvable handle is reported", unresolved_reported)
 
-    def prefix_resolves():
+    def prefix_is_not_a_handle():
         recs, _ = ingest("A paragraph.\n\n## Target\n")
         target = next(r for r in recs if r["record"] == "node"
                       and r["type"] == "Header")
         cite(recs, "Para", target["guid"][:8])
         edges, unresolved = R.citation_edges(recs)
-        return len(edges) == 1 and not unresolved, \
-            "an 8-character prefix still resolves, so shortening needs no rewrite"
-    case("a shortened handle resolves too", prefix_resolves)
+        # Not merely unresolved — a prefix does not match HANDLE_RE at all, so
+        # it is an ordinary link and never claims to be a citation. There was a
+        # resolver that accepted any unambiguous length; it was removed rather
+        # than left as an optimisation nobody had asked for.
+        return not edges and not unresolved, \
+            "a prefix is an ordinary link, not a short handle"
+    case("a shortened handle is not a citation", prefix_is_not_a_handle)
 
     def display_text_is_free():
         recs, _ = ingest("A paragraph.\n\n## Target\n")
