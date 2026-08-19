@@ -17,18 +17,27 @@ tests/          one suite per property; ./tests/run.sh runs them all
   fixtures/     notes, edge cases, sessions, hand-built ASTs
   corpus/       cloned documentation sites, gitignored
 docs/           man page, decisions, record format, the original drafts
-vendor/         pandoc-types, cloned for the AST grammar, gitignored
+vendor/         pandoc-types, cloned to read the AST grammar; no test uses it
 ```
 
-Two clones are needed for the full test corpus, and both commands are in
-`.gitignore`:
+**One** clone affects the tests. `tests/corpus/` is the round-trip corpus;
+without it the suites still run, over 42 documents instead of 520:
 
 ```
-git clone --depth 1 https://github.com/jgm/pandoc-types.git vendor/pandoc-types
 git clone --depth 1 https://github.com/rust-lang/book.git tests/corpus/rust-book
 ```
 
-Without them the suites still run, over 42 documents instead of 520.
+`vendor/pandoc-types` is a different thing and no test reads it — verified by
+running every suite with the directory moved away, which changed nothing, not
+even the document count. It is the Haskell definition of the AST, and
+`Definition.hs` is the grammar `docs/decisions.md` argues from. Clone it when
+the record format is in question, and delete it when it is not:
+
+```
+git clone --depth 1 https://github.com/jgm/pandoc-types.git vendor/pandoc-types
+```
+
+Both commands are in `.gitignore` too.
 
 ## Requirements
 

@@ -350,9 +350,10 @@ leaving a tab open actually becomes the annoyance.
 - **Citations attach to blocks, not to references.** A `{@}`-era limitation that
   survives the move to links: two citations in one paragraph are two edges from
   the same source node, and nothing distinguishes which reference is which.
-- **`tests/corpus/` and `vendor/` are cloned, not tracked.** A fresh checkout
-  runs 41 of the 520 round-trip documents until they are cloned. The commands
-  are in `.gitignore`.
+- **`tests/corpus/` is cloned, not tracked.** A fresh checkout runs 42 of the
+  520 round-trip documents until it is cloned; the command is in `.gitignore`.
+  `vendor/pandoc-types` is cloned too, but no test reads it and cloning it
+  changes no count — it is the AST grammar, kept for a human to consult.
 - **One pandoc call per text block** on session import — 19s for 7 sessions.
   Batching is available if it ever matters.
 
