@@ -9,7 +9,8 @@ set -u
 cd "$(dirname "$0")/.."
 fail=0
 for t in test_records test_sabotage test_store test_views test_citations \
-         test_bleach_session test_session test_session_views test_manpage; do
+         test_bleach_session test_session test_session_views test_lookup \
+         test_manpage; do
   out=$(python3 -m "tests.$t" 2>&1) || fail=1
   last=$(printf '%s' "$out" | tail -1)
   case "$last" in

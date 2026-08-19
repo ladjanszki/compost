@@ -30,6 +30,7 @@ import json
 import os
 import sys
 import tempfile
+import textwrap
 from pathlib import Path
 
 from . import records as R
@@ -157,7 +158,8 @@ def main(argv):
     # directly. Taken from argv rather than hard-coded, so the usage a reader
     # sees is always a command they can actually type.
     prog = Path(argv[0]).name
-    usage = f"usage: {prog} init [dir] | import <file>... | ls | check"
+    usage = (f"usage: {prog} init [dir] | import <file>... | ls | check"
+             f" | lookup <handle>")
     if len(argv) < 2:
         print(__doc__.strip().splitlines()[0])
         print(usage)
@@ -169,7 +171,7 @@ def main(argv):
         print(f"initialised {s.base}")
         return 0
 
-    if cmd not in ("import", "ls", "check"):
+    if cmd not in ("import", "ls", "check", "lookup"):
         print(f"unknown command {cmd!r}")
         print(usage)
         return 2
@@ -220,6 +222,61 @@ def main(argv):
                     and r["type"] in R.ROOT_TYPES)
         print(f"{len(files)} files, {roots} documents and sessions, "
               f"{nodes} nodes, {len(recs) - nodes} edges")
+        return 0
+
+    if cmd == "lookup":
+        if len(argv) < 3:
+            print(f"usage: {prog} lookup <handle>")
+            return 2
+        handle = argv[2]
+        recs, _ = s.load()
+        # No `check` gate, deliberately, and unlike `render`. A view asserts the
+        # whole graph is sound; a lookup answers one question from whatever is
+        # on disk. Refusing to resolve a handle because some other file has a
+        # dangling edge would make a broken base harder to debug, not safer.
+        guid, hits = R.resolve(handle, R.prefix_index(recs))
+        if guid is None:
+            for g in sorted(hits)[:10]:
+                print(f"  {g}")
+            if len(hits) > 10:
+                print(f"  … and {len(hits) - 10} more")
+            print(f"{len(hits)} nodes match {handle!r}"
+                  + (", give more characters" if hits else ""))
+            return 1
+
+        nodes = {r["guid"]: r for r in recs if r["record"] == "node"}
+        parent = {r["destination"]: r["source"] for r in recs
+                  if r["record"] == "edge" and r["type"] == "contains"}
+
+        def where(g):
+            """The source file of the root that contains `g`."""
+            seen = set()
+            while g in parent and g not in seen:
+                seen.add(g)
+                g = parent[g]
+            return nodes.get(g, {}).get("params", {}).get("source", "?")
+
+        node = nodes[guid]
+        print(f"  {guid}  {node['type']}  in {where(guid)}")
+        text = R.plain_text(node).strip()
+        if text:
+            print()
+            for line in textwrap.wrap(text, 74):
+                print(f"  {line}")
+
+        # Derived here rather than read from the graph: `cites` edges are a
+        # projection of the text, and nothing persists them. Deriving over the
+        # whole loaded base is also what makes a citation that crosses two
+        # documents resolvable at all — at import time the other file may not
+        # have been imported yet.
+        edges, _unresolved = R.citation_edges(recs)
+        citers = [e["source"] for e in edges if e["destination"] == guid]
+        if citers:
+            print()
+            for c in citers:
+                cn = nodes.get(c, {})
+                print(f"  cited by {c}  {cn.get('type', '?')}  in {where(c)}")
+        print(f"1 node, {len(citers)} citing")
         return 0
 
     if cmd == "check":

@@ -529,6 +529,36 @@ def _links(node: dict) -> list[str]:
     return out
 
 
+MIN_HANDLE = 8
+
+
+def prefix_index(records: list) -> dict[str, list[str]]:
+    """
+    Every node guid, filed under every prefix long enough to be a handle.
+
+    Citations and `lookup` resolve a handle the same way — at any unambiguous
+    length — so they share one index rather than growing two that could
+    disagree about which prefixes are ambiguous.
+    """
+    by_prefix: dict[str, list[str]] = {}
+    for g in {r["guid"] for r in records if r["record"] == "node"}:
+        for length in range(MIN_HANDLE, len(g) + 1):
+            by_prefix.setdefault(g[:length], []).append(g)
+    return by_prefix
+
+
+def resolve(handle: str, index: dict) -> tuple[str | None, list[str]]:
+    """
+    `(guid, candidates)` for a handle. Exactly one candidate resolves.
+
+    None and many are both returned as "did not resolve", with the candidates,
+    because the caller's answer differs: a citation to an ambiguous handle is
+    unresolved, and a person typing one wants to see what they collided with.
+    """
+    hits = index.get(handle, [])
+    return (hits[0] if len(hits) == 1 else None), hits
+
+
 def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
     """
     Read citations out of the *parsed* content and turn each into an edge.
@@ -550,11 +580,7 @@ def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
     """
     b = Builder(mint)
     nodes = [r for r in records if r["record"] == "node"]
-    guids = {n["guid"] for n in nodes}
-    by_prefix: dict[str, list[str]] = {}
-    for g in guids:
-        for length in range(8, len(g) + 1):
-            by_prefix.setdefault(g[:length], []).append(g)
+    index = prefix_index(records)
 
     edges, unresolved = [], []
     for n in nodes:
@@ -563,11 +589,11 @@ def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
             if not m:
                 continue                      # an ordinary link, not a citation
             handle = m.group(1)
-            hits = by_prefix.get(handle, [])
-            if len(hits) != 1:
+            target, _ = resolve(handle, index)
+            if target is None:
                 unresolved.append(handle)
                 continue
             edges.append({"record": "edge", "guid": b._mint(),
                           "layer": CITATION_LAYER, "type": "cites",
-                          "source": n["guid"], "destination": hits[0]})
+                          "source": n["guid"], "destination": target})
     return edges, unresolved
