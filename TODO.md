@@ -319,6 +319,12 @@ resolver. It needs a design that answers what a view does with an abbreviated
 href and what `check` does when one stops resolving, and it should start from
 someone actually finding long handles painful rather than from the 21.7%.
 
+Note that shortening what is **stored** is a different question from shortening
+what is **typed**, and the second is the one with obvious value. See *Handle
+resolution as a separate tool* under Later: expanding a prefix before the
+citation is written gets the convenience without putting an abbreviation
+anywhere near the base.
+
 ### Subcommands v0.1 had and v0.2 does not
 
 `submit`, `serve`, `new`, `last`, `artifact`. `lookup` shipped — resolving a
@@ -455,6 +461,38 @@ Previously labelled "v2+".
 - [ ] Mobile / remote serving
 - [ ] Tags — may never be needed; hierarchy plus agent-written index pages may
       cover it
+
+### Handle resolution as a separate tool, not a feature of this one
+
+The idea is good and is being kept. What was removed in v0.2.1 was one *place*
+to put it, not the idea itself: typing a few characters instead of 36 and
+getting the block you meant is worth having.
+
+The thing to notice about the failure is where the resolution happened. A
+resolver inside `compost` meant abbreviated handles reached stored text and
+rendered views, and both inherited the ambiguity — an abbreviated href is a
+dead anchor to anyone clicking it, and a prefix that stops being unique as the
+base grows has no moment at which anyone is told. **Resolving at the keyboard
+inverts all of that.** A separate tool that expands a prefix to a full guid
+*before* the citation is written leaves the base entirely canonical: the view
+gets a whole guid, `check` gets a whole guid, and a collision surfaces
+immediately to a person who can simply type more characters, instead of
+silently years later to nobody.
+
+So the shape wanted is a small independent thing — `lookup`-adjacent, a shell
+function, an nvim mapping, a separate binary — that reads a base and prints a
+guid. Something a person or an editor calls; nothing the format knows about.
+
+It is not scheduled, because prefixes are only the easiest case of a general
+problem: a human-friendly name standing in for a canonical id. Aliases for
+documents and sessions want the same machinery, and a frequently cited block
+deserves a name rather than a shorter number. Designing it properly means
+answering things that have not been thought through — where aliases live, given
+that a base is immutable and an alias is by nature mutable and renameable;
+whether they are records or a side table; who resolves them and at what moment;
+what happens to an alias whose target is re-imported under a new guid; and what
+the tool does with an ambiguous one. Those answers should come from an alias
+system designed on purpose, not be back-derived from a prefix matcher.
 
 ---
 
