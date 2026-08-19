@@ -18,8 +18,10 @@ compost version
 
 ## STATUS
 
-Installed and working as `compost`, version 0.2.0. The five subcommands below
-are the whole program.
+Version 0.2.0. The six subcommands below are the whole program.
+
+`compost` is on PATH inside the `compost` conda env, which `DEVELOPMENT.md`
+describes; from a checkout `python3 -m src.cli` is equivalent.
 
 The v0.1 subcommands `new`, `submit`, `serve`, `lookup`, `last` and `artifact`
 no longer exist. `lookup` and `serve` are the two the daily loop misses; both
@@ -127,7 +129,7 @@ In the HTML view every citable block is an anchor; clicking a handle copies
 ### version
 
 Print the version. Also `--version` and `-V`. With no arguments at all, or with
-`--help`, compost prints its usage and exits 2 or 0 respectively.
+`--help`, `-h` or `help`, compost prints its usage and exits 2 or 0 respectively.
 
 ## FILES
 

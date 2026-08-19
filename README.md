@@ -47,7 +47,7 @@ each has been made to fail on purpose:
 
 ```
 $ ./tests/run.sh
-test_records             520/520 identity round-trip | 19567 nodes, 35308 edges
+test_records             520/520 identity round-trip   |   19567 nodes, 35308 edges
 test_sabotage            6/6 sabotages caught
 test_store               10/10 storage guarantees hold
 test_views               5/5 view guarantees hold
@@ -55,6 +55,7 @@ test_citations           7/7 citation guarantees hold
 test_bleach_session      7/7 session-fixture guarantees hold
 test_session             9/9 session-import guarantees hold
 test_session_views       10/10 session-view guarantees hold
+test_manpage             6/6 man-page guarantees hold
 ```
 
 The first line is the whole format in one assertion:

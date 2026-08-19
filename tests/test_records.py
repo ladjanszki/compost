@@ -133,9 +133,10 @@ def main(argv):
             for p in problems:
                 print(f"      {p}")
 
-    print(f"\n{ok}/{ok + bad} identity round-trip"
+    print("\nnode types: "
+          + ", ".join(f"{k}={v}" for k, v in kinds.most_common()))
+    print(f"{ok}/{ok + bad} identity round-trip"
           f"   |   {total_nodes} nodes, {total_edges} edges")
-    print("node types: " + ", ".join(f"{k}={v}" for k, v in kinds.most_common()))
     return 0 if bad == 0 else 1
 
 
