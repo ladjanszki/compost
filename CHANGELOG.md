@@ -3,6 +3,46 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## Unreleased — toward v0.2.1
+
+### The man page cannot drift again
+
+`tests/test_manpage.py` holds `docs/man-compost.md` against the dispatcher, in
+both directions and down to the number spelled out in prose. Ground truth is the
+program: every name is offered to `cli.main` in a scratch directory and has to be
+routed somewhere. v0.1.4 shipped a test with this name, the rewrite dropped it
+for a promise in a docstring, and what rotted first was the count — five above a
+list of six, copied from there into `CLAUDE.md`. Six sabotages, all caught.
+
+It found one thing on its first run: `-h` and `help` are accepted and were
+documented nowhere.
+
+### The acceptance test is visible again
+
+`run.sh` reads each suite's last line, and `test_records` printed its coverage
+histogram *after* its verdict — so the table reported node types and hid the
+520/520 the whole record format rests on. The verdict prints last now, and
+`run.sh` checks that the line it picked starts `N/M `, which makes the
+convention enforced rather than remembered. Sabotage-verified with a suite made
+to end on a stray line.
+
+### Smaller
+
+- `compost import` with no arguments printed `usage: store.py import <file>...`.
+  The program name comes from `argv[0]` now, so it is right through the CLI and
+  still right when the module is run directly.
+- `AGENTS.md` is folded into `CLAUDE.md` and gone. It was written to travel with
+  a base and teach an agent to read one without this repository, but `compost
+  init` never shipped it and no base exists yet, so its only possible readers
+  already had `CLAUDE.md`. The three rules it alone carried moved across:
+  property tests over snapshots, do not repair pandoc's output, and
+  reconstruction is not viewing.
+- The development env is `compost`, built from `environment.yml` with the CLI
+  installed by `pip install -e .`. The `knowledge-graph` env it had drifted into
+  is deleted. `CLAUDE.md`, `DEVELOPMENT.md` and the man page name it now, along
+  with the pandoc floor — the base conda env has 3.8 and the suites pass there
+  anyway, so nothing warned you.
+
 ## v0.2 — 2026-08-18 — nodes and edges, and none of the old code
 
 **Everything was rewritten.** Not a refactor: no line of the v0.1

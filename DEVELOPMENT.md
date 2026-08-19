@@ -33,6 +33,16 @@ Without them the suites still run, over 41 documents instead of 520.
 
 Python 3.12, pandoc 3.10+. Nothing from PyPI. Node is not needed.
 
+```bash
+conda env create -f environment.yml   # or `conda env update -f environment.yml`
+conda activate compost
+pip install -e .                      # puts `compost` on PATH
+```
+
+Check what you are in before believing a result: the base conda env has pandoc
+3.8, below the floor, and the suites pass there anyway, so nothing warns you.
+`python3 -m src.cli` runs the CLI from a checkout regardless of PATH.
+
 If `compost` cannot find pandoc, check that your shell profile is loaded — a
 non-interactive script does not source `.zshrc`, which is how a Node-based
 toolchain used to fail here.
@@ -52,7 +62,7 @@ toolchain used to fail here.
   costs a stale trunk. This was learned the direct way: a `conversations`
   branch left `main` seventeen commits behind, still describing `notes/`,
   `wiki/` and UUID block ids, so anyone reading the default branch — or any
-  agent following `AGENTS.md` — got confidently wrong instructions. That is the
+  agent following the instructions in it — got confidently wrong instructions. That is the
   documentation drift this repo has been rescued from twice, in a new costume.
   Branch only for a change that is a genuine one-way door, and merge it fast.
 - Commit per logical step; separate infrastructure/config changes from code.
