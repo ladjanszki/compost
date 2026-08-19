@@ -249,12 +249,48 @@ The one thing that makes v0.2 replace v0.1 rather than sit beside it.
 6. Optionally update the archived copies so the readable backup stays internally
    consistent. The pristine bytes stay in `compost-full-history.bundle`.
 
-### Sidechains, which nothing has ever tested
+### Sidechains arrive in a second file — soon, and ahead of the rest of v0.2.1
 
 The corpus contains **zero** sidechain lines, so log order and reply order are
-indistinguishable in every fixture, and subagent nesting has never been
-exercised. Needs a hand-built session fixture, not a bleached one — there is
-nothing to bleach.
+indistinguishable in every fixture and subagent nesting has never been
+exercised. That much was already known. What was assumed with it, and is wrong,
+is *where the lines are*: a subagent's turns are **not** interleaved into the
+parent transcript. Claude Code writes them to their own file.
+
+```
+<session-id>.jsonl                                  the parent, isSidechain:false
+<session-id>/subagents/agent-<agentId>.jsonl        the subagent, isSidechain:true
+```
+
+Measured 2026-08-19 on a session with one `Agent` call, 618 parent lines and 22
+sidechain lines:
+
+| | |
+|---|---|
+| uuid overlap between the two files | **0** |
+| sidechain `parentUuid` resolving inside its own file | 28 of 29 — the 29th is `null`, its root |
+| sidechain `parentUuid` resolving into the parent file | **0** |
+| `sessionId` | identical in both |
+| keys the sidechain file carries and the parent does not | `agentId`, `attributionAgent` |
+
+So the reply chain does not cross the file boundary, and importing the parent
+alone yields what it always did: no sidechain, and log order equal to reply
+order. **The importer has to be told to go and get the second file.** The join
+is the `Agent` toolcall in the parent — one `tool_use` in the log, with the
+`agentId` that names the sidechain file — so the sidechain's root turn hangs off
+that toolcall node, not off a `replies_to` edge.
+
+Do the import first and separately. It does **not** settle the question
+`docs/decisions.md:136` is waiting on — whether `next` (log order) and
+`replies_to` (reply order) can disagree — because within either file the two
+still agree, and across files there is no shared chain to disagree about. That
+question may not even be answerable from a single Claude Code log any more, and
+deciding it is a second piece of work. Sidechain import is worth having on its
+own: subagent work is invisible in the base until it lands, and it is where a
+growing share of the reasoning now happens.
+
+Note that a bleached fixture is possible now, which it was not when this entry
+was written — `src/bleach_session.py` has real sidechain input to work from.
 
 ### `file` nodes have no view
 
