@@ -303,11 +303,21 @@ add a `represents` edge when it matters.
 ### Short handles
 
 The measured cost of full uuids is 21.7% of a djot view, and 60–75% on small
-structurally dense files. The prefix optimisation is non-breaking — a resolver
-already accepts any unambiguous length, and there is a test for it — so this is
-purely a size win whenever it is wanted. Collision is the trigger: 0.5% at
-today's ~6,700 blocks, 17% at 40,000, 68% at 100,000, and `check` already
-rejects a base where two nodes share a handle.
+structurally dense files. Collision is the trigger to watch: 0.5% at today's
+~6,700 blocks, 17% at 40,000, 68% at 100,000, and `check` already rejects a
+base where two nodes share a handle.
+
+**This entry used to call the optimisation non-breaking**, because a resolver
+already accepted any unambiguous length and had a test. That resolver has been
+removed — see `docs/decisions.md`. It resolved prefixes in the graph while the
+HTML view emitted the href verbatim, so a short citation was a dead anchor for
+anyone clicking it, and uniqueness was recomputed per query, so a prefix could
+stop resolving as the base grew with nothing to report it.
+
+So this is **not** a free size win, and it is not a change to start from the
+resolver. It needs a design that answers what a view does with an abbreviated
+href and what `check` does when one stops resolving, and it should start from
+someone actually finding long handles painful rather than from the 21.7%.
 
 ### Subcommands v0.1 had and v0.2 does not
 

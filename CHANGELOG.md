@@ -28,34 +28,36 @@ to end on a stray line.
 
 ### `compost lookup HANDLE`
 
-Resolve a handle and see the block it names, plus everything citing it. This is
-the half of the daily loop that had no tool: `CLAUDE.md` told an agent to
-"resolve it from the graph" and left it to write its own JSONL scan.
+Print the node a handle names: guid, type, source file, and the node's own
+text. This is the half of the daily loop that had no tool — `CLAUDE.md` told an
+agent to "resolve it from the graph" and left it to write its own JSONL scan.
 
-Two things came out of building it that the design had not stated.
+**The handle is the whole guid**, and `lookup` does not report what cites the
+node. Both of those were built first and then deliberately removed before
+release, which is worth recording because the reasons generalise.
 
-`citation_edges` had never been called by the program — only by its own tests.
-So `cites` edges, which `docs/decisions.md` lists as a layer, existed nowhere in
-a real base. `lookup` derives them over the whole loaded graph at the moment you
-ask, which is what the docstring always implied and nothing did: a citation is a
-projection of the text, and deriving it late is also the only way a citation
-that crosses two documents resolves at all, since at import time the other
-document may not have been imported yet.
+*Prefix resolution.* `records.py` had grown a resolver taking any unambiguous
+prefix of 8 characters or more, and `decisions.md` had leaned on it to argue
+that short handles were a free future win. They are not. The resolver worked in
+the graph while the HTML view emitted the href verbatim, so a shortened
+citation resolved for a tool and was a **dead anchor for a person clicking
+it**. Uniqueness was recomputed per query over whatever was loaded, so a prefix
+unambiguous today collides as the base grows — and since `check` never looks at
+citations, nothing would have said so. It was an optimisation built ahead of
+any measured pain. `HANDLE_RE` now matches a whole uuid, so a prefix is not a
+short handle, it is an ordinary link, by construction.
 
-The prefix resolver was an index built inside `citation_edges` and reachable
-from nowhere else. It is `prefix_index` and `resolve` now, shared, so a handle
-that is ambiguous for a citation is ambiguous for a person and neither can
-drift into its own answer.
+*Backlinks.* `lookup` briefly printed what cited a node, which meant calling
+`citation_edges` on every query. That function had never been called by the
+program before — only by its own tests — so the `cites` layer `decisions.md`
+documents still exists nowhere in a real base. Deriving it at query time would
+have been the citation layer arriving by accident, ahead of its design, and a
+layer built that way is harder to replace than one that was never built.
 
-`lookup` does not gate on `check`, unlike `render`. A view asserts the whole
-graph is sound; a query answers one question from what is on disk, and refusing
-because an unrelated file has a dangling edge makes a broken base harder to
-debug, not safer. There is a test for exactly that.
-
-Ten guarantees, five sabotages. One sabotage earned its place immediately: a
-text-scanning implementation of citations finds the fenced code block and loses
-the real paragraph, so the citer *count* stays correct while the answer is
-wrong. The test asserted the count and passed. It asserts which node now.
+What remains is exact, small, and does not gate on `check`: a view asserts the
+whole graph is sound, a query answers one question from what is on disk, and
+refusing because an unrelated file has a dangling edge makes a broken base
+harder to debug rather than safer. Seven guarantees.
 
 ### Smaller
 

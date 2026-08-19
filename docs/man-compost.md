@@ -48,8 +48,8 @@ target is a handle:
 [-](#d826c4dd-eb36-4da9-acab-f6f424a90803)
 ```
 
-The link text carries nothing a machine reads. Handles resolve at any
-unambiguous length, so a shorter prefix may be used and the two forms coexist.
+The link text carries nothing a machine reads. A handle is the whole guid: a
+prefix of one does not match the citation syntax and is an ordinary link.
 
 ## SUBCOMMANDS
 
@@ -111,27 +111,23 @@ What it enforces:
 
 ### lookup HANDLE
 
-Resolve a handle and print the node it names, then every node that cites it.
+Print the node a handle names: the guid, the node type, the source file it came
+from, and the node's own text. Exits 0 on a hit and 1 on a miss.
 
-The handle may be a full guid or **any unambiguous prefix of at least 8
-characters**; a shorter one is not a handle and matches nothing. A prefix that
-matches more than one node prints the candidates and exits 1 rather than
-picking a winner, because guessing which block someone meant is how a citation
-starts pointing at the wrong sentence.
+**The handle is the whole guid.** A prefix is not a shorter handle, and there is
+no resolver that would make it one. Shortening handles is an optimisation
+nobody has yet felt the need for, and an abbreviation that silently stops
+resolving as a base grows is a worse failure than a long citation.
 
-Prints the guid, the node type and the source file it came from, then the
-node's own text, then one `cited by` line per citing node. Exits 0 on a hit and
-1 on a miss.
+It does **not** report what cites the node. That is the citation layer's
+question and the citation layer does not exist yet; answering it here would
+have meant deriving `cites` edges on every query, and a layer built by accident
+is harder to replace than one that was never built.
 
 Unlike `render`, this does **not** require `check` to pass. A view asserts the
 whole graph is sound; a lookup answers one question from what is on disk, and
 refusing because some unrelated file has a dangling edge would make a broken
 base harder to debug rather than safer.
-
-Citations are derived at the moment you ask, not read from stored edges: a
-`cites` edge is a projection of the text and nothing persists it. That is also
-what makes a citation crossing two documents resolvable at all, since at import
-time the other document may not have been imported yet.
 
 ### render
 

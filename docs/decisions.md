@@ -90,18 +90,35 @@ with the originals preserved.
 
 ## Identifiers and citations, as settled
 
-A handle is the **full UUIDv4** — in records, in views, and in citations.
-A shorter prefix is a later optimisation and is deliberately not taken yet.
+A handle is the **full UUIDv4** — in records, in views, and in citations. A
+prefix of one is not a handle: it does not match the citation syntax, and there
+is no resolver that would make it one.
 
 It costs something measurable. On the bleached notes, handle text is **21.7%**
 of the djot view at full length against 7.7% at eight characters, and on small
 structurally dense documents it reaches 60–75% of the file. That is real, and
-it is accepted, because deferring commits to nothing: a resolver takes any
-unambiguous length, so when the prefix arrives, old citations stay long, new
-ones are written short, and no pass over stored text is needed. Long and short
-coexist exactly as full and abbreviated SHAs do in a git log. The prefix is a
-prefix, not a second hash — the same relationship git has between an object id
-and what it prints.
+it is accepted.
+
+*This entry previously said* the cost was accepted because deferring committed
+to nothing — a resolver already took any unambiguous length, so when the prefix
+arrived old citations would stay long, new ones would be written short, and no
+pass over stored text would be needed, exactly as full and abbreviated SHAs
+coexist in a git log.
+
+That resolver was written and then removed, and the reasoning with it. Three
+things were wrong with it. It resolved prefixes in the graph while the HTML
+view emitted the href verbatim, so a shortened citation resolved for a tool and
+was a **dead anchor for a person clicking it**. Uniqueness was computed over
+whatever happened to be loaded, so a prefix unambiguous today collides as the
+base grows — and `check` never looked at citations, so nothing would have said
+so. And it was an optimisation built ahead of any measured pain: nobody had
+complained about handle length; the 21.7% was a number in a document, not a
+person's complaint. The git analogy held for the storage and broke for the
+reader, which is the half that matters here.
+
+Short handles remain a legitimate future change. They need a design that says
+what a view does with an abbreviated href and what `check` does when one stops
+resolving — not a resolver left lying around in the hope that the rest follows.
 
 Collision is the trigger to watch, since the first eight hex characters of a
 UUIDv4 are 32 random bits: 0.5% at today's ~6,700 blocks, 17% at 40,000, 68% at

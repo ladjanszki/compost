@@ -45,14 +45,14 @@ compost init             # makes .compost/ here; every other command walks up to
 compost import FILE...   # markdown by any suffix, transcripts as *.jsonl
 compost check            # must report 0 problems
 compost render           # views/default-{djot,html,md}
-compost lookup HANDLE    # the block a handle names, and what cites it
+compost lookup HANDLE    # the block a handle names
 ```
 
 `.compost/graph/**/*.jsonl` is the corpus: one record per line, each saying
 whether it is a `node` or an `edge`. Filenames carry no meaning, and load order
 cannot change the result. To read a base as prose use
 `.compost/views/default-djot/`, which carries a handle on every citable block.
-Any unambiguous prefix of a handle resolves.
+A handle is the whole guid; a prefix of one resolves to nothing.
 
 This repo has no `.compost/` of its own. The base it would hold is still the
 unmigrated v0.1 corpus below.
@@ -105,9 +105,9 @@ shaped the way it is, not a description of the current tool.
 They write in nvim, open `.compost/views/default-html/` in a browser and click
 blocks to copy handles, then reply by citing them. A citation looks like
 `[-](#d826c4dd-eb36-4da9-acab-f6f424a90803)`. When they paste one, resolve it
-before answering: `compost lookup d826c4dd` prints the block and everything
-citing it, and takes any unambiguous prefix. There is still no `serve`, so the
-HTML view is a file you open.
+before answering: `compost lookup <guid>` prints the block it names, whole guid
+only. It does not say what cites it — there is no citation layer yet. There is
+still no `serve`, so the HTML view is a file you open.
 
 **Answer here, in this interface. Do not submit your reply as a turn.** They
 import the round afterwards, which makes the answer addressable anyway.
