@@ -311,9 +311,9 @@ rejects a base where two nodes share a handle.
 
 ### Subcommands v0.1 had and v0.2 does not
 
-`submit`, `lookup`, `serve`, `new`, `last`, `artifact`. `lookup` and `serve` are
-the two that the daily loop actually misses: resolving a pasted handle without
-grepping, and reading the HTML view without opening a file manager.
+`submit`, `serve`, `new`, `last`, `artifact`. `lookup` shipped — resolving a
+pasted handle without grepping was the sharper of the two daily-loop gaps.
+`serve` is what remains: reading the HTML view without opening a file manager.
 
 ### Smaller, but named
 

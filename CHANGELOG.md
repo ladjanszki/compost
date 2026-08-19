@@ -26,6 +26,37 @@ histogram *after* its verdict — so the table reported node types and hid the
 convention enforced rather than remembered. Sabotage-verified with a suite made
 to end on a stray line.
 
+### `compost lookup HANDLE`
+
+Resolve a handle and see the block it names, plus everything citing it. This is
+the half of the daily loop that had no tool: `CLAUDE.md` told an agent to
+"resolve it from the graph" and left it to write its own JSONL scan.
+
+Two things came out of building it that the design had not stated.
+
+`citation_edges` had never been called by the program — only by its own tests.
+So `cites` edges, which `docs/decisions.md` lists as a layer, existed nowhere in
+a real base. `lookup` derives them over the whole loaded graph at the moment you
+ask, which is what the docstring always implied and nothing did: a citation is a
+projection of the text, and deriving it late is also the only way a citation
+that crosses two documents resolves at all, since at import time the other
+document may not have been imported yet.
+
+The prefix resolver was an index built inside `citation_edges` and reachable
+from nowhere else. It is `prefix_index` and `resolve` now, shared, so a handle
+that is ambiguous for a citation is ambiguous for a person and neither can
+drift into its own answer.
+
+`lookup` does not gate on `check`, unlike `render`. A view asserts the whole
+graph is sound; a query answers one question from what is on disk, and refusing
+because an unrelated file has a dangling edge makes a broken base harder to
+debug, not safer. There is a test for exactly that.
+
+Ten guarantees, five sabotages. One sabotage earned its place immediately: a
+text-scanning implementation of citations finds the fenced code block and loses
+the real paragraph, so the citer *count* stays correct while the answer is
+wrong. The test asserted the count and passed. It asserts which node now.
+
 ### Smaller
 
 - `compost import` with no arguments printed `usage: store.py import <file>...`.

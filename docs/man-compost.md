@@ -12,20 +12,21 @@ compost init [DIR]
 compost import FILE...
 compost ls
 compost check
+compost lookup HANDLE
 compost render
 compost version
 ```
 
 ## STATUS
 
-Version 0.2.0. The six subcommands below are the whole program.
+Version 0.2.0. The seven subcommands below are the whole program.
 
 `compost` is on PATH inside the `compost` conda env, which `DEVELOPMENT.md`
 describes; from a checkout `python3 -m src.cli` is equivalent.
 
-The v0.1 subcommands `new`, `submit`, `serve`, `lookup`, `last` and `artifact`
-no longer exist. `lookup` and `serve` are the two the daily loop misses; both
-are in `TODO.md` under v0.2.1.
+The v0.1 subcommands `new`, `submit`, `serve`, `last` and `artifact` no longer
+exist. `lookup` is back; `serve` is the one the daily loop still misses, and is
+in `TODO.md` under v0.2.1.
 
 ## DESCRIPTION
 
@@ -108,6 +109,30 @@ What it enforces:
 - no two nodes share a handle
 - `content_hash` is present exactly when a node has content of its own
 
+### lookup HANDLE
+
+Resolve a handle and print the node it names, then every node that cites it.
+
+The handle may be a full guid or **any unambiguous prefix of at least 8
+characters**; a shorter one is not a handle and matches nothing. A prefix that
+matches more than one node prints the candidates and exits 1 rather than
+picking a winner, because guessing which block someone meant is how a citation
+starts pointing at the wrong sentence.
+
+Prints the guid, the node type and the source file it came from, then the
+node's own text, then one `cited by` line per citing node. Exits 0 on a hit and
+1 on a miss.
+
+Unlike `render`, this does **not** require `check` to pass. A view asserts the
+whole graph is sound; a lookup answers one question from what is on disk, and
+refusing because some unrelated file has a dangling edge would make a broken
+base harder to debug rather than safer.
+
+Citations are derived at the moment you ask, not read from stored edges: a
+`cites` edge is a projection of the text and nothing persists it. That is also
+what makes a citation crossing two documents resolvable at all, since at import
+time the other document may not have been imported yet.
+
 ### render
 
 Generate all three views into `.compost/views/`. If the graph fails `check`,
@@ -188,6 +213,6 @@ compost version
 
 ## NOT YET IMPLEMENTED
 
-No `submit`, `lookup`, `serve`, `new` or `artifact`. No view for `file` nodes,
+No `submit`, `serve`, `new` or `artifact`. No view for `file` nodes,
 which are uncontained and so appear in no document tree. No migration of a
 v0.1 base. Empty `thinking` nodes are stored but not rendered.

@@ -10,7 +10,7 @@ things are temporarily out of step. Read this before assuming either.
 conda env create -f environment.yml   # once; later, conda env update -f …
 conda activate compost                # pandoc 3.10 — base has 3.8 and won't say so
 pip install -e .                      # puts `compost` on PATH
-./tests/run.sh                        # nine suites, all should pass
+./tests/run.sh                        # ten suites, all should pass
 compost --help
 ```
 
@@ -25,7 +25,7 @@ locally. It is gitignored; without it the suites run over 42 and still pass.
 
 Then read, in this order:
 
-1. **`docs/man-compost.md`** — the six subcommands, verified against the
+1. **`docs/man-compost.md`** — the seven subcommands, verified against the
    program rather than remembered.
 2. **`docs/decisions.md`** — what was decided and why, with the measurements.
    Every non-obvious flag in this codebase is justified there.
@@ -45,6 +45,7 @@ compost init             # makes .compost/ here; every other command walks up to
 compost import FILE...   # markdown by any suffix, transcripts as *.jsonl
 compost check            # must report 0 problems
 compost render           # views/default-{djot,html,md}
+compost lookup HANDLE    # the block a handle names, and what cites it
 ```
 
 `.compost/graph/**/*.jsonl` is the corpus: one record per line, each saying
@@ -104,8 +105,9 @@ shaped the way it is, not a description of the current tool.
 They write in nvim, open `.compost/views/default-html/` in a browser and click
 blocks to copy handles, then reply by citing them. A citation looks like
 `[-](#d826c4dd-eb36-4da9-acab-f6f424a90803)`. When they paste one, resolve it
-from the graph before answering — there is no `serve` and no `lookup`, so the
-HTML view is a file you open and resolving means reading the graph.
+before answering: `compost lookup d826c4dd` prints the block and everything
+citing it, and takes any unambiguous prefix. There is still no `serve`, so the
+HTML view is a file you open.
 
 **Answer here, in this interface. Do not submit your reply as a turn.** They
 import the round afterwards, which makes the answer addressable anyway.

@@ -7,7 +7,7 @@ src/            the implementation
   cli.py        the compost command: a dispatcher and nothing else
   records.py    pandoc AST <-> records, the whole-graph checks, citations
   session.py    Claude Code JSONL -> records
-  store.py      the .compost/ base: init, import, ls, check
+  store.py      the .compost/ base: init, import, ls, check, lookup
   views.py      the three views, and the per-node-type view dispatch
   bleach.py     lorem-ise a markdown file, keep the formatting
   bleach_session.py   the same for a transcript
