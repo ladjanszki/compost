@@ -1,6 +1,6 @@
 # The record format, and the pandoc AST ↔ compost translation
 
-*Status: built and passing, now covering transcripts as well as text. `tools/records.py` implements it; `tools/test_records.py` and `tools/test_sabotage.py` verify it.*
+*Status: built and passing, now covering transcripts as well as text. `src/records.py` implements it; `tests/test_records.py` and `tests/test_sabotage.py` verify it.*
 
 This is the design for the two record types the graph is made of, and for the
 pair of functions that move between them and pandoc's AST. It builds on
@@ -14,7 +14,7 @@ records_to_ast(ast_to_records(ast)) == ast
 ```
 
 Exact equality on the pandoc AST, for every document in `fixtures/` and
-`corpus/`. This is the same test `tools/roundtrip.py` already runs against
+`corpus/`. This is the same test `src/roundtrip.py` already runs against
 pandoc alone, with our format spliced into the middle:
 
 ```
@@ -278,7 +278,7 @@ clever about it in advance.
 
 ## How this gets tested
 
-Extend `tools/roundtrip.py` with a second stage, reusing every fixture:
+Extend `src/roundtrip.py` with a second stage, reusing every fixture:
 
 1. `ast_to_records`, then `records_to_ast`, assert equality with the input AST.
 2. Assert every node has exactly one incoming `contains`, except document roots.

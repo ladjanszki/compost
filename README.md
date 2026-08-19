@@ -60,8 +60,8 @@ test_manpage             6/6 man-page guarantees hold
 
 The first line is the whole format in one assertion:
 `records_to_ast(ast_to_records(ast)) == ast`, exact equality, over 520
-documents — the fixtures, a 112-document documentation site, and two hand-built
-ASTs reaching the constructors no markdown reader can produce.
+documents — 42 fixtures, a 478-document documentation site, and one hand-built
+AST reaching the constructors no markdown reader can produce.
 
 ## Requirements
 

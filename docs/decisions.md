@@ -3,7 +3,7 @@
 Working document for the pandoc-only importer. Decisions here are settled
 unless revisited explicitly; known issues are accepted and *not* being fixed
 in this step. Everything is measured against pandoc 3.10.1 / pandoc-types
-1.23.1.2 on the 19 notes in `raw/` plus the six root markdown documents.
+1.23.1.2 on the 19 notes in `raw/` plus the five root markdown documents.
 
 ## The dialect
 
@@ -235,6 +235,6 @@ inheriting the second.
   explicitly or a whole class of content vanishes without an error.
 - **No PDF reader in pandoc.** `pdf` is an output format only, so PDF input
   needs a separate extractor. Deferred.
-- **djot.js and the `npx` spawn stay for now**, to be removed as part of 0.2
-  rather than ahead of it. Pandoc reads and writes djot natively, so nothing
-  blocks it.
+- **djot.js and the `npx` spawn are gone**, removed in v0.2 as this entry
+  planned. Pandoc reads and writes djot natively, so there is no second
+  toolchain and no subprocess spawn per canonization.

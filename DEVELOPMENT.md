@@ -27,7 +27,7 @@ git clone --depth 1 https://github.com/jgm/pandoc-types.git vendor/pandoc-types
 git clone --depth 1 https://github.com/rust-lang/book.git tests/corpus/rust-book
 ```
 
-Without them the suites still run, over 41 documents instead of 520.
+Without them the suites still run, over 42 documents instead of 520.
 
 ## Requirements
 

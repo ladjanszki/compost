@@ -7,19 +7,21 @@ things are temporarily out of step. Read this before assuming either.
 ## Do this first
 
 ```bash
-conda activate compost   # pandoc 3.10, and `compost` on PATH
-./tests/run.sh           # nine suites, all should pass
+conda env create -f environment.yml   # once; later, conda env update -f …
+conda activate compost                # pandoc 3.10 — base has 3.8 and won't say so
+pip install -e .                      # puts `compost` on PATH
+./tests/run.sh                        # nine suites, all should pass
 compost --help
 ```
 
-The env is built from `environment.yml`, with the CLI put on PATH by
-`pip install -e .`. Outside it there is no `compost`, and the base conda env has
-pandoc 3.8 — under the 3.10 floor, and the suites pass there anyway, so nothing
-warns you. `python3 -m src.cli` runs the CLI from a checkout either way.
+Outside that env there is no `compost`, and the suites pass under the base env's
+pandoc 3.8 without ever mentioning they ran below the 3.10 floor — so check
+which env a green run came from. `python3 -m src.cli` runs the CLI from a
+checkout either way.
 
 `run.sh` reports 520 documents only because `tests/corpus/rust-book` is cloned
-locally. It is gitignored; without it the suites run over 41 documents and still
-pass. `DEVELOPMENT.md` has the clone commands.
+locally. It is gitignored; without it the suites run over 42 and still pass.
+`DEVELOPMENT.md` has the clone commands.
 
 Then read, in this order:
 
@@ -39,6 +41,7 @@ into nodes and edges under `.compost/graph/`, as JSONL. Every view is generated
 from those records and from nothing else.
 
 ```bash
+compost init             # makes .compost/ here; every other command walks up to it
 compost import FILE...   # markdown by any suffix, transcripts as *.jsonl
 compost check            # must report 0 problems
 compost render           # views/default-{djot,html,md}
