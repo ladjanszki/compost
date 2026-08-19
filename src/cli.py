@@ -13,6 +13,7 @@ behaviour here.
     compost check           verify the graph
     compost lookup HANDLE   print the node a handle names
     compost render          generate the three views
+    compost serve [-p N]    hand the HTML view to a browser
     compost version         print the version
 
 `docs/man-compost.md` is the full description and is kept honest by being
@@ -30,6 +31,7 @@ USAGE = """usage: compost <command> [args]
   check           verify the graph, non-zero if it fails
   lookup HANDLE   print the node a handle names
   render          generate views/default-{djot,html,md}
+  serve [-p N]    serve the HTML view on 127.0.0.1:7373
   version         print the version
 
 A base is found by walking up to the nearest .compost/ directory."""
@@ -50,6 +52,10 @@ def main(argv=None) -> int:
     if cmd == "render":
         from . import views
         return views.main(argv[1:])
+
+    if cmd == "serve":
+        from . import serve
+        return serve.main(argv[1:])
 
     if cmd in ("init", "import", "ls", "check", "lookup"):
         from . import store
