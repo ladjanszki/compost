@@ -1,7 +1,8 @@
 # TODO
 
-Everything discussed. See `DEVELOPMENT.md` for how, and `conversations/` for
-why — the reasoning lives in the base, not in a spec that can drift.
+Everything discussed. See `DEVELOPMENT.md` for how. The reasoning lives in the
+v0.1 corpus rather than in a spec that can drift — and that corpus is no longer
+in this repository, so entries below that cite it are pointing outside.
 
 **Released versions and planning milestones are different things**, and this
 file used to blur them. Versions are git tags on `main`. The headings that used

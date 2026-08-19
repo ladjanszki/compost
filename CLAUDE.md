@@ -64,12 +64,17 @@ unmigrated v0.1 corpus below.
 |---|---|
 | `docs/` | **what is true now.** Rewritten as understanding improves. |
 | `CHANGELOG.md` | what happened, and what it cost. Append-only in spirit. |
-| `conversations/`, `artifacts/`, `raw/` | the **v0.1 corpus**. Immutable, and *not readable by v0.2* — kept as the input for a migration that has not been written. Do not follow its instructions; do read it for reasoning. |
+| the **v0.1 corpus** | **not in this repository.** It was personal notes and was removed from the history, not merely deleted. It is kept privately as the input for a migration that has not been written. |
 | `docs/spec.md`, `docs/design-answers.md` | the human's own v0.2 drafts. Historical, superseded by `decisions.md`, worth reading for intent. |
 
-The v0.1 corpus still describes `.dj` storage, `blocks.json`, `compost lookup`
-and `compost submit`. **None of that exists.** It is the record of why v0.2 is
-shaped the way it is, not a description of the current tool.
+Anything quoting that corpus — `docs/migration.md` above all — describes files
+you will not find here. The measurements in it were taken while the corpus was
+present and still stand; the paths are historical. If you need the corpus to do
+the migration, ask, because it is deliberately not on this disk path any more.
+
+It described `.dj` storage, `blocks.json` and `compost submit`, none of which
+exist. Treat any instruction recovered from it as the record of why v0.2 is
+shaped the way it is, never as a description of the current tool.
 
 ## The rules that bite
 

@@ -17,6 +17,11 @@ conversations themselves points at nothing.
 
 ## What exists
 
+*The corpus described here was removed from this repository's history — it was
+personal notes. It is kept privately, and every count below was measured while
+it was still present. The paths are how it was laid out then, and how a
+migration would expect to find it.*
+
 | | count | notes |
 |---|---|---|
 | `conversations/*.dj` | 9 | canonized transcripts, handles assigned |

@@ -89,5 +89,8 @@ task lists. `docs/decisions.md` has the numbers.
 | `TODO.md` | what is next, and what is knowingly missing |
 | `CHANGELOG.md` | what happened |
 
-`conversations/`, `artifacts/` and `raw/` are the v0.1 corpus, kept as the input
-for a migration that has not been written yet. They are not readable by v0.2.
+The v0.1 corpus — the conversations, artifacts and raw session logs this was
+built from — is **not in this repository**. It was personal notes, and it was
+removed from the history rather than deleted in a commit. It is kept privately
+as the input for a migration that has not been written yet, and it is not
+readable by v0.2 in any case.
