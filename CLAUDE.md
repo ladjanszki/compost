@@ -34,8 +34,8 @@ Then read, in this order:
    Every non-obvious flag in this codebase is justified there.
 3. **`docs/record-format.md`** — the node and edge design.
 4. **`DEVELOPMENT.md`** — the `src/` module map, and the conventions.
-5. **`TODO.md`**, section `v0.2.1` — what is knowingly missing. Start here for
-   "what should I do next".
+5. **`TODO.md`**, section *Known gaps* — what is knowingly missing and has not
+   shipped. Start here for "what should I do next".
 
 ## The shape
 

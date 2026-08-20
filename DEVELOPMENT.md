@@ -82,8 +82,9 @@ toolchain used to fail here.
   single day, which is how a version number stops meaning anything: it should mark a
   change in what the tool can do, not a change in the working tree. Finish a
   piece of work, commit it, and stop — the tag comes when the version has a
-  theme somebody could describe. `v0.2.1` is the next one open, and `TODO.md`
-  lists what it is waiting for.
+  theme somebody could describe. `TODO.md`'s *Known gaps* lists what is still
+  missing — deliberately not named after a version, because a bucket wearing a
+  version number reads as a promise the moment that version ships.
 - **Run `./tests/clean-room.sh --with-agent` before you tag.** It is the only
   thing that tests the contributor experience rather than the code: a clone of
   what is actually pushed, a conda env built from `environment.yml`,
@@ -99,6 +100,13 @@ toolchain used to fail here.
   line means. Only `CLAUDE.md` is auto-loaded, measured: one file, nothing under
   `docs/`, `tests/` or `src/`. It costs an API call, which is why it is opt-in
   everywhere except here.
+
+  It also checks that the docs describe only what shipped. A `TODO.md` heading
+  beginning with a version name is a section claiming to be that release, so if
+  the tag exists the heading must be marked done — and the newest tag must have
+  a `CHANGELOG.md` entry. Both come from tagging v0.2.1 while `TODO.md` still
+  had a `v0.2.1` bucket full of open items, which read as a list of what the
+  release contained.
 - **Work on `main`; tag each version.** No feature branches. One developer, no
   CI, no review gate — a branch buys isolation from nothing and
   costs a stale trunk. This was learned the direct way: a `conversations`

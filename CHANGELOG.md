@@ -91,8 +91,50 @@ the default of anything common. `-p` overrides it.
 Nine guarantees, five sabotages, including that nothing outside the served
 directory is reachable.
 
+### Test material in two tiers
+
+`tests/fixtures/` is an 80 KB **smoke set**: the documents the suites name
+directly — the one markdown file that reaches every sabotage, a hand-built AST
+no reader can produce, three notes, and one transcript trimmed to the shortest
+prefix carrying text, tool_use, tool_result and thinking. Every suite runs on a
+bare clone.
+
+Everything else moved to a separate repository and is fetched at the commits
+pinned in `tests/corpus.txt` by `./tests/fetch-corpus.sh`, alongside rust-book.
+A commit SHA is already a hash over the tree, so the pin is the checksum. That
+takes the round-trip from 5 documents to 525.
+
+Four guarantees assert volume — over 1000 prose blocks, over 100 thinking
+nodes, over 5000 nodes, over 100 tool calls. They report themselves **skipped**
+when the corpus is absent rather than being weakened to fit the smaller set,
+and `run.sh` ends with `corpus present` or `corpus ABSENT`, because 5/5 and
+525/525 are the same shape.
+
+The split happened now rather than later on purpose: this repository has had
+material removed from its history retroactively, which is expensive and leaves
+residue on any remote it was pushed to, and test data only grows.
+
+### `tests/clean-room.sh`
+
+What the suites cannot tell you: whether somebody else could start. It clones
+what is actually pushed, builds an env from `environment.yml`, installs, runs
+both tiers, and exercises every subcommand. `--with-agent` adds the one check
+the rest of it structurally cannot make — every command in the script is the
+*correct* sequence, hardcoded, so it passes whether or not `CLAUDE.md` mentions
+any of it. So it asks a fresh Claude, in the clone, with only `CLAUDE.md` in
+context, to name the fetch command, the runner, and what the runner's last line
+means. Exactly one file is auto-loaded into a fresh session, measured.
+
+Not wired into `run.sh` and not automated. `DEVELOPMENT.md` ties it to the one
+moment the answer matters: before tagging.
+
 ### Smaller
 
+- The v0.1 corpus and 85 MB of another project's material were removed from
+  this repository's **history**, not merely deleted — they were personal notes.
+  A clone is 3.9 MB now, was 56 MB. The bytes are kept privately, and
+  `docs/migration.md` says so up front rather than describing files a reader
+  will not find.
 - `compost import` with no arguments printed `usage: store.py import <file>...`.
   The program name comes from `argv[0]` now, so it is right through the CLI and
   still right when the module is run directly.

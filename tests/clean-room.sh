@@ -97,6 +97,25 @@ curl -s -D- -o /dev/null http://127.0.0.1:7373/ \
   | grep -qi 'cache-control: no-store'; check $? "responses are not cacheable"
 kill $SP 2>/dev/null; wait $SP 2>/dev/null
 
+step "the docs describe only what shipped"
+cd "$ROOT/compost" || exit 1
+# A TODO heading that *starts with* a version name is a section claiming to be
+# that release. If the tag exists and the heading is not marked done, the file
+# is presenting unshipped work as shipped — which is what happened when a
+# planning bucket called "v0.2.1" was still full of open items on the day
+# v0.2.1 was tagged. Headings that merely mention a version in prose are fine.
+stale=$(grep -nE '^#+ +v[0-9][0-9A-Za-z.-]*' TODO.md | while IFS= read -r line; do
+  ver=$(echo "$line" | sed -E 's/^[0-9]+:#+ +(v[0-9][0-9A-Za-z.-]*).*/\1/')
+  if git rev-parse -q --verify "refs/tags/$ver" >/dev/null && ! echo "$line" | grep -q '✓'; then
+    echo "$line"
+  fi
+done)
+[ -z "$stale" ]; check $? "no TODO section is named after a shipped version"
+[ -n "$stale" ] && echo "$stale" | sed 's/^/    /'
+
+newest=$(git tag -l --sort=-v:refname | grep '^v[0-9]' | head -1)
+grep -qF "## $newest " CHANGELOG.md; check $? "CHANGELOG has an entry for $newest"
+
 if [ "$WITH_AGENT" -eq 1 ]; then
   step "a fresh Claude, given only CLAUDE.md"
   cd "$ROOT/compost" || exit 1

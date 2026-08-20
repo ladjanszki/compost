@@ -220,11 +220,17 @@ Deferred out of this release on purpose:
   supplies a real linear-time parser with native block attributes — and the
   man page's SEE ALSO says so in one paragraph, which is not enough
 
-## v0.2.1 — what v0.2 knowingly lacks
+## Known gaps — found and named, not scheduled
 
-v0.2 is usable on its own: import text and transcripts, check, render three
-views. Everything below is a real gap, listed because it was found and named
-rather than discovered later.
+**Nothing below has shipped.** This heading used to read `v0.2.1`, which was a
+planning bucket wearing a version number — so when v0.2.1 was tagged it read as
+a list of what that release contained, which was the opposite of the truth.
+Buckets get names here; releases get numbers, and `CHANGELOG.md` says what is
+in them.
+
+As of v0.2.1 the tool imports text and transcripts, checks, renders three
+views, resolves a handle and serves the HTML. Everything below is a real gap,
+listed because it was found and named rather than discovered later.
 
 ### The migration
 
@@ -250,7 +256,7 @@ The one thing that makes v0.2 replace v0.1 rather than sit beside it.
 6. Optionally update the archived copies so the readable backup stays internally
    consistent. The pristine bytes stay in `compost-full-history.bundle`.
 
-### Sidechains arrive in a second file — soon, and ahead of the rest of v0.2.1
+### Sidechains arrive in a second file — next, and ahead of the rest of this list
 
 The corpus contains **zero** sidechain lines, so log order and reply order are
 indistinguishable in every fixture and subagent nesting has never been
