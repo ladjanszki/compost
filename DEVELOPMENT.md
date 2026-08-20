@@ -20,7 +20,6 @@ tests/          one suite per property; ./tests/run.sh runs them all
   fetch-corpus.sh
   clean-room.sh whether somebody else could start: clone, env, install, run
   tier.py       which material is on disk, and what that means for a guarantee
-  corpus/       cloned documentation sites, gitignored
 docs/           man page, decisions, record format, the original drafts
 vendor/         pandoc-types, cloned to read the AST grammar; no test uses it
 ```
@@ -85,13 +84,21 @@ toolchain used to fail here.
   piece of work, commit it, and stop — the tag comes when the version has a
   theme somebody could describe. `v0.2.1` is the next one open, and `TODO.md`
   lists what it is waiting for.
-- **Run `./tests/clean-room.sh` before you tag.** It is the only thing that
-  tests the contributor experience rather than the code: a clone of what is
-  actually pushed, a conda env built from `environment.yml`, `pip install -e .`,
-  both test tiers, and every subcommand. It takes minutes because it builds an
-  environment, so it is not wired into `run.sh` and not automated — tagging is
-  the one moment the answer matters. The suites have never caught a broken
-  quickstart; this does.
+- **Run `./tests/clean-room.sh --with-agent` before you tag.** It is the only
+  thing that tests the contributor experience rather than the code: a clone of
+  what is actually pushed, a conda env built from `environment.yml`,
+  `pip install -e .`, both test tiers, and every subcommand. It takes minutes
+  because it builds an environment, so it is not wired into `run.sh` and not
+  automated — tagging is the one moment the answer matters.
+
+  `--with-agent` adds the check the rest of the script structurally cannot make.
+  Every command in it is the *correct* sequence, hardcoded, so it passes whether
+  or not `CLAUDE.md` mentions any of it — a quickstart that forgets a step still
+  goes green. So it asks a fresh Claude, in the clone, with only `CLAUDE.md` in
+  context, to name the fetch command, the runner, and what the runner's last
+  line means. Only `CLAUDE.md` is auto-loaded, measured: one file, nothing under
+  `docs/`, `tests/` or `src/`. It costs an API call, which is why it is opt-in
+  everywhere except here.
 - **Work on `main`; tag each version.** No feature branches. One developer, no
   CI, no review gate — a branch buys isolation from nothing and
   costs a stale trunk. This was learned the direct way: a `conversations`

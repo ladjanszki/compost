@@ -52,7 +52,7 @@ compost lookup HANDLE    # the block a handle names
 compost serve            # the HTML view on 127.0.0.1:7373
 ```
 
-`.compost/graph/**/*.jsonl` is the corpus: one record per line, each saying
+`.compost/graph/**/*.jsonl` holds **the records**: one per line, each saying
 whether it is a `node` or an `edge`. Filenames carry no meaning, and load order
 cannot change the result. To read a base as prose use
 `.compost/views/default-djot/`, which carries a handle on every citable block.
@@ -60,6 +60,11 @@ A handle is the whole guid; a prefix of one resolves to nothing.
 
 This repo has no `.compost/` of its own. The base it would hold is still the
 unmigrated v0.1 corpus below.
+
+**Three things get called a corpus here, so this file is strict about it.**
+Bare *corpus* always means the **test corpus** under `tests/corpus/`. The
+**v0.1 corpus** is the removed personal notes and is never unqualified. And a
+base's own content is **the records**, never a corpus.
 
 ## What is authoritative
 
@@ -70,10 +75,10 @@ unmigrated v0.1 corpus below.
 | the **v0.1 corpus** | **not in this repository.** It was personal notes and was removed from the history, not merely deleted. It is kept privately as the input for a migration that has not been written. |
 | `docs/spec.md`, `docs/design-answers.md` | the human's own v0.2 drafts. Historical, superseded by `decisions.md`, worth reading for intent. |
 
-Anything quoting that corpus — `docs/migration.md` above all — describes files
-you will not find here. The measurements in it were taken while the corpus was
-present and still stand; the paths are historical. If you need the corpus to do
-the migration, ask, because it is deliberately not on this disk path any more.
+Anything quoting the v0.1 corpus — `docs/migration.md` above all — describes
+files you will not find here. Its measurements were taken while those files were
+present and still stand; the paths are historical. If you need them to do the
+migration, ask, because they are deliberately not on this disk any more.
 
 It described `.dj` storage, `blocks.json` and `compost submit`, none of which
 exist. Treat any instruction recovered from it as the record of why v0.2 is

@@ -11,8 +11,17 @@
 # and not automated: run it before tagging a version, which is the only moment
 # the answer matters. See DEVELOPMENT.md.
 #
-#   ./tests/clean-room.sh [env-name] [repo-url]
+# With --with-agent it also asks a fresh Claude, in the clone, what it can work
+# out from CLAUDE.md alone. That is the one failure this script cannot otherwise
+# see: the commands below are the *correct* sequence, hardcoded, so they pass
+# whether or not CLAUDE.md ever mentions them. A reader following the document
+# is the only thing that notices a missing step. Costs an API call, so it is
+# opt-in.
+#
+#   ./tests/clean-room.sh [--with-agent] [env-name] [repo-url]
 set -u
+WITH_AGENT=0
+if [ "${1:-}" = "--with-agent" ]; then WITH_AGENT=1; shift; fi
 ENVNAME="${1:-compost-cleanroom}"
 URL="${2:-$(git -C "$(dirname "$0")/.." remote get-url origin 2>/dev/null || echo https://github.com/ladjanszki/compost.git)}"
 ROOT="$(mktemp -d)"
@@ -87,6 +96,25 @@ curl -sf -o /dev/null http://127.0.0.1:7373/; check $? "serve answers"
 curl -s -D- -o /dev/null http://127.0.0.1:7373/ \
   | grep -qi 'cache-control: no-store'; check $? "responses are not cacheable"
 kill $SP 2>/dev/null; wait $SP 2>/dev/null
+
+if [ "$WITH_AGENT" -eq 1 ]; then
+  step "a fresh Claude, given only CLAUDE.md"
+  cd "$ROOT/compost" || exit 1
+  if ! command -v claude >/dev/null; then
+    echo "  SKIP  claude not on PATH"
+  else
+    # Deterministic assertions only. The prose varies run to run; what must not
+    # vary is that CLAUDE.md still carries these facts at all.
+    ans=$(claude -p "Do not use any tools. From what is already in your context,
+answer in three short lines: (1) the exact command that fetches the test
+corpus, (2) the command that runs the suites, (3) what the last line of that
+runner tells you." 2>/dev/null)
+    echo "$ans" | sed 's/^/  | /'
+    echo "$ans" | grep -q "fetch-corpus.sh";  check $? "CLAUDE.md still names the fetch command"
+    echo "$ans" | grep -q "tests/run.sh";     check $? "CLAUDE.md still names the runner"
+    echo "$ans" | grep -qiE "corpus|absent|present"; check $? "CLAUDE.md still explains the tier line"
+  fi
+fi
 
 printf '\n%d passed, %d failed\n' "$ok" "$bad"
 exit $((bad > 0))
