@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## Unreleased — toward v0.2.1
+## v0.2.1 — 2026-08-20 — the daily loop closes
 
 ### The man page cannot drift again
 
