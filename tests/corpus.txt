@@ -1,0 +1,17 @@
+# The pinned test corpus, fetched by tests/fetch-corpus.sh into tests/corpus/.
+#
+# A git commit SHA is already a hash over the whole tree, so these pins
+# guarantee byte-identical content on their own — there is no second checksum
+# to keep in step, and no tarball to host.
+#
+# Curated material lives in its own repository rather than in the source tree:
+# test data grows, and compost's history has twice had material removed
+# retroactively, which is expensive and leaves residue on any remote.
+#
+# Bulk material is fetched from upstream rather than republished. Cloning
+# someone else's book into a repository we own would move the bytes, not
+# remove them, and would take on their licence terms for nothing.
+#
+# name           url                                              commit
+compost-corpus   https://github.com/ladjanszki/compost-corpus.git  8e818ef63581e47cc08cef1d895abacbe26a6a5e
+rust-book        https://github.com/rust-lang/book.git             917544888a55e4da7109bdba8c88c893c0da70f4

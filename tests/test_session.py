@@ -14,18 +14,24 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import records as R    # noqa: E402
+from tests import tier as T  # noqa: E402
 from src import session as S    # noqa: E402
 
 HERE = Path(__file__).parent
-FIXTURES = sorted(Path(HERE / "fixtures/sessions").glob("*.jsonl"))
+FIXTURES = T.sessions()
 
 
 def main():
     results = []
 
     def case(name, fn):
+        # `fn` returning None means "not applicable here" — a guarantee that
+        # needs the fetched corpus, asked for on a bare clone. It is reported,
+        # never counted as passing: a suite that goes quiet on 8% of its
+        # material is worse than one that fails.
         try:
-            ok, detail = fn()
+            got = fn()
+            ok, detail = (None, T.WHY) if got is None else got
         except Exception as e:
             ok, detail = False, f"{type(e).__name__}: {e}"
         results.append((ok, name, detail))
@@ -51,6 +57,8 @@ def main():
     case("the imported session checks clean", graph_is_sound)
 
     def prose_is_parsed():
+        if not T.have_corpus():
+            return None
         # a session with answers in it must produce real block nodes
         blocks = sum(by_type[t] for t in ("Para", "Plain", "Header", "ListItem",
                                           "CodeBlock", "BulletList", "Table"))
@@ -119,6 +127,8 @@ def main():
     case("a file touched twice is one node", files_dedupe)
 
     def thinking_kept():
+        if not T.have_corpus():
+            return None
         th = [n for n in nodes.values() if n["type"] == "thinking"]
         empty = sum(1 for n in th if n["params"]["empty"])
         return len(th) > 100, \
@@ -126,14 +136,20 @@ def main():
     case("thinking blocks are kept as nodes", thinking_kept)
 
     def all_fixtures():
+        if not T.have_corpus():
+            return None
         n = sum(1 for x in recs if x["record"] == "node")
         return n > 5000, f"{len(FIXTURES)} sessions, {n} nodes, {len(recs)-n} edges"
     case("every fixture session imports cleanly", all_fixtures)
 
     for ok, name, detail in results:
-        print(f"  {'pass' if ok else 'FAIL'}  {name:<48} {detail}")
-    bad = sum(1 for ok, _, _ in results if not ok)
-    print(f"\n{len(results) - bad}/{len(results)} session-import guarantees hold")
+        mark = "skip" if ok is None else ("pass" if ok else "FAIL")
+        print(f"  {mark}  {name:<48} {detail}")
+    bad = sum(1 for ok, _, _ in results if ok is False)
+    skipped = sum(1 for ok, _, _ in results if ok is None)
+    ran = len(results) - skipped
+    tail = f"   ({skipped} skipped: {T.WHY})" if skipped else ""
+    print(f"\n{ran - bad}/{ran} session-import guarantees hold{tail}")
     return 1 if bad else 0
 
 

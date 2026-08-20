@@ -15,9 +15,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import bleach_session as B    # noqa: E402
+from tests import tier as T  # noqa: E402
 from src.bleach import LOREM      # noqa: E402
 
-FIXTURES = sorted((Path(__file__).parent / "fixtures/sessions").glob("*.jsonl"))
+FIXTURES = T.sessions()
 
 SYNTHETIC = "\n".join(json.dumps(d) for d in [
     {"type": "user", "uuid": "11111111-1111-1111-1111-111111111111",
@@ -40,8 +41,13 @@ def main():
     results = []
 
     def case(name, fn):
+        # `fn` returning None means "not applicable here" — a guarantee that
+        # needs the fetched corpus, asked for on a bare clone. It is reported,
+        # never counted as passing: a suite that goes quiet on 8% of its
+        # material is worse than one that fails.
         try:
-            ok, detail = fn()
+            got = fn()
+            ok, detail = (None, T.WHY) if got is None else got
         except Exception as e:
             ok, detail = False, f"{type(e).__name__}: {e}"
         results.append((ok, name, detail))
@@ -88,6 +94,11 @@ def main():
     case("the committed fixtures leak nothing", committed_fixtures_clean)
 
     def committed_fixtures_useful():
+        # A volume guarantee: it asserts the material is big enough to be worth
+        # importing at all. The smoke set is deliberately not, so this belongs
+        # to the corpus tier.
+        if not T.have_corpus():
+            return None
         types, blocks, tools = Counter(), Counter(), Counter()
         for f in FIXTURES:
             s = B.shape(f.read_text())
@@ -102,9 +113,13 @@ def main():
          committed_fixtures_useful)
 
     for ok, name, detail in results:
-        print(f"  {'pass' if ok else 'FAIL'}  {name:<44} {detail}")
-    bad = sum(1 for ok, _, _ in results if not ok)
-    print(f"\n{len(results) - bad}/{len(results)} session-fixture guarantees hold")
+        mark = "skip" if ok is None else ("pass" if ok else "FAIL")
+        print(f"  {mark}  {name:<44} {detail}")
+    bad = sum(1 for ok, _, _ in results if ok is False)
+    skipped = sum(1 for ok, _, _ in results if ok is None)
+    ran = len(results) - skipped
+    tail = f"   ({skipped} skipped: {T.WHY})" if skipped else ""
+    print(f"\n{ran - bad}/{ran} session-fixture guarantees hold{tail}")
     return 1 if bad else 0
 
 

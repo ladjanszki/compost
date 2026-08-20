@@ -19,4 +19,14 @@ for t in test_records test_sabotage test_store test_views test_citations \
   esac
   printf "%-24s %s\n" "$t" "$last"
 done
+
+# Which tier just ran. Without this the board looks identical either way, and
+# "520/520" and "5/5" are the same shape — a green run on 1% of the material
+# should never be indistinguishable from the real thing.
+if [ -d tests/corpus ] && [ -n "$(ls -A tests/corpus 2>/dev/null)" ]; then
+  n=$(find tests/corpus -name '*.md' -not -path '*/.git/*' | wc -l | tr -d ' ')
+  printf "%-24s %s\n" "corpus" "present, $n documents"
+else
+  printf "%-24s %s\n" "corpus" "ABSENT — smoke set only; ./tests/fetch-corpus.sh to fetch it"
+fi
 exit $fail

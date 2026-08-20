@@ -15,11 +15,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import records as R    # noqa: E402
+from tests import tier as T  # noqa: E402
 from src import store as S      # noqa: E402
 from src import views as V      # noqa: E402
 
 HERE = Path(__file__).parent
-SAMPLE = (sorted((HERE / "fixtures/edge-cases").glob("*.md"))
+SAMPLE = (T.markdown("edge-cases")
           + sorted((HERE / "fixtures/notes").glob("note-0[1-3].md")))
 HANDLE = re.compile(r"\{#[0-9a-f]{8}\}")
 

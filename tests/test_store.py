@@ -14,10 +14,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import records as R      # noqa: E402
+from tests import tier as T  # noqa: E402
 from src import store as S        # noqa: E402
 
 HERE = Path(__file__).parent
-FIXTURES = sorted((HERE / "fixtures/edge-cases").glob("*.md"))[:8]
+FIXTURES = T.markdown("edge-cases")[:8]
 
 
 def build(tmp: Path) -> S.Store:
