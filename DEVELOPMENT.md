@@ -14,18 +14,35 @@ src/            the implementation
   bleach_session.py   the same for a transcript
   roundtrip.py  the pandoc-only fixed-point harness
 tests/          one suite per property; ./tests/run.sh runs them all
-  fixtures/     notes, edge cases, sessions, hand-built ASTs
+  fixtures/     the smoke set, ~80 KB: the documents suites name directly
+  corpus/       fetched, gitignored — see fetch-corpus.sh
+  corpus.txt    the pinned commits
+  fetch-corpus.sh
+  tier.py       which material is on disk, and what that means for a guarantee
   corpus/       cloned documentation sites, gitignored
 docs/           man page, decisions, record format, the original drafts
 vendor/         pandoc-types, cloned to read the AST grammar; no test uses it
 ```
 
-**One** clone affects the tests. `tests/corpus/` is the round-trip corpus;
-without it the suites still run, over 42 documents instead of 520:
+The test material is in two tiers. The **smoke set** under `tests/fixtures/`
+is committed, ~80 KB, and holds the documents the suites name directly — the
+one markdown file that reaches every sabotage, a hand-built AST no reader can
+produce, three notes and one trimmed transcript. Every suite runs on a bare
+clone.
+
+The **corpus** is fetched at pinned commits recorded in `tests/corpus.txt`:
 
 ```
-git clone --depth 1 https://github.com/rust-lang/book.git tests/corpus/rust-book
+./tests/fetch-corpus.sh
 ```
+
+That takes the round-trip from 5 documents to 525 and re-enables four
+guarantees that need volume — they report themselves `skip` when it is absent,
+and `run.sh` ends with `corpus present` or `corpus ABSENT` either way.
+
+Curated material lives in its own repository, `compost-corpus`, because test
+data grows and this repo's history has twice had material removed
+retroactively. Bulk material is fetched from upstream rather than republished.
 
 `vendor/pandoc-types` is a different thing and no test reads it — verified by
 running every suite with the directory moved away, which changed nothing, not

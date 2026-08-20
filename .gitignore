@@ -22,8 +22,8 @@ _pre-handles-backup/
 #   git clone --depth 1 https://github.com/jgm/pandoc-types.git vendor/pandoc-types
 vendor/
 
-# Round-trip test corpus: cloned documentation sites, not tracked.
-#   git clone --depth 1 https://github.com/rust-lang/book.git tests/corpus/rust-book
+# Round-trip test corpus: fetched at the commits pinned in tests/corpus.txt.
+#   ./tests/fetch-corpus.sh
 tests/corpus/
 
 # The generated graph and views of this repo's own base

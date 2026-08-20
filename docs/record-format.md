@@ -180,8 +180,8 @@ their names like any other type.
 
 ## The fourteen constructors, and what the corpus actually contains
 
-Counts from `fixtures/notes` (your bleached notes), `fixtures/edge-cases`, and
-the 112-document `rust-book` corpus.
+Counts from the curated notes and edge cases, and from the `rust-book`
+corpus. Both are fetched — see `tests/corpus.txt`.
 
 | constructor | notes | edge | book | children | params |
 |---|---|---|---|---|---|
@@ -291,8 +291,9 @@ Extend `src/roundtrip.py` with a second stage, reusing every fixture:
    values and *different* `guid`s — the expected behaviour, not a defect, until
    re-import identity is answered.
 
-**Result.** 520/520 documents round-trip to the identity — 40 fixtures, 478
-documents from the test corpus, and two hand-built AST fixtures reaching the
+**Result.** 525/525 documents round-trip to the identity with the corpus
+fetched — a curated corpus, 478 documents of `rust-book`, and one hand-built
+AST fixture reaching the
 constructors the reader cannot produce. 19,567 nodes and 35,308 edges. All
 fourteen `Block` constructors are exercised, and all six sabotages are caught.
 

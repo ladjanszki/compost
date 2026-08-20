@@ -19,9 +19,12 @@ pandoc 3.8 without ever mentioning they ran below the 3.10 floor — so check
 which env a green run came from. `python3 -m src.cli` runs the CLI from a
 checkout either way.
 
-`run.sh` reports 520 documents only because `tests/corpus/rust-book` is cloned
-locally. It is gitignored; without it the suites run over 42 and still pass.
-`DEVELOPMENT.md` has the clone commands.
+The suites run in two tiers. A bare clone has only the **smoke set** — about
+80 KB of fixtures, enough that every suite runs — and the last line of `run.sh`
+says `corpus ABSENT`. `./tests/fetch-corpus.sh` fetches the pinned corpus into
+`tests/corpus/`, which takes the round-trip from 5 documents to 525 and turns
+four skipped guarantees back on. Never trust a green board without reading that
+last line.
 
 Then read, in this order:
 

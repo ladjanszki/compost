@@ -49,7 +49,7 @@ each has been made to fail on purpose:
 
 ```
 $ ./tests/run.sh
-test_records             520/520 identity round-trip   |   19567 nodes, 35308 edges
+test_records             525/525 identity round-trip   |   19828 nodes, 35747 edges
 test_sabotage            6/6 sabotages caught
 test_store               10/10 storage guarantees hold
 test_views               5/5 view guarantees hold
@@ -60,12 +60,15 @@ test_session_views       10/10 session-view guarantees hold
 test_lookup              7/7 lookup guarantees hold
 test_serve               9/9 serve guarantees hold
 test_manpage             6/6 man-page guarantees hold
+corpus                   present, 520 documents
 ```
 
 The first line is the whole format in one assertion:
-`records_to_ast(ast_to_records(ast)) == ast`, exact equality, over 520
-documents — 42 fixtures, a 478-document documentation site, and one hand-built
-AST reaching the constructors no markdown reader can produce.
+`records_to_ast(ast_to_records(ast)) == ast`, exact equality, over 525
+documents once the corpus is fetched — a documentation site, a curated corpus,
+and one hand-built AST reaching the constructors no markdown reader can
+produce. A bare clone runs the same property over a five-document smoke set,
+and says so.
 
 ## Requirements
 
