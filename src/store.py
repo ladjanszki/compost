@@ -26,17 +26,27 @@ is silent rather than loud:
 The loaded file list is returned rather than hidden, because the failure mode
 of "everything in graph/ is the graph" is surprise about what was in there.
 """
-import json
+import datetime
+import hashlib
 import os
 import sys
 import tempfile
 import textwrap
+import uuid
 from pathlib import Path
 
 from . import records as R
-from . import session as SESS
+from . import routes as RT
 
 MARKER = ".compost"
+# Ingestion facts — which bytes a document came from — kept apart from the
+# structure pandoc found inside them.
+INGEST_LAYER = "ingestion"
+
+
+def _now() -> str:
+    return (datetime.datetime.now(datetime.timezone.utc)
+            .replace(microsecond=0).isoformat().replace("+00:00", "Z"))
 
 
 class NotABase(Exception):
@@ -98,17 +108,45 @@ class Store:
             raise
         return dest
 
-    def keep_source(self, path: Path) -> Path:
-        """Copy a source into storage/, refusing to overwrite a different one."""
-        dest = self.storage / path.name
-        data = Path(path).read_bytes()
-        if dest.exists() and dest.read_bytes() != data:
-            raise ValueError(
-                f"{dest.name} already in storage/ with different content; "
-                "sources are immutable")
+    def keep_blob(self, path: Path, name: str) -> Path:
+        """
+        Copy bytes into `storage/<name>`, which must not already exist.
+
+        `name` is a guid plus the original extension, so a collision is a
+        minted uuid repeating itself and the right response is to stop rather
+        than to merge. That is why this refuses instead of comparing bytes:
+        storage names no longer carry meaning, so two files with the same name
+        is not a conflict about content, it is a broken assumption about
+        uniqueness.
+
+        Written through a temp file and renamed, for the same reason graph
+        writes are: a half-copied source is a corrupt immutable original, and
+        a crash must not be able to produce one.
+        """
+        dest = self.storage / name
+        if dest.exists():
+            raise ValueError(f"{name} is already in storage/")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(data)
+        fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=".tmp-", suffix=".part")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(Path(path).read_bytes())
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, dest)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
         return dest
+
+    def blobs(self) -> dict:
+        """Bytes hash -> every blob guid carrying those bytes."""
+        recs, _ = self.load()
+        out: dict[str, list[str]] = {}
+        for r in recs:
+            if r["record"] == "node" and r["type"] == "blob":
+                out.setdefault(r["params"]["bytes_sha256"], []).append(r["guid"])
+        return out
 
     # -- loading -----------------------------------------------------------
     def files(self) -> list[Path]:
@@ -143,14 +181,113 @@ class Store:
 # CLI
 # --------------------------------------------------------------------------
 
-def _ast_of(path: Path) -> dict:
-    import subprocess
-    r = subprocess.run(
-        ["pandoc", "-f", "commonmark_x-smart-attributes-fancy_lists",
-         "-t", "json", str(path)], capture_output=True, text=True)
-    if r.returncode:
-        raise RuntimeError(r.stderr.strip())
-    return json.loads(r.stdout)
+def _route_of(argv: list) -> tuple[str | None, list[str], str | None]:
+    """Split `--as=ROUTE` out of the argument list.
+
+    Returns (route, files, error). The route is never inferred: a missing or
+    unknown `--as` is an error naming the routes, not a guess at what the
+    caller meant. That refusal is the point of the flag.
+    """
+    route, files, i = None, [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a.startswith("--as="):
+            route = a.split("=", 1)[1]
+        elif a == "--as":
+            if i + 1 >= len(argv):
+                return None, [], "--as needs a route"
+            route = argv[i + 1]
+            i += 1
+        elif a.startswith("-"):
+            return None, [], f"unknown option {a!r}"
+        else:
+            files.append(a)
+        i += 1
+    if route is None:
+        return None, files, "--as is required"
+    if route not in RT.ROUTES:
+        return None, files, f"unknown route {route!r}"
+    return route, files, None
+
+
+def _digest(s: Store, route: str, args: list[str], prog: str) -> int:
+    """
+    Ingest every file in `args` as `route`.
+
+    Two phases, and the split is load-bearing. **Nothing is written until
+    every input has been read and parsed**, because storage names are now
+    minted rather than derived: a batch that dies halfway leaves the files it
+    already ingested in the base, and re-running it after fixing the bad input
+    would ingest them a *second* time under fresh guids. Validating first
+    makes a batch safe to re-run, which is the only reason it is safe to pass
+    a glob to this command.
+    """
+    plans, seen = [], {}
+    known = s.blobs()
+    for arg in args:
+        src = Path(arg)
+        if src.is_dir():
+            print(f"  {arg}: is a directory. Ingest the files themselves — "
+                  f"the shell already expands them:")
+            print(f"    {prog} digest --as={route} {arg.rstrip('/')}/*")
+            return 1
+        if not src.is_file():
+            print(f"  {arg}: no such file")
+            return 1
+        data = src.read_bytes()
+        sha = hashlib.sha256(data).hexdigest()
+        try:
+            recs, root = RT.read(route, src)
+        except Exception as e:
+            # Named with the file and the route, because "it failed" about a
+            # glob of forty is not a report anyone can act on.
+            print(f"  {src.name}: cannot read as {route}: {e}")
+            print("  nothing was written")
+            return 1
+
+        b = R.Builder()
+        guid = b.mint()
+        stored = guid + src.suffix
+        b.node("blob", {
+            "original_name": src.name,
+            "stored_as": stored,
+            "bytes_sha256": sha,
+            "imported_at": _now(),
+            "route": route,
+        }, guid=guid)
+        # The document was derived *from* the bytes; it is not contained by
+        # them. Its own layer, so the ingestion facts can be reasoned about
+        # without touching the structure pandoc found.
+        b.edge("derived_from", root, guid, INGEST_LAYER)
+
+        plans.append((src, stored, recs + b.records, root, guid,
+                      known.get(sha, []) + seen.get(sha, [])))
+        seen.setdefault(sha, []).append(guid)
+
+    total_n = total_e = 0
+    for src, stored, recs, root, guid, dup in plans:
+        s.keep_blob(src, stored)
+        # A fresh uuid, unrelated to the blob's. The two names must not be
+        # derivable from each other, or something will eventually derive one
+        # from the other — which is the suffix-routing mistake wearing a
+        # different hat.
+        dest = s.write(f"{uuid.uuid4()}.jsonl", recs)
+        n = sum(1 for r in recs if r["record"] == "node")
+        total_n += n
+        total_e += len(recs) - n
+        print(f"  {src.name} -> {dest.relative_to(s.root)}  "
+              f"({n} nodes, {len(recs) - n} edges, "
+              f"root {root[:8]}, blob {guid[:8]})")
+        if dup:
+            # Not an error. Storage is a blob store and the same bytes may
+            # legitimately arrive twice; what would be wrong is for the second
+            # copy to be silent. The count matters more than the guid — one
+            # accidental re-ingest is a shrug, five is a habit.
+            n_dup = len(dup)
+            print(f"    note: these bytes are already in "
+                  f"{n_dup} blob{'s' if n_dup > 1 else ''}, e.g. {dup[0]}")
+    print(f"{total_n} nodes, {total_e} edges")
+    return 0
 
 
 def main(argv):
@@ -158,8 +295,8 @@ def main(argv):
     # directly. Taken from argv rather than hard-coded, so the usage a reader
     # sees is always a command they can actually type.
     prog = Path(argv[0]).name
-    usage = (f"usage: {prog} init [dir] | import <file>... | ls | check"
-             f" | lookup <handle>")
+    usage = (f"usage: {prog} init [dir] | digest --as=<route> <file>... | ls"
+             f" | check | lookup <handle>")
     if len(argv) < 2:
         print(__doc__.strip().splitlines()[0])
         print(usage)
@@ -171,7 +308,7 @@ def main(argv):
         print(f"initialised {s.base}")
         return 0
 
-    if cmd not in ("import", "ls", "check", "lookup"):
+    if cmd not in ("digest", "ls", "check", "lookup"):
         print(f"unknown command {cmd!r}")
         print(usage)
         return 2
@@ -182,36 +319,19 @@ def main(argv):
         print(e)
         return 1
 
-    if cmd == "import":
-        if len(argv) < 3:
-            print(f"usage: {prog} import <file>...")
+    if cmd == "digest":
+        route, files, err = _route_of(argv[2:])
+        if err or not files:
+            print(f"usage: {prog} digest --as=<route> <file>...")
+            if err:
+                print(f"  {err}")
+            print("\nroutes:")
+            print(RT.listing())
+            print("\nThe route is never guessed from the extension. A file "
+                  "named\n`notes.jsonl` digested --as=notes is markdown, "
+                  "because that is what was asked for.")
             return 2
-        total_n = total_e = 0
-        for arg in argv[2:]:
-            src = Path(arg)
-            if src.suffix == ".jsonl":
-                recs, root = SESS.session_to_records(src)
-            else:
-                recs, root = R.ast_to_records(_ast_of(src), source=src.name)
-            try:
-                s.keep_source(src)
-            except ValueError as e:
-                # A refusal is an outcome, not a crash: the man page promises
-                # this behaviour, so it should read like a decision.
-                print(f"  {src.name}: {e}")
-                return 1
-            # The suffix is part of the name because two sources with the same
-            # stem — thing.md and thing.jsonl — otherwise write the same graph
-            # file and the second silently discards the first. Filenames under
-            # graph/ carry no meaning, so making them unambiguous costs nothing.
-            dest = s.write(f"{src.stem}-{src.suffix.lstrip('.')}.jsonl", recs)
-            n = sum(1 for r in recs if r["record"] == "node")
-            total_n += n
-            total_e += len(recs) - n
-            print(f"  {src.name} -> {dest.relative_to(s.root)}  "
-                  f"({n} nodes, {len(recs) - n} edges, root {root[:8]})")
-        print(f"{total_n} nodes, {total_e} edges")
-        return 0
+        return _digest(s, route, files, prog)
 
     if cmd == "ls":
         recs, files = s.load()

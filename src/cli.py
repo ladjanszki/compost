@@ -8,7 +8,7 @@ drives, so this file has no logic to get wrong: `store` owns the base,
 behaviour here.
 
     compost init [DIR]      create a base
-    compost import FILE...  ingest markdown or a session transcript
+    compost digest --as=R FILE...  ingest, by a named route
     compost ls              list what is loaded
     compost check           verify the graph
     compost lookup HANDLE   print the node a handle names
@@ -26,7 +26,7 @@ from . import __version__
 USAGE = """usage: compost <command> [args]
 
   init [DIR]      create a base in DIR, or here
-  import FILE...  ingest markdown (any suffix) or a transcript (*.jsonl)
+  digest FILE...  ingest via --as=<route>; --as alone lists the routes
   ls              list loaded graph files and counts
   check           verify the graph, non-zero if it fails
   lookup HANDLE   print the node a handle names
@@ -34,7 +34,9 @@ USAGE = """usage: compost <command> [args]
   serve [-p N]    serve the HTML view on 127.0.0.1:7373
   version         print the version
 
-A base is found by walking up to the nearest .compost/ directory."""
+A base is found by walking up to the nearest .compost/ directory.
+The route a source is read by is always named, never inferred from its
+suffix: `compost digest --as` lists what is available."""
 
 
 def main(argv=None) -> int:
@@ -57,7 +59,7 @@ def main(argv=None) -> int:
         from . import serve
         return serve.main(argv[1:])
 
-    if cmd in ("init", "import", "ls", "check", "lookup"):
+    if cmd in ("init", "digest", "ls", "check", "lookup"):
         from . import store
         return store.main(argv)
 

@@ -27,9 +27,11 @@ LAYER = "pandoc-ast"
 
 # Nodes that sit at the top of a containment tree rather than inside one.
 ROOT_TYPES = {"document", "session"}
-# Nodes that are entities rather than content: a file is *referenced* by the
-# calls that touched it, and belongs to none of them.
-UNCONTAINED = {"file"}
+# Nodes that are entities rather than content, and so belong to no tree. A
+# `file` is *referenced* by the calls that touched it. A `blob` is the bytes
+# of an ingested source, which a document is derived *from* rather than
+# contained *by*. Both are pointed at; neither is inside anything.
+UNCONTAINED = {"file", "blob"}
 
 # What a view shows, a human pastes, and a citation names: the whole guid.
 # A prefix is not a handle. There was a resolver that accepted any unambiguous
@@ -57,8 +59,17 @@ class Builder:
         self.records: list[dict] = []
         self._mint = mint or (lambda: str(uuid.uuid4()))
 
-    def node(self, type_, params=None, content=None) -> str:
-        n = {"record": "node", "guid": self._mint(), "type": type_}
+    def mint(self) -> str:
+        """A fresh guid, not yet attached to anything.
+
+        Needed whenever the name is used *outside* the record — a `blob` is
+        named before it is described, because the guid is also the filename
+        its bytes are stored under and the node has to carry that name.
+        """
+        return self._mint()
+
+    def node(self, type_, params=None, content=None, guid=None) -> str:
+        n = {"record": "node", "guid": guid or self._mint(), "type": type_}
         if params:
             n["params"] = params
         if content is not None:
@@ -215,7 +226,8 @@ def _block(b: Builder, blk: dict) -> str:
     raise NotImplementedError(f"no mapping for block constructor {t!r}")
 
 
-def ast_to_records(doc: dict, mint=None, source: str | None = None):
+def ast_to_records(doc: dict, mint=None, source: str | None = None,
+                   route: str | None = None):
     """Return (records, root_guid) for a whole pandoc document."""
     b = Builder(mint)
     params = {
@@ -224,6 +236,13 @@ def ast_to_records(doc: dict, mint=None, source: str | None = None):
     }
     if source:
         params["source"] = source
+    # How this document was read. Recorded on the root because that is the
+    # only node that knows: every block below it looks the same whether it
+    # came through `notes` or through `pandoc-ast`. Without it, "which of
+    # these documents came in which way" is unanswerable after the fact,
+    # which is exactly the question the pandoc-ast experiment needs to ask.
+    if route:
+        params["route"] = route
     root = b.node("document", params)
     b.children(root, [_block(b, blk) for blk in doc["blocks"]])
     return b.records, root
@@ -480,6 +499,26 @@ def check(records: list) -> list[str]:
                 f"{'be present' if want else 'be absent'}")
 
     return problems
+
+
+def blob_of(records, root: str) -> dict | None:
+    """
+    The `blob` node a root was derived from, or None.
+
+    This is the only supported way to get from a document back to its bytes.
+    Storage filenames are minted guids, so the original name is *not* where
+    the file lives — `blob.params["stored_as"]` is, and it is reachable only
+    by following the `derived_from` edge. Anything that reconstructs a storage
+    path from `params["source"]` is guessing, and will guess wrong.
+    """
+    nodes = {r["guid"]: r for r in records if r["record"] == "node"}
+    for r in records:
+        if (r["record"] == "edge" and r["type"] == "derived_from"
+                and r["source"] == root):
+            n = nodes.get(r["destination"])
+            if n is not None and n["type"] == "blob":
+                return n
+    return None
 
 
 # --------------------------------------------------------------------------

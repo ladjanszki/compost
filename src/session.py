@@ -117,14 +117,17 @@ class SessionImporter:
         return out, parent
 
     # -- the walk ----------------------------------------------------------
-    def run(self, path: Path) -> tuple[list, str]:
+    def run(self, path: Path, route: str | None = None) -> tuple[list, str]:
         lines = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
         meta = next((d for d in lines if d.get("sessionId")), {})
-        session = self.b.node("session", {
+        params = {
             "source": path.name,
             "session_id": meta.get("sessionId"),
             "version": meta.get("version"),
-        })
+        }
+        if route:
+            params["route"] = route
+        session = self.b.node("session", params)
 
         turns: list[str] = []
         pending: list[tuple[str, str]] = []
@@ -199,5 +202,6 @@ class SessionImporter:
         return self.b.records, session
 
 
-def session_to_records(path: Path, mint=None) -> tuple[list, str]:
-    return SessionImporter(mint).run(Path(path))
+def session_to_records(path: Path, mint=None,
+                       route: str | None = None) -> tuple[list, str]:
+    return SessionImporter(mint).run(Path(path), route)

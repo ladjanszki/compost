@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""
+routes.py — the named ways material enters a base.
+
+Ingestion used to dispatch on the file extension: `*.jsonl` was a Claude Code
+transcript and *everything else* was handed to pandoc as markdown. Two things
+were wrong with that. The `else` was not "markdown", it was "anything at all",
+so a PNG became a pandoc error rather than a compost one. And `.jsonl` is a
+container, not a format — the moment a second kind of JSONL exists, the suffix
+stops naming the reader.
+
+So the reader is named, never inferred:
+
+    compost digest --as=notes            notes.md
+    compost digest --as=claude-code-transcript  019ff17b-....jsonl
+    compost digest --as=pandoc-ast       manual.json
+
+**No route may look at the suffix to decide anything.** A file called
+`notes.jsonl` digested `--as=notes` is markdown, because that is what was
+asked for. The extension survives into `storage/` as a decoration for whoever
+pulls the bytes back out, and nothing reads it.
+
+Each route is a function `(path, mint, route) -> (records, root_guid)`. It
+parses and mints and does not touch the disk beyond reading its input, which
+is what lets `digest` validate a whole batch before writing any of it.
+"""
+import json
+import subprocess
+from pathlib import Path
+
+from . import records as R
+from . import session as SESS
+
+# The markdown dialect, and the three extensions that must stay off. Each one
+# prevents a specific silent corruption and the measurements are in
+# `docs/decisions.md`: `-attributes` keeps `{#...}` literal text instead of an
+# anchor definition, `-smart` keeps `---` three hyphens, and `-fancy_lists`
+# is what makes `+task_lists` actually apply. This is not a tunable.
+READER = "commonmark_x-smart-attributes-fancy_lists"
+
+
+def _ast_of(path: Path) -> dict:
+    """A file through pandoc's markdown reader, as a pandoc JSON document."""
+    r = subprocess.run(
+        ["pandoc", "-f", READER, "-t", "json", str(path)],
+        capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip())
+    return json.loads(r.stdout)
+
+
+# -- the routes -------------------------------------------------------------
+
+def _notes(path: Path, mint, route: str):
+    """Prose, read as the one fixed markdown dialect above."""
+    return R.ast_to_records(_ast_of(path), mint=mint,
+                            source=path.name, route=route)
+
+
+def _transcript(path: Path, mint, route: str):
+    """A Claude Code session log: the whole JSONL, tool calls and all."""
+    return SESS.session_to_records(path, mint=mint, route=route)
+
+
+def _pandoc_ast(path: Path, mint, route: str):
+    """
+    A pandoc JSON document somebody else already produced.
+
+    The narrowest route of the three, because there is no reading step in it
+    to be wrong: `ast_to_records` takes exactly this shape. Whatever pandoc
+    invocation produced the file stays outside the tool, where the person who
+    wrote it can inspect and tune it — which is the point. What compost
+    guarantees here is only that the AST it was handed became records
+    faithfully, and that is the round-trip property.
+    """
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"not JSON ({e}). Produce a pandoc JSON document "
+                           f"with `pandoc -t json`.") from None
+    if not isinstance(doc, dict) or "blocks" not in doc:
+        raise RuntimeError(
+            "not a pandoc JSON document: no 'blocks' key. "
+            "Produce one with `pandoc -t json`.")
+    return R.ast_to_records(doc, mint=mint, source=path.name, route=route)
+
+
+ROUTES = {
+    "notes": (_notes, "prose, read as commonmark_x"),
+    "claude-code-transcript": (_transcript, "a Claude Code session *.jsonl"),
+    "pandoc-ast": (_pandoc_ast, "a pandoc JSON document, already parsed"),
+}
+
+
+def read(route: str, path: Path, mint=None):
+    """Records and root guid for `path`, read as `route`."""
+    fn, _ = ROUTES[route]
+    return fn(Path(path), mint, route)
+
+
+def listing() -> str:
+    w = max(len(n) for n in ROUTES)
+    return "\n".join(f"  {n:<{w}}  {d}" for n, (_, d) in ROUTES.items())
