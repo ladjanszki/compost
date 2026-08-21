@@ -234,6 +234,35 @@ def main():
             case("pandoc-ast is the reader minus the reading",
                  ast_route_matches_the_reader)
 
+            def awkward_names_are_still_files():
+                # A name beginning with a dash reached pandoc as a flag:
+                # `-dash.md` parsed as `-d ash.md`, and the failure surfaced as
+                # a pandoc error about a file nobody had named. Paths are
+                # resolved before pandoc sees them, and `--` ends the options.
+                dash = tmp / "-dash.md"
+                dash.write_text("# t\n\npara\n")
+                spaced = tmp / "two words.md"
+                spaced.write_text("# t\n\npara\n")
+                bare = tmp / "noext"
+                bare.write_text("# t\n\npara\n")
+                # Relative on purpose: an absolute path already begins with a
+                # slash, so it can never be mistaken for a flag and would not
+                # exercise the bug. `Path("./-dash.md")` normalises to
+                # `-dash.md`, which is exactly what reached pandoc.
+                a, _ = run("digest", "--as=notes", "./-dash.md")
+                b, _ = run("digest", "--as=notes", "--", "-dash.md")
+                c, _ = run("digest", "--as=notes", str(spaced), str(bare))
+                recs, _ = st.load()
+                stored = {R._p(r, "stored_as") for r in recs
+                          if r["record"] == "node" and r["type"] == "blob"}
+                # A source with no extension is stored under a bare guid, and
+                # that is fine: the extension is decoration, never a fallback.
+                bareblob = any("." not in n for n in stored)
+                return a == b == c == 0 and bareblob, \
+                    "dashes, spaces and no extension at all"
+            case("an awkward filename is still just a filename",
+                 awkward_names_are_still_files)
+
             def base_still_checks():
                 code, _ = run("check")
                 return code == 0, "everything ingested above checks clean"

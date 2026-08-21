@@ -103,9 +103,23 @@ instrument; the experiment — a curated set of documents with the exact
 invocation and an expert review of where each AST diverged from what the
 document meant — is a `TODO.md` entry with a method and no schedule.
 
+### A filename is only a filename
+
+Found by probing the new command rather than by any suite. A relative path
+beginning with a dash reached pandoc as a flag — `-dash.md` parsed as `-d
+ash.md`, i.e. `--defaults ash.md` — and surfaced as a pandoc error about a
+file nobody had named. Paths are resolved before pandoc sees them, and `--`
+now ends the options so such a name can be given at all. Both halves are
+sabotage-verified, and the test uses a *relative* path deliberately: an
+absolute one already begins with a slash and cannot exercise the bug.
+
+Also confirmed along the way: a source with no extension at all is stored
+under a bare guid, which is correct — the extension is decoration and never a
+fallback.
+
 ### Tests
 
-`tests/test_digest.py`, twelve ingestion guarantees, each sabotage-verified:
+`tests/test_digest.py`, thirteen ingestion guarantees, each sabotage-verified:
 the route is never guessed, the extension decides nothing (checked by making it
 lie — markdown named `.jsonl`), a batch is all or nothing, a document reaches
 bytes that hash to what the graph claims, duplication is reported, storage and
