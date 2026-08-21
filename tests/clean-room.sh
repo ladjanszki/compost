@@ -8,8 +8,15 @@
 # open with `conda activate compost` and never say how the env was made.
 #
 # Takes minutes, because it builds a conda environment. Not wired into run.sh
-# and not automated: run it before tagging a version, which is the only moment
-# the answer matters. See DEVELOPMENT.md.
+# and not automated.
+#
+# **It has nothing to do with tags.** A clone checks out the default branch, so
+# this always tests pushed HEAD — run it whenever you want the answer, on work
+# that will never be a release or on work about to become one. Tagging is a
+# separate decision and no tag, release-candidate or otherwise, is needed to
+# rehearse it. The one thing to remember is that it tests what is **pushed**;
+# pass the repo's own path as `repo-url` to gate commits still sitting locally.
+# See DEVELOPMENT.md.
 #
 # With --with-agent it also asks a fresh Claude, in the clone, what it can work
 # out from CLAUDE.md alone. That is the one failure this script cannot otherwise
@@ -45,6 +52,19 @@ step "clone $URL"
 git clone -q "$URL" "$ROOT/compost"; check $? "clone"
 cd "$ROOT/compost" || exit 1
 echo "  HEAD: $(git log --oneline -1)"
+# Say plainly what is being tested. A clone checks out the default branch, not
+# a tag, so this gate always runs against HEAD — it is a release *rehearsal*
+# any day of the week, and needs no tag to be useful. Printing the distance
+# from the newest tag keeps "am I testing a release?" from being a guess.
+_tag=$(git tag -l --sort=-v:refname | grep '^v[0-9]' | head -1)
+if [ -n "$_tag" ]; then
+  _ahead=$(git rev-list --count "$_tag..HEAD" 2>/dev/null || echo "?")
+  if [ "$_ahead" = "0" ]; then
+    echo "  testing $_tag itself — this is a release"
+  else
+    echo "  testing unreleased work: $_ahead commit(s) after $_tag"
+  fi
+fi
 
 step "environment.yml -> conda env"
 conda env remove -n "$ENVNAME" -y >/dev/null 2>&1

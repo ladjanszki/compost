@@ -87,8 +87,20 @@ toolchain used to fail here.
   theme somebody could describe. `TODO.md`'s *Known gaps* lists what is still
   missing — deliberately not named after a version, because a bucket wearing a
   version number reads as a promise the moment that version ships.
-- **Run `./tests/clean-room.sh --with-agent` before you tag.** It is the only
-  thing that tests the contributor experience rather than the code: a clone of
+- **`./tests/clean-room.sh --with-agent` is a release rehearsal, not a release
+  step, and needs no tag.** A clone checks out the default branch, so it always
+  tests pushed `HEAD` — run it any day, on work that will never be a version or
+  on work about to become one. It prints how far `HEAD` is from the newest tag
+  so "am I testing a release?" is never a guess. **Do not cut a
+  release-candidate tag to make it run**: an `_rc` tag sorts newest, and the
+  gate then demands a `CHANGELOG.md` entry for a version that does not exist,
+  so it fails for a bookkeeping reason having nothing to do with the code.
+
+  It tests what is **pushed**. To gate commits still sitting locally, pass the
+  repository's own path as `repo-url`.
+
+  Run it before you tag, because that is when the answer matters most. It is
+  the only thing that tests the contributor experience rather than the code: a clone of
   what is actually pushed, a conda env built from `environment.yml`,
   `pip install -e .`, both test tiers, and every subcommand. It takes minutes
   because it builds an environment, so it is not wired into `run.sh` and not
