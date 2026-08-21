@@ -46,7 +46,8 @@ CITABLE = {"Para", "Plain", "Header", "CodeBlock", "RawBlock", "LineBlock",
 # Node types that came from a transcript rather than from pandoc. Each one
 # needs its own view rendering, because there is no pandoc constructor to fall
 # back on — this is the dispatch that replaces "reuse records_to_ast".
-SESSION_TYPES = {"session", "turn", "toolcall", "tooloutput", "thinking", "file"}
+SESSION_TYPES = {"session", "turn", "toolcall", "tooloutput", "thinking",
+                 "file", "logline", "contentblock"}
 
 # Session containers carry their handle in their own Attr rather than in a
 # wrapper, which is both tidier and what the previous renderer did:
@@ -88,6 +89,22 @@ def _render_session(g, n, mode):
     if t == "file":
         return None          # uncontained by design; listed separately
 
+    if t == "logline":
+        # Every line of the transcript is in the graph; most of them are
+        # harness machinery — mode changes, title updates, file snapshots —
+        # and none of it is prose anybody would cite. Stored and addressable,
+        # deliberately not rendered. Being in the graph and being on the page
+        # are different things, and the importer no longer gets to decide the
+        # second one by refusing the first.
+        return None
+
+    if t == "contentblock":
+        # A message block this importer has no reading for. Shown, not hidden:
+        # the whole point of storing it was to notice it exists.
+        body = json.dumps(p.get("block"), indent=1, ensure_ascii=False)
+        label = p.get("block_type") or "unknown"
+        return [_code(body, ["content-block", f"block-{label}"], guid)]
+
     if t == "thinking":
         # Kept as a node in the graph regardless. Shown only when it carries
         # text, because rendering 491 empty markers would be inventing content
@@ -114,6 +131,12 @@ def _render_session(g, n, mode):
                                    blocks]}]
 
     if t == "turn":
+        # An envelope carrying nothing but tool results has no prose of its
+        # own — its `tool_result` was folded into the call that produced it.
+        # The node exists and holds the whole log line; an empty Div on the
+        # page would be 140 blank frames saying nothing.
+        if p.get("author") == "envelope" and not g.children(guid):
+            return None
         return [{"t": "Div", "c": [
             _attr(guid, ["turn"], [("author", p.get("author")),
                                    ("time", p.get("timestamp")),

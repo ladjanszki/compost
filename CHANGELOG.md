@@ -3,6 +3,76 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.3 — unreleased — the transcript importer stops filtering
+
+`--as=claude-code-transcript` was discarding **46% of a real transcript** and
+nobody could see it. It is now lossless, and the guarantee is a property:
+
+```
+records_to_session(session_to_records(lines)) == lines
+```
+
+Exact, over 8 fixture sessions and 4204 lines across 13 line types.
+
+### What was being dropped
+
+Audited against one real 796-line log:
+
+- **369 of 796 lines (46.4%)** — only `user` and `assistant` reached the graph.
+  `attachment` alone was 184 of them, the second most common line type in the
+  file.
+- **Seventeen log-line keys.** A turn kept `author`, `timestamp` and `uuid`;
+  `isSidechain`, `userType`, `entrypoint`, `cwd`, `sessionId`, `version`,
+  `gitBranch`, `session_id`, `requestId`, `effort`, `promptId`,
+  `toolUseResult`, `sourceToolAssistantUUID`, `permissionMode`, `origin`,
+  `promptSource` and `classifierMetaLines` did not.
+- **140 whole `user` lines** via the envelope rule. Their content survived — a
+  `tool_result` folds into its toolcall — but the line's identity went with it.
+  Recognising an envelope is about what to *call* it, never about whether to
+  keep it.
+
+None of it was data loss in the strict sense: `storage/` had the bytes. It was
+a base built on a filtered log, with nothing to show what was missing.
+
+### What replaced it
+
+Every line becomes a node carrying its own original JSON in `params["log"]`.
+Two things now live in the graph and they are different on purpose: `log` is
+the line as it was and never changes; the nodes and edges are what compost
+understood of it and may improve.
+
+A line type with no reading becomes a **`logline`** — *kept* and *understood*
+are different claims, and an importer only gets to make the first. An
+unrecognised message block becomes a **`contentblock`** and is **shown**, since
+the point of storing it is to notice it exists; the old `else` was silence.
+
+Accepted cost: a message's text is held twice, raw inside `log` and again as
+parsed blocks. Raw is the source, parsed is the derivation — the relationship
+`storage/` already has with the graph.
+
+Views are unchanged. Loglines and empty envelope turns are stored, addressable
+and deliberately not rendered, the same treatment empty `thinking` nodes
+already had.
+
+### Sidechains are now unblocked
+
+`toolUseResult` reaches the graph only because the importer stopped filtering,
+and it carries one of the two joins. Verified end-to-end against a base
+digested from a real transcript with four subagents: the `.meta.json` sidecar's
+`toolUseId` matches a stored `toolcall.params.tool_use_id` for all four direct
+launches, and the depth-2 agent correctly matches none of them — it belongs to
+its parent agent's transcript, not the root. `TODO.md` has the five-step plan.
+
+### Tests
+
+`test_session` 9 → 11: the round-trip, and that no line type is filtered.
+Sabotage-verified twice, and the second one matters — dropping a single key
+from a stored line still returns the right *number* of lines and fails anyway,
+because the property compares content.
+
+`test_session_views` 10 → 11, with the deliberate non-rendering of envelope
+turns stated as its own guarantee rather than left as a silent exclusion.
+
 ## v0.2.2 — 2026-08-21 — ingestion is asked for by name
 
 `compost import FILE...` is gone. Ingestion is `compost digest --as=ROUTE

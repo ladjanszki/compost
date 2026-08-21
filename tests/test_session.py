@@ -5,6 +5,15 @@ test_session.py — what the session importer promises.
 The two that matter most are opposites: prose must be *parsed* so a paragraph
 of an answer is citable, and tool output must *not* be, so a `ls` listing does
 not acquire headings it never had.
+
+Above both of them sits the one that outranks everything else here:
+
+    records_to_session(session_to_records(lines)) == lines
+
+**The importer may not throw anything away.** It filtered for a long time and
+nobody could see it — 46% of a real transcript's lines and seventeen log-line
+keys, each dropped by a decision taken silently at read time. That is what the
+round-trip below exists to make impossible.
 """
 import glob
 import json
@@ -140,6 +149,55 @@ def main():
             return None
         n = sum(1 for x in recs if x["record"] == "node")
         return n > 5000, f"{len(FIXTURES)} sessions, {n} nodes, {len(recs)-n} edges"
+    def lossless():
+        """No line, and no key on a line, is lost.
+
+        Compared as parsed JSON rather than as bytes, because whitespace and
+        key order are the file's business and not the graph's. Everything the
+        file *said* has to come back, in the order it said it.
+        """
+        worst = None
+        for f in FIXTURES:
+            lines = [json.loads(l) for l in f.read_text().splitlines()
+                     if l.strip()]
+            recs, root = S.session_to_records(f)
+            back = S.records_to_session(recs, root)
+            if back != lines:
+                worst = (f.name, len(lines), len(back))
+                break
+        if worst:
+            return False, f"{worst[0]}: {worst[1]} lines in, {worst[2]} back"
+        total = sum(len([1 for l in f.read_text().splitlines() if l.strip()])
+                    for f in FIXTURES)
+        return True, f"{len(FIXTURES)} sessions, {total} lines, all exact"
+    case("a transcript round-trips through the graph", lossless)
+
+    def every_line_type_is_kept():
+        """A line type nobody has written a reading for is still stored.
+
+        The old importer handled `user` and `assistant` and dropped the rest
+        without a word. `logline` is the node that says "kept, not yet
+        understood" — the two are different claims and only one of them is
+        the importer's to make.
+        """
+        seen, stored = Counter(), Counter()
+        for f in FIXTURES:
+            lines = [json.loads(l) for l in f.read_text().splitlines()
+                     if l.strip()]
+            seen.update(d.get("type") for d in lines)
+            recs, _ = S.session_to_records(f)
+            for r in recs:
+                if r["record"] != "node":
+                    continue
+                if r["type"] == "turn":
+                    stored[r["params"]["log"].get("type")] += 1
+                elif r["type"] == "logline":
+                    stored[r["params"]["line_type"]] += 1
+        missing = {k: v for k, v in seen.items() if stored[k] != v}
+        return not missing, \
+            f"{len(seen)} line types, {sum(seen.values())} lines, none dropped"
+    case("no line type is filtered out at import", every_line_type_is_kept)
+
     case("every fixture session imports cleanly", all_fixtures)
 
     for ok, name, detail in results:

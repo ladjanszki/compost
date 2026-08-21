@@ -24,7 +24,28 @@ things, and only the first one was ever wanted.
 Attribution has one trap worth naming. A `user` line is not necessarily a
 human: the transcript wraps every tool result in one. Only a user line
 carrying real text is a human turn, which is the attribution bug the old
-importer shipped.
+importer shipped. Note that recognising an envelope is about *what to call
+it*, not about whether to keep it — the line is stored either way.
+
+**Nothing in the file is filtered out here.** Every line becomes a node and
+carries its own original JSON, verbatim, in `params["log"]`. That is the
+guarantee: reading a transcript adds information and never subtracts it, and
+what to ignore is a question for a view or a query, asked later and by a
+person. An audit on 2026-08-21 found this importer discarding 46% of a real
+transcript's lines and seventeen log-line keys, each one a decision made
+silently at read time and unrecoverable without re-reading the source.
+
+So there are two things in the graph, deliberately, and they are different:
+
+- **`params["log"]`** is the line as it was. Nothing is promoted out of it,
+  nothing is normalised, and it is what makes the import lossless.
+- **the nodes and edges** are what compost understood of it — turns, tool
+  calls, parsed prose. These are an interpretation and may improve.
+
+The cost is that a message's text is held twice: once raw inside `log`, once
+as parsed blocks. That is accepted. The raw text is the source and the blocks
+are a derivation, which is the same relationship `storage/` has with the whole
+graph, and the alternative is deciding at import which of the two matters.
 """
 import json
 import subprocess
@@ -39,6 +60,10 @@ from . import records as R
 LAYER = "session"
 # Facts particular to this log format: the parentUuid chain.
 SOURCE_LAYER = "claude-code"
+# Line types this importer interprets. Everything else still becomes a node —
+# a `logline` carrying its whole original JSON — because "we have no reading
+# for this yet" and "this can be thrown away" are different statements.
+INTERPRETED = ("user", "assistant")
 READER = "commonmark_x-smart-attributes-fancy_lists"
 
 # Tool inputs that name a file the call touched.
@@ -124,6 +149,7 @@ class SessionImporter:
             "source": path.name,
             "session_id": meta.get("sessionId"),
             "version": meta.get("version"),
+            "lines": len(lines),
         }
         if route:
             params["route"] = route
@@ -133,8 +159,20 @@ class SessionImporter:
         pending: list[tuple[str, str]] = []
         for d in lines:
             kind = d.get("type")
-            if kind not in ("user", "assistant"):
+
+            # A line type this importer has no reading for is still a line, and
+            # still gets a node carrying everything it said. Skipping it would
+            # be a filtering decision taken at read time, which is exactly the
+            # thing this importer stopped doing.
+            if kind not in INTERPRETED:
+                turns.append(self.b.node("logline", {
+                    "line_type": kind,
+                    "uuid": d.get("uuid"),
+                    "timestamp": d.get("timestamp"),
+                    "log": d,
+                }))
                 continue
+
             content = (d.get("message") or {}).get("content")
             blocks = content if isinstance(content, list) else []
             prose = _text_of(content)
@@ -145,6 +183,9 @@ class SessionImporter:
 
             for blk in blocks:
                 if not isinstance(blk, dict):
+                    children.append(self.b.node("contentblock",
+                                                {"block_type": None,
+                                                 "block": blk}))
                     continue
                 t = blk.get("type")
                 if t == "text":
@@ -163,23 +204,30 @@ class SessionImporter:
                     out, parent = self._tool_result(blk)
                     if parent is None:
                         orphan_results.append(out)
+                else:
+                    # An unrecognised block type is stored whole and loudly,
+                    # rather than falling off the end of the if-chain. The old
+                    # `else` was silence, so a new block type would have
+                    # vanished without a word.
+                    children.append(self.b.node("contentblock",
+                                                {"block_type": t,
+                                                 "block": blk}))
             if isinstance(content, str) and content.strip():
                 children += self._prose(content)
                 has_text = True
 
             # A user line carrying only tool results is the transcript's
-            # envelope, not something a person typed.
-            if not children and not orphan_results:
-                continue
+            # envelope, not something a person typed. That is a statement about
+            # *authorship* and never about whether to keep the line: the node
+            # is created either way, and a view decides what to show.
             author = "assistant" if kind == "assistant" else (
                 "human" if has_text else "envelope")
-            if author == "envelope":
-                continue
 
             turn = self.b.node("turn", {
                 "author": author,
                 "timestamp": d.get("timestamp"),
                 "uuid": d.get("uuid"),
+                "log": d,
             })
             self.b.children(turn, children + orphan_results, LAYER)
             turns.append(turn)
@@ -205,3 +253,38 @@ class SessionImporter:
 def session_to_records(path: Path, mint=None,
                        route: str | None = None) -> tuple[list, str]:
     return SessionImporter(mint).run(Path(path), route)
+
+
+def records_to_session(records, root: str | None = None) -> list[dict]:
+    """
+    The transcript's lines back, in order, exactly as they were read.
+
+    The counterpart to `session_to_records`, and the reason the pair is worth
+    having is the property between them:
+
+        records_to_session(session_to_records(lines)) == lines
+
+    That is the transcript's version of the AST round-trip, and it says the one
+    thing worth guaranteeing about an importer: **it did not throw anything
+    away.** It holds by construction — every line node carries its own JSON in
+    `params["log"]` — and stating it as a property is what makes it stay true.
+    The moment somebody filters a line type again, this fails.
+
+    Note what it does *not* claim. The nodes are an interpretation and may get
+    better; this only says the source of that interpretation is still here.
+    """
+    g = R.Graph(records)
+    if root is None:
+        roots = [n["guid"] for n in g.nodes.values() if n["type"] == "session"]
+        if len(roots) != 1:
+            raise ValueError(f"expected one session, found {len(roots)}")
+        root = roots[0]
+    out = []
+    for k in g.children(root):
+        n = g.nodes[k]
+        if n["type"] not in ("turn", "logline"):
+            raise ValueError(f"{k}: a session's child is {n['type']!r}, "
+                             "so it is not a log line and the file cannot be "
+                             "reconstructed")
+        out.append(n["params"]["log"])
+    return out

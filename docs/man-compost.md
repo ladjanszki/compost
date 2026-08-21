@@ -77,6 +77,20 @@ Ingest one or more files, all read by the same named route.
 | `claude-code-transcript` | a Claude Code session log, the whole `*.jsonl` |
 | `pandoc-ast` | a pandoc JSON document somebody else already produced |
 
+**`claude-code-transcript` is lossless.** Every line of the file becomes a node
+carrying its own original JSON in `params["log"]`, and the guarantee is a
+property rather than a promise:
+
+```
+records_to_session(session_to_records(lines)) == lines
+```
+
+A line type the importer has no reading for becomes a `logline`; an
+unrecognised message block becomes a `contentblock` and is shown rather than
+hidden. Nothing is filtered at read time, because a filter applied while
+reading is applied once and silently. What to ignore is a question for a view
+or a query, asked later.
+
 `--as` is **required**. Omitting it, or naming a route that does not exist,
 prints the table above and exits 2 rather than guessing. This replaces
 dispatch on the file extension, which was wrong twice over: the fallback was
@@ -246,8 +260,13 @@ Invented where pandoc's grammar is anonymous: `ListItem`, `DefinitionTerm`,
 `DefinitionItem`.
 
 From transcripts: `session`, `turn`, `toolcall`, `tooloutput`, `thinking`,
-`file`. Also `document` for an ingested text file, and `blob` for the bytes
-one was derived from.
+`file`, `logline`, `contentblock`. Also `document` for an ingested text file,
+and `blob` for the bytes one was derived from.
+
+`logline` is a line the importer keeps but has no reading for — *kept* and
+*understood* are different claims, and only the first is the importer's to
+make. `contentblock` is the same for a message block. Both carry the original
+JSON verbatim.
 
 `file` and `blob` are different things and are deliberately not merged. A
 `file` is a **path a session touched** — it may not exist, and no bytes are
@@ -296,9 +315,16 @@ are uncontained and so appear in no document tree. No migration of a v0.1
 base. Empty `thinking` nodes are stored but not rendered.
 
 **Sidechains are not followed.** A `claude-code-transcript` reads exactly the
-file it was given. A subagent's turns live in a second file that the parent
-never mentions in its own reply chain, and joining them is deliberately a
-later, explicit step — see `TODO.md`.
+file it was given. A subagent's turns live in a second file, discoverable at
+`<session-id>/subagents/agent-<agentId>.jsonl` with a `.meta.json` sidecar
+beside it. Everything needed to join them now reaches the graph — the sidecar's
+`toolUseId` matches a stored `toolcall`, verified on real data — but the join
+itself is deliberately a later, explicit step. See `TODO.md`.
+
+**`logline` and `contentblock` have no view.** Loglines are harness machinery
+and are stored, addressable and not rendered. Envelope turns — a `user` line
+whose only content was a tool result, already folded into the call that
+produced it — are likewise kept and not shown.
 
 `check` does not verify `storage/`. It reads records, so a blob whose bytes
 were altered on disk is not detected, even though `bytes_sha256` is exactly

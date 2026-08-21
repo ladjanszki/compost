@@ -47,6 +47,10 @@ def main():
         recs, _ = st.load()
         g = R.Graph(recs)
         nodes = {r["guid"]: r for r in recs if r["record"] == "node"}
+        kids = {}
+        for r in recs:
+            if r["record"] == "edge" and r["type"] == "contains":
+                kids.setdefault(r["source"], []).append(r["destination"])
         djot = {n: (st.views / "default-djot" / f"{n}.dj").read_text()
                 for n in roots}
         html = {n: (st.views / "default-html" / f"{n}.html").read_text()
@@ -57,13 +61,46 @@ def main():
                 f"{len(djot)} sessions rendered to all three views"
         case("a session gets a view at all", every_session_rendered)
 
+        def shown(n):
+            """Nodes a view is expected to render.
+
+            Two types are stored and deliberately not rendered, and both
+            exclusions are decisions recorded in `views.py` rather than
+            accidents: a `thinking` node with no text, and an envelope turn
+            whose only content was a tool result that got folded into the call
+            that produced it. Being in the graph and being on the page are
+            different things.
+            """
+            if n["type"] == "thinking" and n["params"].get("empty"):
+                return False
+            if n["type"] == "turn" and n["params"].get("author") == "envelope" \
+                    and not kids.get(n["guid"]):
+                return False
+            return True
+
         def turns_appear():
-            turns = [n for n in nodes.values() if n["type"] == "turn"]
+            turns = [n for n in nodes.values()
+                     if n["type"] == "turn" and shown(n)]
             text = "\n".join(djot.values())
             missing = [t for t in turns if t["guid"] not in text]
             return turns and not missing, \
-                f"{len(turns)} turns, {len(missing)} missing from the djot view"
+                f"{len(turns)} turns with content, {len(missing)} missing"
         case("every turn appears with its handle", turns_appear)
+
+        def envelopes_are_stored_but_not_shown():
+            # The importer used to skip these lines outright, losing the uuid,
+            # timestamp, parentUuid and toolUseResult that came with them. They
+            # are nodes now. That must not put 140 blank frames on the page.
+            env = [n for n in nodes.values() if n["type"] == "turn"
+                   and n["params"].get("author") == "envelope"
+                   and not kids.get(n["guid"])]
+            text = "\n".join(djot.values())
+            leaked = [n for n in env if n["guid"] in text]
+            whole = [n for n in env if n["params"].get("log")]
+            return env and not leaked and len(whole) == len(env), \
+                f"{len(env)} envelope turns, all carrying their log, none rendered"
+        case("envelope turns are kept in the graph and stay off the page",
+             envelopes_are_stored_but_not_shown)
 
         def authors_carried():
             text = "\n".join(djot.values())
@@ -114,9 +151,7 @@ def main():
             text = "\n".join(djot.values())
             citable = [n for n in nodes.values()
                        if n["type"] in V.CITABLE | V.SELF_LABELLING
-                       and not (n["type"] == "thinking"
-                                and n["params"].get("empty"))
-                       and n["type"] != "session"]
+                       and shown(n) and n["type"] != "session"]
             missing = [n for n in citable if n["guid"] not in text]
             full = re.findall(r"\{#(" + UUID + r")\}", text)
             return citable and not missing and full, \

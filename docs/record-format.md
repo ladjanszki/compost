@@ -215,6 +215,35 @@ which is a sibling of `blocks` and not reachable from any block. An importer
 that reads `doc["blocks"]` and stops loses frontmatter silently; `decisions.md`
 records this. Proposal: `params.meta`, verbatim, same rule as everywhere else.
 
+## `params["log"]`: the line as it was, beside what we made of it
+
+A transcript node — `turn` or `logline` — carries the whole original JSON of
+its log line under `params["log"]`, unmodified and unpromoted. That is what
+makes `records_to_session(session_to_records(lines)) == lines` hold exactly.
+
+Two different things are therefore in the graph, and conflating them is the
+mistake to avoid:
+
+| | what it is | may it change? |
+|---|---|---|
+| `params["log"]` | the line as the file had it | **no** — it is the source |
+| the nodes and edges | what compost understood of it | yes, as readings improve |
+
+A reader wanting ground truth reads `log`. A reader wanting structure reads the
+nodes. An importer improving its interpretation rewrites the second and must
+never touch the first.
+
+This costs holding a message's text twice — raw inside `log`, again as parsed
+blocks. That is accepted deliberately. The raw text is the source and the
+blocks are a derivation, which is exactly the relationship `storage/` has with
+the whole graph, and the alternative is deciding at import which of the two
+matters.
+
+`logline` and `contentblock` exist for the same reason. A line type or block
+type with no reading yet is still stored, under a type that says so. **Kept**
+and **understood** are different claims, and an importer only gets to make the
+first.
+
 ## The `blob` node, and what a path is
 
 A `document` root also records **which bytes it was read from**, as a `blob`

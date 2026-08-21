@@ -256,7 +256,7 @@ The one thing that makes v0.2 replace v0.1 rather than sit beside it.
 6. Optionally update the archived copies so the readable backup stays internally
    consistent. The pristine bytes stay in `compost-full-history.bundle`.
 
-### Sidechains arrive in a second file — deferred on purpose in v0.2.2
+### Sidechains — measured, planned, not yet built
 
 The corpus contains **zero** sidechain lines, so log order and reply order are
 indistinguishable in every fixture and subagent nesting has never been
@@ -363,6 +363,49 @@ its own prose; the parent's copies sit nested inside notification wrappers, on
 catches re-imports of the same file, not this. A `duplicates` edge here has to
 be asserted, or derived by something cleverer than a hash.
 
+#### The plan, now that guessing is over
+
+All three joins verified end-to-end on 2026-08-21 against a base digested from
+a real transcript with four subagents:
+
+| | |
+|---|---|
+| `meta.toolUseId` → stored `toolcall.params.tool_use_id` | 4 of 4 direct launches |
+| `toolUseResult.agentId` → the sidechain filename | 4 of 4 |
+| the depth-2 agent against the *root* transcript | **0** — correct, it belongs to its parent agent |
+
+`toolUseResult` reaches the graph only because the importer stopped filtering,
+so that work was a prerequisite and is done.
+
+The shape, now that guessing is over:
+
+1. **Discover** sidechains by globbing `<session-id>/subagents/agent-*.jsonl`
+   beside the parent, not from anything in the parent's own records.
+2. **Read the `.meta.json` sidecar** — `toolUseId`, `agentType`, `spawnDepth`,
+   `model`, and `parentAgentId` when nested.
+3. **Digest each sidechain as its own source.** One file, one blob, one graph
+   file, one `session` root — the same 1:1 that `--as=claude-code-transcript`
+   already guarantees. Do not fold them into the parent's records.
+4. **Join in its own layer.** An edge from the sidechain's `session` root to
+   the parent's `toolcall` node found via `tool_use_id`. Not `contains` — the
+   sidechain is not *inside* the turn, and `check` requires exactly one parent.
+   Its own layer beside `ingestion`, so the ingestion facts stay separable.
+5. **Resolve recursively.** `spawnDepth` says how deep; `parentAgentId` names
+   which transcript to look in. Depth 1 resolves against the root session,
+   depth *n* against the agent named by `parentAgentId`.
+
+Open, and not blocking: whether the CLI discovers sidechains itself or wants
+them named explicitly. Discovery reads files nobody asked for, which sits badly
+beside "digest reads exactly the file it is given"; naming them explicitly is
+honest and tedious. Decide when building.
+
+The duplication of a subagent's answer is **not** a blocker — see *Duplicates
+are described, not resolved*.
+
+Still unmeasured, because one session cannot answer it: whether a *synchronous*
+launch puts the answer in the `tool_result` itself. Every launch observed is
+`isAsync: true`.
+
 ### Duplicates are described, not resolved
 
 Nothing here collapses two records into one. The base records that two things
@@ -392,83 +435,42 @@ Known cases, in the order they were found:
 The open design question is what a view does with a `duplicates` edge, and what
 `lookup` says when a handle names one of a pair. Answer that before minting any.
 
-### The transcript importer filters at import, and it must not
+### The transcript importer filtered at import ✓ — fixed, and held by property
 
-**This is a standing instruction that has been given at least four times, and
-the code still does not obey it: digest everything the file holds and filter at
-query time.** A field judged noise while reading it is judged once, silently,
-and every base built in the meantime lacks it. The bytes survive in `storage/`,
-so this is recoverable by re-reading — but only if somebody notices, and nobody
-notices what was never written. See the rule in `CLAUDE.md`.
+*Audited and fixed 2026-08-21.* The importer discarded 369 of 796 lines (46.4%)
+by handling only `user` and `assistant`, seventeen log-line keys including
+`toolUseResult`, `cwd` and `gitBranch`, and 140 whole `user` lines via the
+envelope rule. Every one of those was a filtering decision taken silently at
+read time.
 
-Audited 2026-08-21 against one real 796-line transcript. `src/session.py` drops
-all of the following without saying so.
+It is now lossless, and the guarantee is a property rather than a promise:
 
-**Whole lines — 369 of 796, 46.4%.** Only `user` and `assistant` reach the
-graph:
+```
+records_to_session(session_to_records(lines)) == lines
+```
 
-| type | lines | |
-|---|---|---|
-| `assistant` | 279 | kept |
-| `attachment` | **184** | dropped |
-| `user` | 148 | kept |
-| `mode`, `permission-mode`, `ai-title` | 39 each | dropped |
-| `last-prompt` | 38 | dropped |
-| `queue-operation` | 12 | dropped |
-| `file-history-snapshot`, `system` | 8 each | dropped |
-| `file-history-delta` | 2 | dropped |
+Exact, on 8 fixture sessions and 4204 lines across 13 line types. Two things
+now live in the graph, deliberately:
 
-`attachment` at 184 lines is the one to look at first — it is the second most
-common line type in the file and is not obviously noise.
+- **`params["log"]`** on every line node — the line exactly as it was.
+- **the nodes and edges** — what compost understood of it, which may improve.
 
-**Seventeen log-line keys.** A `turn` node keeps `author`, `timestamp` and
-`uuid`; everything else on the line is discarded:
+A line type with no reading becomes a `logline`, because *kept* and
+*understood* are different claims. An unrecognised message block becomes a
+`contentblock` and is **shown**, since the point of storing it is to notice it.
+Envelope lines are nodes now — recognising an envelope is about what to call
+it, never about whether to keep it — and stay off the page, like empty
+`thinking` nodes.
 
-`isSidechain`, `userType`, `entrypoint`, `cwd`, `sessionId`, `version`,
-`gitBranch` (427 lines each) · `session_id` (419) · `requestId`, `effort` (279)
-· `promptId` (148) · `toolUseResult`, `sourceToolAssistantUUID` (140) ·
-`permissionMode`, `origin`, `promptSource` (8) · `classifierMetaLines` (7).
+The accepted cost: a message's text is held twice, raw inside `log` and again
+as parsed blocks. Raw is the source, parsed is the derivation, which is the
+relationship `storage/` already has with the graph.
 
-Two of those are known to matter already: `toolUseResult` carries the second
-sidechain join, and `gitBranch`/`cwd` are the only record of *where* a turn
-happened. Note `sourceToolAssistantUUID` appears on 140 **parent** lines here —
-an earlier entry called it sidechain-only, which was wrong.
-
-**Whole turns, via the envelope rule.** 140 `user` lines carrying no prose are
-skipped as "the transcript's envelope". Their *content* is not lost — a
-`tool_result` block is folded into the toolcall that produced it — but the
-line's own identity and metadata are: `uuid`, `timestamp`, `parentUuid`,
-`toolUseResult` and `sourceToolAssistantUUID` all vanish with it. So the
-attribution fix that rule exists for is right, and throwing the line away was
-never part of it.
-
-**Content block types** are, for once, clean: this transcript holds only
-`text`, `tool_use`, `tool_result` and `thinking`, all four handled. The `else`
-is still silent, though, so a new block type would disappear without a word.
-Make it loud.
-
-Nothing here is urgent in the sense of data loss — `storage/` has the bytes and
-re-digesting recovers everything. It is urgent in the sense that every day it
-stays is another base built on a filtered log.
-
-Do the import first and separately. It does **not** settle the question
-`docs/decisions.md:136` is waiting on — whether `next` (log order) and
-`replies_to` (reply order) can disagree — because within either file the two
-still agree, and across files there is no shared chain to disagree about. That
-question may not even be answerable from a single Claude Code log any more, and
-deciding it is a second piece of work. Sidechain import is worth having on its
-own: subagent work is invisible in the base until it lands, and it is where a
-growing share of the reasoning now happens.
-
-Note that a bleached fixture is possible now, which it was not when this entry
-was written — `src/bleach_session.py` has real sidechain input to work from.
-
-**v0.2.2 deliberately did not do this.** `--as=claude-code-transcript` reads
-exactly the file it is given and nothing else, so storage and graph stay 1:1
-and one invocation means one source. That was a choice, not an oversight: the
-join is a *second* kind of fact — which agent ran under which toolcall — and
-it belongs in its own layer beside `ingestion`, asserted explicitly, rather
-than smuggled in as a side effect of reading a file. Do it as its own step.
+**Still to check for the same fault elsewhere.** `--as=notes` and
+`--as=pandoc-ast` go through `ast_to_records`, which the round-trip property
+already covers at AST level — but nothing checks that pandoc's *reader* kept
+everything the file said, and that is a different question. Frontmatter is the
+known case (`docs/decisions.md`).
 
 ### `file` and `blob` nodes have no view
 

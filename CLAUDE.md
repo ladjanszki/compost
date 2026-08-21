@@ -47,6 +47,8 @@ from those records and from nothing else.
 compost init             # makes .compost/ here; every other command walks up to it
 compost digest --as=R FILE...   # R is one of notes, claude-code-transcript,
                                 # pandoc-ast. Required; never inferred.
+                                # A transcript digest is lossless: every line
+                                # and key is kept, filter at query time.
 compost check            # must report 0 problems
 compost render           # views/default-{djot,html,md}
 compost lookup HANDLE    # the block a handle names
@@ -97,12 +99,14 @@ shaped the way it is, never as a description of the current tool.
   Deciding a field is noise while reading it is a decision made once, silently,
   and unrecoverably — the bytes are still in `storage/`, but every base built
   in the meantime is missing them and nobody knows. Filtering later is free and
-  reversible; filtering at import is neither. This has been asked for at least
-  four times and `src/session.py` still drops 46% of a real transcript's lines
-  and seventeen log-line keys; `TODO.md` has the audit. If a new importer is
-  tempted to skip something, the answer is to store it and let a view or a
-  query ignore it. Volume is not the objection: this is not the main way the
-  base is read.
+  reversible; filtering at import is neither. `--as=claude-code-transcript`
+  holds this by property — `records_to_session(session_to_records(lines)) ==
+  lines`, exact — after an audit found it dropping 46% of a real transcript's
+  lines and seventeen log-line keys. Every line node carries its own original
+  JSON in `params["log"]`, and a line type nobody has a reading for becomes a
+  `logline` rather than nothing. If a new importer is tempted to skip
+  something, store it and let a view or a query ignore it. Volume is not the
+  objection: this is not the main way the base is read.
 - **Never scan raw file text for citations.** A citation is a `Link` node, and
   reading the parsed content is what makes "handles inside code blocks are not
   citations" true by construction. This rule was violated three times under the
