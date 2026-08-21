@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import cli             # noqa: E402
 from src import records as R    # noqa: E402
+from src import routes as RT    # noqa: E402
 from src import store as S      # noqa: E402
 
 TARGET = "A target paragraph worth citing.\n\nAnother block entirely.\n"
@@ -32,7 +33,7 @@ def build(tmp: Path):
     st = S.Store.init(tmp)
     a = tmp / "a.md"
     a.write_text(TARGET)
-    recs, _ = R.ast_to_records(S._ast_of(a), source=a.name)
+    recs, _ = R.ast_to_records(RT._ast_of(a), source=a.name)
     st.write("a-md.jsonl", recs)
     guid = next(r["guid"] for r in recs
                 if r["record"] == "node" and r["type"] == "Para")

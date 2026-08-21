@@ -75,18 +75,27 @@ step "the CLI, end to end"
 W="$ROOT/base"; mkdir -p "$W"; cd "$W" || exit 1
 compost init >/dev/null; check $? "init"
 cp "$ROOT/compost/README.md" .
-compost import README.md >/dev/null; check $? "import markdown"
+compost digest --as=notes README.md >/dev/null; check $? "digest --as=notes"
 cp "$ROOT/compost/tests/fixtures/sessions/session-smoke.jsonl" s.jsonl
-compost import s.jsonl >/dev/null; check $? "import transcript"
+compost digest --as=claude-code-transcript s.jsonl >/dev/null
+check $? "digest --as=claude-code-transcript"
+pandoc -f commonmark_x-smart-attributes-fancy_lists -t json README.md > ast.json
+compost digest --as=pandoc-ast ast.json >/dev/null; check $? "digest --as=pandoc-ast"
+# The route is never inferred, so a bare file is a usage error and not a guess.
+if compost digest README.md >/dev/null 2>&1; then false; else true; fi
+check $? "digest without --as is refused"
 compost ls >/dev/null;    check $? "ls"
 compost check >/dev/null; check $? "check"
 compost render >/dev/null; check $? "render"
+# Graph filenames are minted, so the file holding a document is found by
+# reading the records rather than by guessing a name from the source.
 G=$(python3 -c "
-import json
-for l in open('.compost/graph/README-md.jsonl'):
-    d = json.loads(l)
-    if d.get('type') == 'Header':
-        print(d['guid']); break")
+import glob, json
+for f in glob.glob('.compost/graph/*.jsonl'):
+    for l in open(f):
+        d = json.loads(l)
+        if d.get('type') == 'Header':
+            print(d['guid']); raise SystemExit")
 compost lookup "$G" >/dev/null; check $? "lookup resolves a full guid"
 if compost lookup "${G:0:8}" >/dev/null 2>&1; then false; else true; fi
 check $? "lookup refuses a prefix"

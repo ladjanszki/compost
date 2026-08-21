@@ -10,10 +10,12 @@ import random
 import shutil
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import records as R      # noqa: E402
+from src import routes as RT      # noqa: E402
 from tests import tier as T  # noqa: E402
 from src import store as S        # noqa: E402
 
@@ -24,8 +26,8 @@ FIXTURES = T.markdown("edge-cases")[:8]
 def build(tmp: Path) -> S.Store:
     st = S.Store.init(tmp)
     for f in FIXTURES:
-        recs, _ = R.ast_to_records(S._ast_of(f))
-        st.keep_source(f)
+        recs, _ = R.ast_to_records(RT._ast_of(f))
+        st.keep_blob(f, f"{uuid.uuid4()}{f.suffix}")
         st.write(f"{f.stem}.jsonl", recs)
     return st
 
@@ -105,7 +107,8 @@ def main():
         case("a dangling edge is caught", dangling)
 
         def atomic():
-            leftovers = list(st.graph.rglob(".tmp-*"))
+            leftovers = list(st.graph.rglob(".tmp-*")) + \
+                list(st.storage.rglob(".tmp-*"))
             try:
                 st.write("bad.txt", [])
                 refused = False
@@ -115,32 +118,32 @@ def main():
                 "non-.jsonl refused, no temp files left behind"
         case("writes are atomic and extension-checked", atomic)
 
-        def immutable_source():
+        def blob_name_taken():
+            # Storage names are minted, not derived from the source, so a
+            # collision is a uuid repeating itself rather than a disagreement
+            # about content. Stopping is the only correct answer.
             f = FIXTURES[0]
-            st.keep_source(f)                      # same content: fine
-            forged = tmp / f.name
-            forged.write_text("different content\n")
+            name = f"taken{f.suffix}"
+            st.keep_blob(f, name)
             try:
-                st.keep_source(forged)
-                return False, "overwrote a stored source"
+                st.keep_blob(f, name)
+                return False, "overwrote a stored blob"
             except ValueError:
-                return True, "refuses to overwrite a source with different bytes"
-        case("stored sources are immutable", immutable_source)
+                return True, "refuses a storage name already in use"
+        case("a stored blob is never overwritten", blob_name_taken)
 
-        def no_stem_collision():
-            (tmp / "src").mkdir(exist_ok=True)
-            a = tmp / "src" / "thing.md"
-            a.write_text("# a document\n\nwith a paragraph.\n")
-            b = tmp / "src" / "thing.jsonl"
-            b.write_text(FIXTURES[0].read_text() and "")   # empty is fine here
-            recs, _ = R.ast_to_records(S._ast_of(a), source=a.name)
-            st.write(f"{a.stem}-{a.suffix.lstrip('.')}.jsonl", recs)
-            before = len(st.load()[0])
-            st.write(f"{b.stem}-{b.suffix.lstrip('.')}.jsonl", [])
-            after = len(st.load()[0])
-            return before == after and before > 0, \
-                "two sources sharing a stem do not overwrite each other"
-        case("same-stem sources get distinct graph files", no_stem_collision)
+        def same_bytes_twice():
+            # This replaces the old name-collision rule. Two ingests of one
+            # file are now two blobs, and the guarantee is that *both* survive
+            # whole — the tool reports the duplication rather than resolving
+            # it, because deciding they are one thing is a later layer's call.
+            f = FIXTURES[0]
+            a = st.keep_blob(f, f"first{f.suffix}")
+            b = st.keep_blob(f, f"second{f.suffix}")
+            same = a.read_bytes() == b.read_bytes() == f.read_bytes()
+            return a != b and same, \
+                "identical content stored twice, both copies intact"
+        case("the same bytes may be stored more than once", same_bytes_twice)
 
         def find_from_below():
             deep = tmp / "a" / "b" / "c"

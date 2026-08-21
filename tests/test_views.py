@@ -7,14 +7,18 @@ gets, not about bytes: every citable block reachable in a document shows its
 handle, the markdown view stays clean enough to commit as README.md, and each
 view is valid in its own format.
 """
+import contextlib
+import io
 import re
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import records as R    # noqa: E402
+from src import routes as RT    # noqa: E402
 from tests import tier as T  # noqa: E402
 from src import store as S      # noqa: E402
 from src import views as V      # noqa: E402
@@ -37,10 +41,12 @@ def main():
 
     with tempfile.TemporaryDirectory() as d:
         st = S.Store.init(Path(d))
-        for f in SAMPLE:
-            recs, _ = R.ast_to_records(S._ast_of(f), source=f.name)
-            st.keep_source(f)
-            st.write(f"{f.stem}.jsonl", recs)
+        # Built through the real ingestion path rather than by hand, so the
+        # base under test has the shape `compost digest` actually produces —
+        # blob nodes, `derived_from` edges and all. A view test that builds
+        # its own records can only ever check the views against itself.
+        with contextlib.redirect_stdout(io.StringIO()):
+            S._digest(st, "notes", [str(f) for f in SAMPLE], "compost")
         V.render_all(st)
         recs, _ = st.load()
         g = R.Graph(recs)
@@ -55,8 +61,12 @@ def main():
                     yield from walk(k)
             return list(walk(doc["guid"]))
 
+        # Not recomputed here: a view test that derives its own filenames
+        # cannot notice the day two documents start sharing one.
+        NAMES = V.view_names(docs)
+
         def name_of(doc):
-            return Path(R._p(doc, "source")).stem
+            return NAMES[doc["guid"]]
 
         def every_block_shows_a_handle():
             missing = 0
@@ -90,11 +100,23 @@ def main():
             injected = 0
             for doc in docs:
                 view = (st.views / "default-md" / f"{name_of(doc)}.md").read_text()
-                src = (st.storage / R._p(doc, "source")).read_text()
+                blob = R.blob_of(recs, doc["guid"])
+                src = (st.storage / R._p(blob, "stored_as")).read_text()
                 if len(HANDLE.findall(view)) != len(HANDLE.findall(src)):
                     injected += 1
             return injected == 0, "markdown carries only the handles the source had"
         case("the markdown view injects no handles", md_is_clean)
+
+        def no_document_is_overwritten():
+            # SAMPLE deliberately contains two different files both named
+            # nested-lists.md. Before view names were disambiguated, one of
+            # them silently overwrote the other's pages and `render` reported
+            # writing files that held the wrong document.
+            stems = [name_of(d) for d in docs]
+            pages = list((st.views / "default-html").glob("*.html"))
+            return len(set(stems)) == len(docs) and len(pages) == len(docs) + 1, \
+                f"{len(docs)} documents, {len(set(stems))} distinct names"
+        case("every document gets its own view file", no_document_is_overwritten)
 
         def views_parse():
             bad = []

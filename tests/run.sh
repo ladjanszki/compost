@@ -8,7 +8,7 @@
 set -u
 cd "$(dirname "$0")/.."
 fail=0
-for t in test_records test_sabotage test_store test_views test_citations \
+for t in test_records test_sabotage test_store test_digest test_views test_citations \
          test_bleach_session test_session test_session_views test_lookup \
          test_serve test_manpage; do
   out=$(python3 -m "tests.$t" 2>&1) || fail=1
