@@ -307,6 +307,29 @@ def render_html(records, root, title: str) -> str:
 
 # -- driver -----------------------------------------------------------------
 
+def view_names(docs) -> dict:
+    """
+    Root guid -> the filename stem its views are written under, unique.
+
+    Two documents may now legitimately carry the same original name: storage
+    names are minted guids, so nothing refuses a second `notes.md` the way the
+    old name-keyed storage accidentally did. Without this, the second one's
+    views silently overwrite the first's and `render` reports having written
+    files that are not there — a view that is quietly the wrong document,
+    which is the failure `render` exists to refuse.
+
+    A collision is broken with the root's handle rather than a counter. A
+    counter renumbers when an unrelated document arrives, so every URL in the
+    browser moves; a handle is the document's own and never does. Names that
+    do not collide are left clean, which is the common case.
+    """
+    from collections import Counter
+    stems = {d["guid"]: Path(R._p(d, "source") or d["guid"]).stem for d in docs}
+    clash = {s for s, n in Counter(stems.values()).items() if n > 1}
+    return {g: (f"{s}-{handle(g)}" if s in clash else s)
+            for g, s in stems.items()}
+
+
 def render_all(st: S.Store):
     recs, files = st.load()
     problems = R.check(recs)
@@ -316,11 +339,12 @@ def render_all(st: S.Store):
     g = R.Graph(recs)
     docs = [n for n in g.nodes.values()
             if n["type"] in ("document", "session")]
+    names = view_names(docs)
     written = []
     index = []
     for doc in sorted(docs, key=lambda d: R._p(d, "source") or d["guid"]):
         root = doc["guid"]
-        name = Path(R._p(doc, "source") or root).stem
+        name = names[root]
         for sub, ext, fn in (
             ("default-djot", ".dj", lambda: render_djot(recs, root)),
             ("default-md", ".md", lambda: render_md(recs, root)),
