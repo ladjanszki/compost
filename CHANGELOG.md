@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.3 — unreleased — the transcript importer stops filtering
+## Unreleased — the transcript importer stops filtering
 
 `--as=claude-code-transcript` was discarding **46% of a real transcript** and
 nobody could see it. It is now lossless, and the guarantee is a property:

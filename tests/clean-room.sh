@@ -125,6 +125,17 @@ done)
 newest=$(git tag -l --sort=-v:refname | grep '^v[0-9]' | head -1)
 grep -qF "## $newest " CHANGELOG.md; check $? "CHANGELOG has an entry for $newest"
 
+# The mirror of the TODO rule above. A CHANGELOG heading naming a version is a
+# claim that the version exists; with no tag behind it, it is a planning bucket
+# wearing a release number -- the thing this repo keeps relearning. Work that
+# has landed but not shipped belongs under "## Unreleased".
+phantom=$(grep -oE '^## +v[0-9][0-9A-Za-z.-]*' CHANGELOG.md | awk '{print $2}' | while IFS= read -r v; do
+  git rev-parse -q --verify "refs/tags/$v" >/dev/null || echo "$v"
+done)
+[ -z "$phantom" ]; check $? "no CHANGELOG heading names a version without a tag"
+[ -n "$phantom" ] && echo "$phantom" | sed 's/^/    /'
+
+
 if [ "$WITH_AGENT" -eq 1 ]; then
   step "a fresh Claude, given only CLAUDE.md"
   cd "$ROOT/compost" || exit 1
