@@ -10,7 +10,7 @@ things are temporarily out of step. Read this before assuming either.
 conda env create -f environment.yml   # once; later, conda env update -f …
 conda activate compost                # pandoc 3.10 — base has 3.8 and won't say so
 pip install -e .                      # puts `compost` on PATH
-./tests/run.sh                        # eleven suites, all should pass
+./tests/run.sh                        # twelve suites, all should pass
 compost --help
 ```
 
@@ -45,7 +45,8 @@ from those records and from nothing else.
 
 ```bash
 compost init             # makes .compost/ here; every other command walks up to it
-compost import FILE...   # markdown by any suffix, transcripts as *.jsonl
+compost digest --as=R FILE...   # R is one of notes, claude-code-transcript,
+                                # pandoc-ast. Required; never inferred.
 compost check            # must report 0 problems
 compost render           # views/default-{djot,html,md}
 compost lookup HANDLE    # the block a handle names
@@ -54,7 +55,11 @@ compost serve            # the HTML view on 127.0.0.1:7373
 
 `.compost/graph/**/*.jsonl` holds **the records**: one per line, each saying
 whether it is a `node` or an `edge`. Filenames carry no meaning, and load order
-cannot change the result. To read a base as prose use
+cannot change the result. Both graph and storage filenames are minted uuids,
+and the two are unrelated: to get from a document to its bytes, follow its
+`derived_from` edge to the `blob` node and read `params["stored_as"]`. There is
+no rule that turns an original filename into a storage path, and anything that
+invents one will be wrong. To read a base as prose use
 `.compost/views/default-djot/`, which carries a handle on every citable block.
 A handle is the whole guid; a prefix of one resolves to nothing.
 
@@ -100,9 +105,16 @@ shaped the way it is, never as a description of the current tool.
   is wrong regardless of what else passes.
 - **A view of a broken graph is worse than no view.** `render` refuses when
   `check` fails, on purpose.
-- **Sources are immutable.** `.compost/storage/` refuses to overwrite a file
-  whose bytes differ.
-- **Do not hand-edit `.compost/graph/`.** Write through the importer, so the
+- **Sources are immutable, and storage is a blob store.** Every file lands
+  under a freshly minted `GUID.EXT`, so `.compost/storage/` never overwrites
+  anything — it refuses a name already in use, which can only mean a uuid
+  repeated itself. The same bytes may legitimately be stored twice; `digest`
+  reports that and does not resolve it.
+- **Nothing about ingestion is inferred from a file extension.** The route is
+  named with `--as` or the command refuses. This was dispatch on the suffix
+  until v0.2.2, where the fallback was not "markdown" but "anything at all".
+  `src/routes.py` is the only place that knows how to read anything.
+- **Do not hand-edit `.compost/graph/`.** Write through `compost digest`, so the
   invariants hold and the records stay canonical.
 - **Add a test with a property, not a snapshot.** Every suite in `tests/` states
   something that must be true and has been made to fail on purpose.

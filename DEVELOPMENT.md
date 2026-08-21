@@ -6,8 +6,10 @@
 src/            the implementation
   cli.py        the compost command: a dispatcher and nothing else
   records.py    pandoc AST <-> records, the whole-graph checks, citations
+  routes.py     the named ways material enters a base; nothing else reads
+                a file extension to decide anything
   session.py    Claude Code JSONL -> records
-  store.py      the .compost/ base: init, import, ls, check, lookup
+  store.py      the .compost/ base: init, digest, ls, check, lookup
   views.py      the three views, and the per-node-type view dispatch
   serve.py      a static server over the HTML view; renders nothing
   bleach.py     lorem-ise a markdown file, keep the formatting

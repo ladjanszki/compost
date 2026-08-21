@@ -215,6 +215,52 @@ which is a sibling of `blocks` and not reachable from any block. An importer
 that reads `doc["blocks"]` and stops loses frontmatter silently; `decisions.md`
 records this. Proposal: `params.meta`, verbatim, same rule as everywhere else.
 
+## The `blob` node, and what a path is
+
+A `document` root also records **which bytes it was read from**, as a `blob`
+node joined by a `derived_from` edge in the `ingestion` layer:
+
+```json
+{"record": "node", "guid": "8bfcf838-…", "type": "blob",
+ "params": {"original_name": "s.jsonl", "stored_as": "8bfcf838-….jsonl",
+            "bytes_sha256": "6b9b084b…", "imported_at": "2026-08-21T16:59:44Z",
+            "route": "claude-code-transcript"}}
+```
+
+`stored_as` is a minted guid plus the original extension, so **the original
+name is not where the file lives**. Reconstructing a storage path from
+`params["source"]` is guessing; `records.blob_of()` is the supported way, and
+it follows the edge. The extension is carried only so a file pulled back out
+of `storage/` is still usable by hand — nothing reads it to decide anything.
+
+`bytes_sha256` is the hash of the **raw ingested bytes** and is a different
+thing from `content_hash`, which hashes the canonical JSON of a single node.
+Two hashes, two questions: "are these the same file" and "are these the same
+block".
+
+**`blob` and `file` are not the same node and are deliberately not merged.**
+A `file` is a *path a session touched* — it may not exist, and no bytes are
+held. A `blob` is *bytes that are in `storage/`*. Every vocabulary that has
+had to make this distinction lands in the same place, and the shared answer is
+that **a path is a locator, not a thing**:
+
+| | the bytes | the content |
+|---|---|---|
+| PROV-O (W3C Rec) | `prov:Entity` + `prov:wasDerivedFrom` | the derived entity |
+| NFO (NEPOMUK) | `nfo:FileDataObject`, `nfo:hasHash` | the information it carries |
+| FRBR / FaBiO | Manifestation / Item | Work / Expression |
+| DCAT | `dcat:Distribution` | `dcat:Dataset` |
+
+The distinctions are borrowed; the namespaces are not. These records are typed
+nodes with JSON params, not RDF triples, and importing `prov:` URIs would buy
+machinery for a vocabulary that fits in this table. When one path is both a
+`file` and a `blob`, a `represents` edge joins them. Nothing mints one yet.
+
+Where PROV would disagree: the ingestion `route` belongs on the *activity*,
+not on its output, and it is currently a param on the root node. The day two
+imports of one file need comparing, an `ingestion` node is the shape to reach
+for.
+
 ## Defining `content_hash`
 
 The hash input must be specified exactly or a different JSON encoder silently

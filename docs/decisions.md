@@ -287,3 +287,120 @@ nothing common. `-p` overrides it.
 - **djot.js and the `npx` spawn are gone**, removed in v0.2 as this entry
   planned. Pandoc reads and writes djot natively, so there is no second
   toolchain and no subprocess spawn per canonization.
+
+## Ingestion: named routes, minted storage names
+
+*Decided and built 2026-08-21, for v0.2.2 — untagged at time of writing.
+Supersedes dispatch on the file extension.*
+
+### The route is named, never inferred
+
+`import` chose its reader from the suffix: `*.jsonl` was a Claude Code
+transcript and **everything else** went to pandoc. Two faults, and the second
+is the one that forced the change.
+
+The `else` was not "markdown", it was *anything at all* — a PNG reached
+pandoc's markdown reader and came back as a pandoc error rather than a compost
+one. And `.jsonl` is a container, not a format. The moment a second kind of
+JSONL exists the suffix stops naming a reader, and that moment is close: the
+`claude --print` path will produce single text turns, which are a different
+material from a session log with its tool calls.
+
+So there are three named routes and `--as` is required:
+
+| route | reads |
+|---|---|
+| `notes` | prose, as `commonmark_x` with the three extensions off |
+| `claude-code-transcript` | a Claude Code session log, the whole `*.jsonl` |
+| `pandoc-ast` | a pandoc JSON document somebody else already produced |
+
+Naming, and why not the obvious alternatives:
+
+- **`notes`, not `simple-markdown` or `custom-markdown`.** "Custom" promises
+  configurability and this route has no knobs at all — one dialect, three
+  extensions off, no options. If the reader ever does become configurable, the
+  name would already be taken by the thing that is not.
+- **`claude-code-transcript`, not `…-session` or `…-conversation`.** It names
+  the *unit of material*, because `claude-code` already carries the
+  technology. Its sibling will be `claude-code-turn` — one reply from
+  `claude --print` — and transcript-versus-turn is exactly the distinction
+  that needs to survive. "Conversation" is reserved for something else.
+- **`pandoc-ast` is the narrowest route, not the broadest.** It reads nothing:
+  `ast_to_records` already takes that shape. The unreliability people expect
+  here lives in the pandoc invocation, and this route puts that invocation
+  *outside* the tool where it can be inspected and tuned.
+
+### Storage names are minted uuids, not content hashes
+
+`storage/GUID.EXT`, where `GUID` is the `blob` node's own guid.
+
+Content-addressed storage was the alternative and was rejected. It is better
+on two counts — the name is verifiable by re-hashing, and identical bytes
+collapse to one copy for free — but it costs the invariant **every object has
+a guid**, which is worth more here. Storage is a blob store on purpose; the
+metadata layer lives entirely in the graph, and a `storage/` without its graph
+is meant to be an unlabelled pile.
+
+The risk that buys is *silent duplication*: with content hashes, ingesting the
+same file twice was a no-op. Two things close it, and neither is the naming:
+
+- `bytes_sha256` on the blob node, so duplication is detectable and a stored
+  file is still verifiable against what the graph claims.
+- `digest` reports a duplicate — `these bytes are already in N blobs` — and
+  does **not** resolve it. Deciding two copies are one thing is a later
+  layer's call, and the same identity question is already open for re-imports
+  producing matching `content_hash` values.
+
+**The extension is kept**, so a file pulled back out of `storage/` is still
+usable by hand. It is a decoration and nothing routes on it — which is the
+whole point of the paragraph above. One accepted wart: the same bytes ingested
+as `.md` and as `.txt` are two files.
+
+### Ingestion is two-phase
+
+Nothing is written until every input in a batch has been read and parsed.
+
+This is a direct consequence of minted names. Under content-addressed storage
+a half-finished batch was safe to re-run, because the files that had landed
+were idempotent. With minted names they are not: re-running would ingest them
+a second time under fresh guids. Validating first is what makes it safe to
+pass a glob, which is also why directories are refused rather than walked —
+the shell already answers "how deep", and better.
+
+### Storage and graph names must not be derivable from each other
+
+Both are uuids and they are different uuids. If either could be computed from
+the other, something would eventually compute it, and a filename that means
+something is how suffix routing happened in the first place. The supported
+path from a document to its bytes is the `derived_from` edge and
+`blob.params["stored_as"]` — `records.blob_of()`, and nothing else.
+
+The cost is that `ls .compost/graph/` is now opaque. That was accepted
+knowingly: `ls` is to be superseded by a DuckDB-backed `query`, and reading
+filenames in a file browser is not how this base is meant to be inspected.
+
+### `import` became `digest`
+
+The rename is flavour, but the release breaks the CLI regardless — the route
+is mandatory now — so doing both at once is one break instead of two. `add`
+does not say what it adds to; `break-down` is awkward to type.
+
+**A bare `compost --as=notes FILE`, with no subcommand, was rejected.** It
+would have to distinguish `compost --as=notes render` (ingest a file called
+`render`) from `compost render`, which is implicit routing on the shape of an
+argument — the exact class of thing this whole change removes. Deleting suffix
+routing and adding name routing in one release is not progress.
+
+### View filenames are disambiguated
+
+Found while making the above land, and repaired with it. `render` names view
+files from `params["source"]`, so two documents with the same original name
+overwrote each other's pages — `render` would report writing files that held
+the wrong document. Nothing had noticed because the old name-keyed storage
+*accidentally* guarded it by refusing a second `notes.md` with different
+bytes. Minted names removed that guard.
+
+Colliding stems now take the root's handle as a suffix. A counter was rejected:
+it renumbers when an unrelated document arrives, so every URL in the browser
+moves, while a handle is the document's own and never does. Names that do not
+collide stay clean, which is the common case.

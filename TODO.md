@@ -228,9 +228,9 @@ a list of what that release contained, which was the opposite of the truth.
 Buckets get names here; releases get numbers, and `CHANGELOG.md` says what is
 in them.
 
-As of v0.2.1 the tool imports text and transcripts, checks, renders three
-views, resolves a handle and serves the HTML. Everything below is a real gap,
-listed because it was found and named rather than discovered later.
+As of v0.2.2 the tool digests by named route, checks, renders three views,
+resolves a handle and serves the HTML. Everything below is a real gap, listed
+because it was found and named rather than discovered later.
 
 ### The migration
 
@@ -256,7 +256,7 @@ The one thing that makes v0.2 replace v0.1 rather than sit beside it.
 6. Optionally update the archived copies so the readable backup stays internally
    consistent. The pristine bytes stay in `compost-full-history.bundle`.
 
-### Sidechains arrive in a second file — next, and ahead of the rest of this list
+### Sidechains arrive in a second file — deferred on purpose in v0.2.2
 
 The corpus contains **zero** sidechain lines, so log order and reply order are
 indistinguishable in every fixture and subagent nesting has never been
@@ -299,13 +299,43 @@ growing share of the reasoning now happens.
 Note that a bleached fixture is possible now, which it was not when this entry
 was written — `src/bleach_session.py` has real sidechain input to work from.
 
-### `file` nodes have no view
+**v0.2.2 deliberately did not do this.** `--as=claude-code-transcript` reads
+exactly the file it is given and nothing else, so storage and graph stay 1:1
+and one invocation means one source. That was a choice, not an oversight: the
+join is a *second* kind of fact — which agent ran under which toolcall — and
+it belongs in its own layer beside `ingestion`, asserted explicitly, rather
+than smuggled in as a side effect of reading a file. Do it as its own step.
 
-134 of them, deliberately uncontained, so they appear in no document tree. Either
-the session view grows a "files touched" section assembled from `touches` edges,
-or files get an index of their own. Also: the same path can later be imported
-and become a `document`, so one file becomes two nodes. Keep them separate and
-add a `represents` edge when it matters.
+One thing to check before that step, cheaply, because it decides whether the
+join is still recoverable from what is already stored: **where `agentId`
+actually appears on the parent side.** `toolcall` nodes keep their `input`
+verbatim (`session.py`), so if it sits inside the `Agent` tool_use input it is
+already being captured and nothing is being lost today. If it is a sibling key
+on the log line instead, the current importer drops it and every transcript
+ingested until then will need re-reading to recover the link. The fixtures
+cannot answer this — they contain zero sidechain lines.
+
+### `file` and `blob` nodes have no view
+
+Both are uncontained, so they appear in no document tree. Either the session
+view grows a "files touched" section assembled from `touches` edges, or
+entities get an index of their own — a blob index would also be the natural
+place to show "these four documents came from the same bytes".
+
+The two node types are settled and are **not** to be merged: a `file` is a
+path a session touched, a `blob` is bytes in `storage/`. The prior art and the
+reasoning are in `docs/record-format.md`. When one path is both, a `represents`
+edge joins them; nothing mints one yet, and doing so means matching an
+`original_name` against a `path`, which is a guess worth designing rather than
+writing in passing.
+
+### `check` does not verify `storage/`
+
+It reads records and stops there, so a blob whose bytes were altered on disk
+is not detected — even though `bytes_sha256` is precisely what would detect
+it. Storage is meant to be verifiable and currently is only verifiable by
+hand. Hashing every source on every `check` is the obvious objection; a
+`--deep` flag, or folding it into the `query` work, is the obvious answer.
 
 ### Short handles
 
@@ -332,6 +362,31 @@ resolution as a separate tool* under Later: expanding a prefix before the
 citation is written gets the convenience without putting an abbreviation
 anywhere near the base.
 
+### What pandoc actually gets us — a research programme, not a feature
+
+The `pandoc-ast` route exists as of v0.2.2 and is the instrument for this; the
+experiment itself has not been run. The north star: **if we push all kinds of
+documents through pandoc, how reliable is the graph we get?**
+
+That is not yet a question with an answer, and sharpening it is part of the
+work. What is decided is the method, because the value is entirely in the
+record-keeping:
+
+- a curated set of documents pandoc claims to read — html, djot, man, LaTeX,
+  org, rst, docx — chosen for variety rather than volume
+- for each one, the **exact invocation**, recorded next to it, not remembered
+- for each one, an **expert review** of where the AST diverged from what the
+  document meant: not "did it parse" but "did it parse into the right thing"
+
+These are curated and reviewed, so they cannot be fetched: they belong in
+`tests/fixtures/` as a tracked set, alongside the notes that justify them —
+one directory per case holding the source, the invocation, and the review.
+
+The output is knowledge, not a feature. It may well conclude that no single
+mechanical route can cover this class, which was the going assumption when the
+route was built. `route` is recorded on every root node so the question stays
+answerable after the fact.
+
 ### Subcommands v0.1 had and v0.2 does not
 
 `submit`, `new`, `last`, `artifact`. Both daily-loop gaps are closed: `lookup`
@@ -350,9 +405,18 @@ leaving a tab open actually becomes the annoyance.
 - **Empty `thinking` nodes** are stored and not rendered. All 491 carry no text
   because Claude Code persists only a signature; other agents do emit text. The
   view will need to show them the day one does.
-- **Re-import identity.** A second import of an unchanged file mints fresh guids
-  and produces matching `content_hash` values that sit beside the first set.
-  Expected, tested, and still the unanswered identity question.
+- **Re-import identity.** A second digest of an unchanged file mints fresh
+  guids and produces matching `content_hash` values that sit beside the first
+  set, plus a second `blob` with the same `bytes_sha256`. `digest` now says so
+  rather than resolving it. Expected, tested, and still the unanswered
+  identity question — the duplication is at least visible now, which is a
+  precondition for answering it.
+- **Immutable notes are a promise nothing enforces.** `--as=notes` is meant
+  for the note that is added and never edited, but no mechanism distinguishes
+  it from anything else: nodes are immutable in practice because guids are
+  minted per import, not because anything refuses a change. Either it stays
+  documentation or it becomes a param `check` acts on. Do not let the route
+  name imply the second.
 - **Citations attach to blocks, not to references.** A `{@}`-era limitation that
   survives the move to links: two citations in one paragraph are two edges from
   the same source node, and nothing distinguishes which reference is which.

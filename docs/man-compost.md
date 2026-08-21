@@ -9,7 +9,7 @@ views from it
 
 ```
 compost init [DIR]
-compost import FILE...
+compost digest --as=ROUTE FILE...
 compost ls
 compost check
 compost lookup HANDLE
@@ -33,6 +33,11 @@ The v0.1 subcommands `new`, `submit`, `last` and `artifact` no longer exist.
 compost reads sources once, turns them into nodes and edges, and generates
 every view from those records and from nothing else. Sources are kept forever;
 views are disposable and can be deleted at the cost of a rebuild.
+
+How a source is read is **named on the command line and never inferred**. A
+file called `notes.jsonl` digested `--as=notes` is markdown, because that is
+what was asked for; the extension survives into `storage/` as a decoration for
+whoever pulls the bytes back out, and nothing reads it.
 
 Markdown is read as `commonmark_x` with `attributes`, `smart` and
 `fancy_lists` disabled. Session transcripts are read as Claude Code JSONL.
@@ -62,27 +67,68 @@ Makes `graph/`, `storage/` and `views/`. Safe to run on an existing base.
 up from the current directory until it appears. There is no environment
 variable and no config file, so a base cannot be half-configured.
 
-### import FILE...
+### digest --as=ROUTE FILE...
 
-Ingest one or more sources. The reader is chosen by extension:
+Ingest one or more files, all read by the same named route.
 
-- `*.jsonl` — a Claude Code session transcript
-- anything else — markdown
+| route | reads |
+|---|---|
+| `notes` | prose, as `commonmark_x` with the three extensions off |
+| `claude-code-transcript` | a Claude Code session log, the whole `*.jsonl` |
+| `pandoc-ast` | a pandoc JSON document somebody else already produced |
 
-There is **no separate subcommand for transcripts**; `import` dispatches on the
-suffix. For each file it copies the source into `storage/`, refusing to
-overwrite a stored source whose bytes differ, and writes records to
-`graph/STEM-EXT.jsonl`. The suffix is part of that name because `thing.md` and
-`thing.jsonl` would otherwise write the same file.
+`--as` is **required**. Omitting it, or naming a route that does not exist,
+prints the table above and exits 2 rather than guessing. This replaces
+dispatch on the file extension, which was wrong twice over: the fallback was
+not "markdown" but "anything at all", so a PNG became a pandoc error rather
+than a compost one; and `.jsonl` is a container, not a format, so the suffix
+stops naming a reader the moment a second kind of JSONL exists.
 
-Prints nodes, edges and the root handle per file, then a total. With no files,
-prints usage and exits 2. If a source is already in `storage/` with different
-bytes, says so and exits 1 without writing anything.
+`pandoc-ast` is the narrowest route, not the broadest — there is no reading
+step in it to be wrong, because `ast_to_records` takes exactly that shape.
+Whatever pandoc invocation produced the file stays outside the tool, where the
+person who wrote it can inspect and tune it.
 
-Re-importing a file mints fresh guids and writes the graph file again. Two
-imports of one document therefore produce two sets of nodes with matching
-`content_hash` values, which sit beside each other; recognising them as
-multiples of one thing is a later layer.
+**Nothing is written until every file has been read and parsed.** A batch that
+died halfway could not simply be re-run: storage names are minted, so the
+files it had already ingested would come in a second time under fresh guids.
+Validating first is what makes it safe to pass a glob.
+
+**Directories are refused**, pointing at the shell rather than growing a
+recursion flag — `compost digest --as=notes notes/*.md`, or `find … -exec`,
+and the question of how deep to walk stays where the caller already has an
+answer for it.
+
+For each file it mints a guid, copies the bytes to
+`storage/GUID.EXT`, writes records to `graph/OTHER-GUID.jsonl`, and adds a
+`blob` node joined to the document root by a `derived_from` edge. The two
+guids are unrelated on purpose: if either name were derivable from the other,
+something would eventually derive it, which is suffix routing wearing a
+different hat.
+
+The `blob` node is how a document reaches its bytes, and the only way:
+
+```json
+{"record": "node", "guid": "8bfcf838-…", "type": "blob",
+ "params": {"original_name": "s.jsonl", "stored_as": "8bfcf838-….jsonl",
+            "bytes_sha256": "6b9b084b…", "imported_at": "2026-08-21T16:59:44Z",
+            "route": "claude-code-transcript"}}
+```
+
+Reconstructing a storage path from the original name is guessing and will
+guess wrong. The root node also records the `route` it came by, because every
+block below it looks the same whichever way it was read.
+
+Prints nodes, edges, the root handle and the blob handle per file, then a
+total. With no files, prints usage and exits 2. A missing file or a directory
+exits 1 having written nothing.
+
+Re-digesting a file mints fresh guids and stores the bytes again, so the same
+content can sit in storage more than once. That is **reported and not
+resolved** — `note: these bytes are already in N blobs` — because deciding two
+copies are one thing is a later layer's call. Two imports of one document
+likewise produce two sets of nodes with matching `content_hash` values; the
+identity question is still open.
 
 ### ls
 
@@ -100,8 +146,8 @@ What it enforces:
 
 - no edge points at a node that does not exist
 - every node has exactly one incoming `contains`, except roots (`document`,
-  `session`) which have none, and entities (`file`) which are referenced rather
-  than contained
+  `session`) which have none, and entities (`file`, `blob`) which are pointed
+  at rather than contained
 - the containment graph is acyclic
 - each parent's `next` chain has exactly one head and reaches every child
   exactly once, without leaving the parent
@@ -200,7 +246,15 @@ Invented where pandoc's grammar is anonymous: `ListItem`, `DefinitionTerm`,
 `DefinitionItem`.
 
 From transcripts: `session`, `turn`, `toolcall`, `tooloutput`, `thinking`,
-`file`. Also `document` for an imported text file.
+`file`. Also `document` for an ingested text file, and `blob` for the bytes
+one was derived from.
+
+`file` and `blob` are different things and are deliberately not merged. A
+`file` is a **path a session touched** — it may not exist, and no bytes are
+held. A `blob` is **bytes that are in `storage/`**. Every vocabulary that has
+faced this splits it the same way (PROV-O, NFO, FRBR, DCAT): a path is a
+locator, not a thing. When the same path is both, a `represents` edge joins
+them; nothing mints one yet.
 
 ## EDGE LAYERS
 
@@ -210,22 +264,26 @@ From transcripts: `session`, `turn`, `toolcall`, `tooloutput`, `thinking`,
 | `session` | `contains`, `next`, `touches` — transcript structure; `next` is log order |
 | `claude-code` | `replies_to` — the `parentUuid` chain |
 | `citation` | `cites` — derived from links in the text |
+| `ingestion` | `derived_from` — which bytes a document was read from |
 
 ## EXIT STATUS
 
-`0` success · `1` the graph has problems, no base was found, or a source would
-be overwritten · `2` usage, or an unknown subcommand
+`0` success · `1` the graph has problems, no base was found, or an input was
+missing or unreadable · `2` usage, an unknown subcommand, or a missing or
+unknown `--as`
 
 Verified: `check` outside a base exits 1; no arguments exits 2; an unknown
-subcommand exits 2; `init` is idempotent; a changed source exits 1; `render`
-on a graph with a dangling edge exits 1.
+subcommand exits 2; `init` is idempotent; `digest` without `--as` exits 2;
+a directory or a missing file exits 1 having written nothing; `render` on a
+graph with a dangling edge exits 1.
 
 ## EXAMPLES
 
 ```
 compost init ~/notes
 cd ~/notes
-compost import draft.md ~/.claude/projects/-Users-me-notes/*.jsonl
+compost digest --as=notes draft.md
+compost digest --as=claude-code-transcript ~/.claude/projects/-Users-me-notes/*.jsonl
 compost check
 compost render
 compost serve
@@ -233,6 +291,15 @@ compost serve
 
 ## NOT YET IMPLEMENTED
 
-No `submit`, `new` or `artifact`. No view for `file` nodes,
-which are uncontained and so appear in no document tree. No migration of a
-v0.1 base. Empty `thinking` nodes are stored but not rendered.
+No `submit`, `new` or `artifact`. No view for `file` or `blob` nodes, which
+are uncontained and so appear in no document tree. No migration of a v0.1
+base. Empty `thinking` nodes are stored but not rendered.
+
+**Sidechains are not followed.** A `claude-code-transcript` reads exactly the
+file it was given. A subagent's turns live in a second file that the parent
+never mentions in its own reply chain, and joining them is deliberately a
+later, explicit step — see `TODO.md`.
+
+`check` does not verify `storage/`. It reads records, so a blob whose bytes
+were altered on disk is not detected, even though `bytes_sha256` is exactly
+what would detect it.

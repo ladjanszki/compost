@@ -10,7 +10,8 @@ conversation that produced a decision stays readable next to the decision.
 
 ```
 compost init
-compost import notes.md ~/.claude/projects/<slug>/*.jsonl
+compost digest --as=notes notes.md
+compost digest --as=claude-code-transcript ~/.claude/projects/<slug>/*.jsonl
 compost check
 compost render
 compost lookup d826c4dd        # the block a handle names
@@ -24,10 +25,15 @@ with identifiers written into them; it stores **nodes and edges** as JSONL, and
 generates every view from those records and from nothing else.
 
 ```
-sources ──► pandoc AST ──► records ──► views/default-djot   (agents)
-            session JSONL ─┘           views/default-html   (people)
-                                       views/default-md     (README, TODO, …)
+--as=notes           ─► pandoc AST ─┐
+--as=pandoc-ast      ─────────────► ├─► records ──► views/default-djot  (agents)
+--as=claude-code-transcript ──────► ┘               views/default-html  (people)
+                                                    views/default-md    (README, …)
 ```
+
+How a source is read is **named, never inferred from its extension**. The
+suffix is a decoration that follows the bytes into storage; nothing routes on
+it. `compost digest --as` lists the routes.
 
 The middle is the waist. Everything downstream reads two record types and never
 an AST, which is what keeps the graph from drifting away from what is displayed:
@@ -37,7 +43,7 @@ a missing edge is a visibly broken page the same day.
 
 | | |
 |---|---|
-| **nodes** | pandoc's own constructor names — `Para`, `Header`, `CodeBlock`, `Table` — plus `ListItem` and two others where pandoc's grammar is anonymous, plus `session`, `turn`, `toolcall`, `tooloutput`, `thinking`, `file`, `document` |
+| **nodes** | pandoc's own constructor names — `Para`, `Header`, `CodeBlock`, `Table` — plus `ListItem` and two others where pandoc's grammar is anonymous, plus `session`, `turn`, `toolcall`, `tooloutput`, `thinking`, `file`, `document`, `blob` |
 | **edges** | `contains` and `next` per layer, `touches`, `replies_to`, `cites` |
 | **identity** | a UUIDv4 per node, and a SHA256 `content_hash` where a node has content of its own |
 | **citations** | `[-](#<guid>)` — a link, so a handle quoted inside a code block cannot become an edge |
@@ -52,7 +58,8 @@ $ ./tests/run.sh
 test_records             525/525 identity round-trip   |   19828 nodes, 35747 edges
 test_sabotage            6/6 sabotages caught
 test_store               10/10 storage guarantees hold
-test_views               5/5 view guarantees hold
+test_digest              12/12 ingestion guarantees hold
+test_views               6/6 view guarantees hold
 test_citations           7/7 citation guarantees hold
 test_bleach_session      7/7 session-fixture guarantees hold
 test_session             9/9 session-import guarantees hold

@@ -3,6 +3,120 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.2 — unreleased — ingestion is asked for by name
+
+`compost import FILE...` is gone. Ingestion is `compost digest --as=ROUTE
+FILE...`, the route is required, and **nothing about it is inferred from a file
+extension**.
+
+### The route is named
+
+`import` chose its reader from the suffix. Two faults, and the second forced
+the change: the fallback was not "markdown" but *anything at all*, so a PNG
+reached pandoc's markdown reader and came back as a pandoc error rather than a
+compost one; and `.jsonl` is a container, not a format, so the suffix stops
+naming a reader the moment a second kind of JSONL exists. That moment is
+close — `claude --print` will produce single text turns, a different material
+from a session log with its tool calls.
+
+| route | reads |
+|---|---|
+| `notes` | prose, as `commonmark_x` with the three extensions off |
+| `claude-code-transcript` | a Claude Code session log, the whole `*.jsonl` |
+| `pandoc-ast` | a pandoc JSON document somebody else already produced |
+
+`notes` is not a new reader — it is the dialect `decisions.md` settled in v0.2,
+flags unchanged. What changed is that it must now be asked for. `pandoc-ast`
+is genuinely new, and it is the *narrowest* route rather than the broadest:
+`ast_to_records` already takes that shape, so there is no reading step in it to
+be wrong. Whatever pandoc invocation produced the file stays outside the tool,
+where the person who wrote it can inspect it.
+
+`src/routes.py` is now the only module that knows how to read anything.
+`store.py` no longer invokes pandoc.
+
+### Storage is a blob store
+
+Every ingested file lands under a freshly minted `storage/GUID.EXT`, and a
+`blob` node records `original_name`, `stored_as`, `bytes_sha256`,
+`imported_at` and `route`. A `derived_from` edge in a new `ingestion` layer
+joins the document root to it, and the root records the route it came by.
+
+Content-addressed names were the alternative and were rejected: they are
+verifiable and idempotent, but they cost the invariant that *every object has
+a guid*, which is worth more here. The duplication that buys is closed by
+reporting rather than by naming — `these bytes are already in N blobs` — since
+deciding two copies are one thing is a later layer's call. The extension
+survives so a file pulled back out of `storage/` is still usable by hand; it is
+a decoration and nothing routes on it.
+
+**The original name is no longer where the file lives.** `records.blob_of()`
+follows the edge, and anything reconstructing a storage path from
+`params["source"]` is guessing.
+
+Storage and graph filenames are different uuids on purpose. If either were
+derivable from the other, something would eventually derive it — which is
+suffix routing wearing a different hat.
+
+### A batch is all or nothing
+
+Nothing is written until every input has been read and parsed. This falls out
+of minted names: under content-addressed storage a half-finished batch was safe
+to re-run, and now it is not — the files that had landed would come in again
+under fresh guids. Validating first is what makes it safe to pass a glob.
+
+Directories are refused rather than walked, pointing at the shell. `find` is
+better at recursion than a flag would be, and the caller already has an opinion
+about how deep to go.
+
+### Two things this found
+
+**View filenames collided silently.** `render` names view files from the
+source name, so two documents called `notes.md` overwrote each other's pages
+and `render` reported writing files that held the wrong document. Nothing had
+noticed because the old name-keyed storage *accidentally* guarded it by
+refusing a second file with the same name and different bytes; minted names
+removed that guard. Colliding stems now take the root's handle. A counter was
+rejected — it renumbers when an unrelated document arrives, moving every URL
+in the browser, while a handle is the document's own.
+
+**`file` and `blob` are different nodes.** A `file` is a path a session
+touched — may not exist, no bytes held. A `blob` is bytes in `storage/`. Every
+vocabulary that has faced this splits it the same way, and the shared answer is
+that a path is a locator rather than a thing: PROV-O, NFO, FRBR and DCAT are
+recorded in `docs/record-format.md` as the reason, with the distinctions
+borrowed and the namespaces deliberately not. A `represents` edge will join
+them when one path is both; nothing mints one yet.
+
+### Deferred on purpose
+
+**Sidechains are still not followed.** `--as=claude-code-transcript` reads
+exactly the file it is given, so storage and graph stay 1:1. The join between
+a parent and its subagent is a second kind of fact and belongs in its own layer,
+asserted explicitly, rather than smuggled in as a side effect of reading a
+file. `TODO.md` names one thing to check first: where `agentId` actually
+appears on the parent side, since that decides whether the link is recoverable
+from transcripts already ingested.
+
+**The pandoc research programme is written down, not run.** The route is the
+instrument; the experiment — a curated set of documents with the exact
+invocation and an expert review of where each AST diverged from what the
+document meant — is a `TODO.md` entry with a method and no schedule.
+
+### Tests
+
+`tests/test_digest.py`, twelve ingestion guarantees, each sabotage-verified:
+the route is never guessed, the extension decides nothing (checked by making it
+lie — markdown named `.jsonl`), a batch is all or nothing, a document reaches
+bytes that hash to what the graph claims, duplication is reported, storage and
+graph names never coincide.
+
+`test_views` now builds its base through the real ingestion path rather than by
+hand, which is what surfaced the filename collision above: a view test that
+builds its own records can only check the views against itself.
+
+Twelve suites, 5/5 → 6/6 view guarantees, 8/8 → 10/10 storage.
+
 ## v0.2.1 — 2026-08-20 — the daily loop closes
 
 ### The man page cannot drift again
