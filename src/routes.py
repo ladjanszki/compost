@@ -40,9 +40,15 @@ READER = "commonmark_x-smart-attributes-fancy_lists"
 
 
 def _ast_of(path: Path) -> dict:
-    """A file through pandoc's markdown reader, as a pandoc JSON document."""
+    """A file through pandoc's markdown reader, as a pandoc JSON document.
+
+    The path is resolved before it is handed over, so it always begins with a
+    slash. A relative name starting with a dash is otherwise read by pandoc as
+    a flag — `-dash.md` becomes `-d ash.md`, i.e. `--defaults ash.md` — and the
+    failure arrives as a confusing pandoc error about a file nobody named.
+    """
     r = subprocess.run(
-        ["pandoc", "-f", READER, "-t", "json", str(path)],
+        ["pandoc", "-f", READER, "-t", "json", str(Path(path).resolve())],
         capture_output=True, text=True)
     if r.returncode:
         raise RuntimeError(r.stderr.strip())

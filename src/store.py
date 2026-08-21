@@ -191,6 +191,11 @@ def _route_of(argv: list) -> tuple[str | None, list[str], str | None]:
     route, files, i = None, [], 0
     while i < len(argv):
         a = argv[i]
+        if a == "--":
+            # The usual end-of-options escape, so a file whose name begins
+            # with a dash can still be named.
+            files.extend(argv[i + 1:])
+            break
         if a.startswith("--as="):
             route = a.split("=", 1)[1]
         elif a == "--as":
