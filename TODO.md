@@ -386,9 +386,11 @@ transcript copied away from its `subagents/` directory is ordinary.
 
 Still open:
 
-1. **No view joins them.** A subagent renders as a separate document and the
-   `launched` edge appears on no page. Inlining or linking a session's
-   subagents is the obvious next thing.
+1. ~~No view joins them.~~ **Done.** A launched transcript gets no page; it
+   renders inside its `Agent` call, folded in HTML. One conversation is one
+   page. This is the first time a view has consulted an edge to decide what to
+   draw — `Graph.linked()` exists for it, generically, so the next relation a
+   view wants needs no change there.
 2. **`next` versus `replies_to` is still undecided** — `docs/decisions.md:136`.
    Sidechains did not settle it: within either file the two agree, and across
    files there is no shared chain to disagree about.

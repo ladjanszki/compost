@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## Unreleased — transcripts stop filtering, and bring their subagents
+## Unreleased — transcripts stop filtering, bring their subagents, and show them
 
 `--as=claude-code-transcript` was discarding **46% of a real transcript** and
 nobody could see it. It is now lossless, and the guarantee is a property:
@@ -86,6 +86,52 @@ Verified against a real session with four subagents including one nested two
 deep, which is joined to a tool call inside *its parent agent's* transcript
 rather than the root's.
 
+### One conversation is one page
+
+A transcript that was launched by another gets no page of its own. It renders
+inside the `Agent` call that ran it, collapsed in HTML like any other tool
+output — which is what it is, arriving in a different file. Before this, one
+conversation with four subagents produced **six index entries**, five of them
+unreadable `agent-<hex>` names with nothing saying which conversation they
+belonged to.
+
+One rule covers the awkward case too: a subagent digested on its own, with no
+parent in the base, has no incoming `launched` edge and so does get a page —
+correctly, since nothing else would show it.
+
+**This is the first time a view has consulted an edge to decide what to draw.**
+Until now `Graph` built lookups for `contains` and `next` and every other edge
+type was invisible to rendering; citations are the reverse of what they look
+like, since a citation is a `Link` in the content and the `cites` edge is
+derived *from* it. `Graph.linked(guid, type)` is generic, so the next relation
+a view wants to draw needs no change there.
+
+`check` gained the two guarantees that rendering depends on: a session is
+launched at most once, and `contains` and `launched` are acyclic *together* —
+for rendering purposes `launched` is containment, so it needs containment's
+guarantees or the renderer loops.
+
+### `render` removes what it did not write
+
+Found by this change rather than reasoned about. `render` only ever wrote, which
+was invisible while every document had a page forever, and became wrong the
+moment a transcript could stop having one: the stale page stayed on disk and in
+the browser, showing a document the graph no longer presents that way. Views are
+generated and disposable, so the rule is now that what is on disk is exactly
+this render's output.
+
+### A correction to the portability decision
+
+`docs/decisions.md` first concluded that the subagent fold should avoid
+`<details>` as the least portable strategy. Measuring it says otherwise:
+`_details` wraps its blocks in raw HTML, and in LaTeX the wrappers vanish while
+**everything between them stays** — the same session is 7984 bytes of HTML and
+11005 of LaTeX. The sharper rule replaced it: what matters is whether a
+format-bound construct carries **information** (a handle, an author, a tool
+name — lost silently) or **affordance** (a fold, which has no meaning in a PDF
+anyway). `<details>` carries affordance, so it is correct, and one folding
+mechanism serves both tool output and subagents.
+
 ### Tests
 
 `test_session` 9 → 11: the round-trip, and that no line type is filtered.
@@ -93,8 +139,15 @@ Sabotage-verified twice, and the second one matters — dropping a single key
 from a stored line still returns the right *number* of lines and fails anyway,
 because the property compares content.
 
-`test_session_views` 10 → 11, with the deliberate non-rendering of envelope
-turns stated as its own guarantee rather than left as a silent exclusion.
+`test_session_views` 10 → 13: the deliberate non-rendering of envelope turns
+stated as its own guarantee rather than left as a silent exclusion, plus
+subagent inlining and stale-file removal. Each sabotage-verified, and the
+`check` guards verified against a hand-built two-session cycle.
+
+That suite was also reading only the pages it expected rather than the pages
+that were rendered, so it would have ignored anything `digest` pulled in on its
+own; and its three-session sample was silently displaced by the new five-line
+fixture, which is now excluded from the slice and digested separately.
 
 `test_digest` 13 → 17 for the subagent behaviour, on a hand-built parent and
 sidechain pair. Written rather than bleached from a real one: the join spans a

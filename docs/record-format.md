@@ -244,6 +244,11 @@ sidechain by itself — the **sidecar is still stored**, so the fact survives an
 the edge can be derived whenever the other end arrives. Same shape as citations
 being derived from stored links rather than asserted once.
 
+`check` requires that a session is launched at most once and that `contains`
+and `launched` are acyclic together — a view renders a subagent inside its call,
+so for rendering purposes `launched` *is* containment and needs containment's
+guarantees.
+
 `spawnDepth` and `parentAgentId` are what make nesting work: a depth-2 agent's
 `toolUseId` resolves in its *parent agent's* transcript, not the root session's.
 

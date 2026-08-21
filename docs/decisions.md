@@ -502,10 +502,27 @@ thing the next type — whatever `claude --print` produces — will want.
 Do not start here. `run` without a concrete second format to serve is
 architecture for its own sake.
 
-### One consequence, immediately
+### A sharper line: information versus affordance
 
-The subagent-folding design uses `<details>`, which is strategy 3 — the least
-portable of the three. Render the fold as a `Div` with a class and let the HTML
-view's CSS collapse it: same result in the browser, one fewer format-bound
-construct, and it moves the feature from the one-writer column to the
-five-writer one for free.
+A first pass at this concluded that the subagent fold should avoid `<details>`
+because strategy 3 is the least portable. **Measuring it says otherwise, and
+the correction is the more useful rule.**
+
+`_details` emits `[RawBlock(html), *blocks, RawBlock(html)]`. In LaTeX and
+plain the two wrappers vanish and **everything between them stays** — the same
+session is 7984 bytes of HTML and 11005 of LaTeX, tool output included. So
+`<details>` is not lossy at all. It degrades to *showing everything*, which is
+exactly right, because a collapse widget has no meaning in a PDF.
+
+The real line is not which strategy, it is **what the construct carries**:
+
+- **Information** — a handle, an author, a tool name. If it rides on a
+  format-bound construct it is *lost*, and the reader cannot tell. This is the
+  whole problem above, and it is strategy 1 and 3 used for facts.
+- **Affordance** — a fold, a summary label, anything about interaction. It has
+  no meaning outside the format that offers it, and losing it costs nothing.
+  Strategy 3 is the *correct* choice here.
+
+So: `<details>` stays for tool output and is right for subagent folding too,
+which also keeps one folding mechanism instead of two. What must move to
+strategy 2, when *walk* arrives, is only the attribute-borne facts.

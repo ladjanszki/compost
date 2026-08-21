@@ -126,6 +126,24 @@ def _render_session(g, n, mode):
         inp = json.dumps(p.get("input", {}), indent=1, ensure_ascii=False)
         blocks = [_code(inp, ["tool-input"])]
         blocks += _session_children(g, guid, mode)
+        # A subagent transcript is the output of this call — it just happens to
+        # have arrived in another file. Rendering it here is what stops a
+        # conversation fragmenting into six unreadable `agent-<hex>` pages, and
+        # it is why `render_all` gives it no page of its own.
+        for sub in g.linked(guid, "launched"):
+            n_sub = g.nodes[sub]
+            ag = n_sub.get("params", {}).get("agent", {})
+            body = _render_session(g, n_sub, mode) or []
+            if mode == "html":
+                turns = sum(1 for k in g.children(sub)
+                            if g.nodes[k]["type"] == "turn")
+                label = (f"subagent — {ag.get('agentType', 'unknown')}, "
+                         f"{turns} turns")
+                if ag.get("description"):
+                    label += f": {ag['description']}"
+                blocks += _details(label, body)
+            else:
+                blocks += body
         return [{"t": "Div", "c": [_attr(guid, ["tool-call"],
                                          [("name", p.get("name"))]),
                                    blocks]}]
@@ -144,9 +162,13 @@ def _render_session(g, n, mode):
             _session_children(g, guid, mode)]}]
 
     if t == "session":
+        ag = p.get("agent") or {}
         return [{"t": "Div", "c": [
-            _attr(guid, ["session"], [("source", p.get("source")),
-                                      ("session", p.get("session_id"))]),
+            _attr(guid, ["session"] + (["subagent"] if ag else []),
+                  [("source", p.get("source")),
+                   ("session", p.get("session_id")),
+                   ("agent", ag.get("agentType")),
+                   ("depth", ag.get("spawnDepth"))]),
             _session_children(g, guid, mode)]}]
 
     raise NotImplementedError(f"no view rendering for node type {t!r}")
@@ -360,8 +382,16 @@ def render_all(st: S.Store):
         raise RuntimeError(f"graph has {len(problems)} problems; "
                            f"first: {problems[0]}")
     g = R.Graph(recs)
+    # A transcript gets a page unless something launched it, in which case it
+    # is rendered where it was launched. One rule, and it handles the awkward
+    # case for free: digest a subagent transcript on its own, with no parent in
+    # the base, and it has no incoming `launched` edge — so it gets a page,
+    # which is correct, because nothing else would show it.
+    launched = {r["destination"] for r in recs
+                if r["record"] == "edge" and r["type"] == "launched"}
     docs = [n for n in g.nodes.values()
-            if n["type"] in ("document", "session")]
+            if n["type"] in ("document", "session")
+            and n["guid"] not in launched]
     names = view_names(docs)
     written = []
     index = []
@@ -379,6 +409,24 @@ def render_all(st: S.Store):
             written.append(d / (name + ext))
         index.append(name)
 
+    # Remove pages this render did not produce. `render` used to only ever
+    # write, which was invisible while every document had a page forever — and
+    # became wrong the moment a transcript could stop having one of its own,
+    # because the stale page stays in the browser showing a document the graph
+    # no longer presents that way. Views are generated and disposable, so the
+    # rule is that what is on disk is exactly this render's output.
+    kept = {f.resolve() for f in written}
+    removed = []
+    for sub in ("default-djot", "default-html", "default-md"):
+        d = st.views / sub
+        if not d.is_dir():
+            continue
+        for f in d.iterdir():
+            if f.is_file() and f.name != "index.html" \
+                    and f.resolve() not in kept:
+                f.unlink()
+                removed.append(f)
+
     idx = st.views / "default-html" / "index.html"
     links = "\n".join(f'<li><a href="{_html.escape(n)}.html">{_html.escape(n)}</a></li>'
                       for n in index)
@@ -389,7 +437,7 @@ def render_all(st: S.Store):
         f"<h1>compost</h1><p>{len(index)} documents, "
         f"{sum(1 for r in recs if r['record'] == 'node')} nodes.</p>"
         f"<ul>{links}</ul></main></body></html>\n", encoding="utf-8")
-    return written, len(index), files
+    return written, len(index), files, removed
 
 
 def main(argv):
@@ -399,13 +447,15 @@ def main(argv):
         print(e)
         return 1
     try:
-        written, ndocs, files = render_all(st)
+        written, ndocs, files, removed = render_all(st)
     except RuntimeError as e:
         # A refusal, not a crash. Rendering a broken graph would produce a page
         # that looks fine and is wrong, which is worse than no page.
         print(f"  refusing to render: {e}")
         return 1
     print(f"  loaded {len(files)} graph files")
+    if removed:
+        print(f"  removed {len(removed)} stale view files")
     print(f"  {ndocs} documents and sessions -> {len(written)} files under "
           f"{st.views.relative_to(st.root)}/")
     for sub in ("default-djot", "default-html", "default-md"):

@@ -180,6 +180,9 @@ What it enforces:
 - the containment graph is acyclic
 - each parent's `next` chain has exactly one head and reaches every child
   exactly once, without leaving the parent
+- a session is launched by at most one tool call
+- `contains` and `launched` together are acyclic, since a view renders a
+  subagent inside its call and would otherwise loop
 - no guid carries two different records
 - no two nodes share a handle
 - `content_hash` is present exactly when a node has content of its own
@@ -209,6 +212,16 @@ base harder to debug rather than safer.
 Generate all three views into `.compost/views/`. If the graph fails `check`,
 prints `refusing to render: …` and exits 1 without writing anything — a view of
 a broken graph looks fine and is wrong, which is worse than no view.
+
+A transcript that was **launched by another** gets no page of its own — it is
+rendered inside the `Agent` call that ran it, collapsed in HTML like any other
+tool output, because that is what it is. One conversation is one page however
+many subagents it spawned. A subagent digested on its own, with no parent in
+the base, does get a page: nothing else would show it.
+
+`render` writes exactly this render's output and **removes view files it did
+not produce**, so a page that should no longer exist cannot linger in a
+browser.
 
 | view | for | tool output |
 |---|---|---|
@@ -329,11 +342,6 @@ compost serve
 No `submit`, `new` or `artifact`. No view for `file` or `blob` nodes, which
 are uncontained and so appear in no document tree. No migration of a v0.1
 base. Empty `thinking` nodes are stored but not rendered.
-
-**A subagent transcript has no view of its own beyond being a document.** It
-renders as a separate session, and the `launched` edge joining it to its parent
-tool call is in the graph but shows up on no page. A session view that inlines
-or links its subagents is the obvious next thing and is not built.
 
 **Views carry their full meaning to djot, HTML and markdown only.** Handles,
 authorship and tool names ride on `Div` attributes and format-specific raw

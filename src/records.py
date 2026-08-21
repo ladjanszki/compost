@@ -267,6 +267,12 @@ class Graph:
         self.nodes = {r["guid"]: r for r in records if r["record"] == "node"}
         self._kids: dict[str, list[str]] = {}
         self._next: dict[str, str] = {}
+        # Every other edge type, by type then source. Until subagents arrived
+        # no view had ever consulted an edge — `contains` and `next` rebuild
+        # the tree and everything else was invisible here. Keeping this generic
+        # rather than adding a `launched` field means the next relation a view
+        # wants to draw needs no change to this class.
+        self._rel: dict[str, dict[str, list[str]]] = {}
         for r in records:
             if r["record"] != "edge":
                 continue
@@ -274,6 +280,13 @@ class Graph:
                 self._kids.setdefault(r["source"], []).append(r["destination"])
             elif r["type"] == "next":
                 self._next[r["source"]] = r["destination"]
+            else:
+                self._rel.setdefault(r["type"], {}).setdefault(
+                    r["source"], []).append(r["destination"])
+
+    def linked(self, guid: str, type_: str) -> list[str]:
+        """Destinations of `type_` edges leaving `guid`, in record order."""
+        return self._rel.get(type_, {}).get(guid, [])
 
     def children(self, guid: str) -> list[str]:
         """Children of `guid`, ordered by walking the next chain."""
@@ -459,6 +472,41 @@ def check(records: list) -> list[str]:
                 problems.append(f"{n['type']} {g} has a parent")
         elif count != 1:
             problems.append(f"{n['type']} {g} has {count} parents, expected 1")
+
+    # `launched` joins a subagent transcript to the tool call that ran it, and
+    # a view renders the subagent *inside* that call. So it is a containment
+    # relation as far as rendering is concerned, and it needs the same two
+    # guarantees or a view will loop or double-print. `contains` is checked
+    # above; this checks the pair together, since a cycle can run through both.
+    launched: dict[str, list[str]] = {}
+    launched_by: dict[str, int] = {}
+    for e in edges:
+        if e["type"] == "launched":
+            launched.setdefault(e["source"], []).append(e["destination"])
+            launched_by[e["destination"]] = launched_by.get(e["destination"], 0) + 1
+    for g_, n_ in launched_by.items():
+        if n_ > 1:
+            problems.append(f"session {g_} is launched by {n_} tool calls")
+
+    reach = {k: list(v) for k, v in kids.items()}
+    for src, dsts in launched.items():
+        reach.setdefault(src, []).extend(dsts)
+    seen_l: dict[str, int] = {}
+
+    def walk(g_):
+        seen_l[g_] = 1
+        for k in reach.get(g_, []):
+            if seen_l.get(k) == 1:
+                return True
+            if not seen_l.get(k) and walk(k):
+                return True
+        seen_l[g_] = 2
+        return False
+
+    for g_ in list(nodes):
+        if not seen_l.get(g_) and walk(g_):
+            problems.append("cycle through contains and launched")
+            break
 
     colour: dict[str, int] = {}
 

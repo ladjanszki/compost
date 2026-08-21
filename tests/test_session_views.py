@@ -8,6 +8,8 @@ tool output into <details>, because a human is scrolling. Same graph, two
 readings — which is the point of generating views from records rather than
 from a document.
 """
+import contextlib
+import io
 import re
 import subprocess
 import sys
@@ -19,10 +21,14 @@ from src import records as R    # noqa: E402
 from tests import tier as T  # noqa: E402
 from src import session as SESS  # noqa: E402
 from src import store as S      # noqa: E402
+from src import store as ST
 from src import views as V      # noqa: E402
 
 HERE = Path(__file__).parent
-SESSIONS = T.sessions()[:3]
+# The sidechain pair is excluded here and digested separately below: it is
+# five lines, and letting it into this slice would silently push a substantial
+# corpus session out of the sample.
+SESSIONS = [f for f in T.sessions() if f.name != "sidechain-parent.jsonl"][:3]
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 
@@ -43,6 +49,12 @@ def main():
             recs, root = SESS.session_to_records(f)
             st.write(f"{f.stem}.jsonl", recs)
             roots[f.stem] = root
+        # The sidechain pair goes in through `digest`, because the subagent
+        # view depends on a `launched` edge and only ingestion mints one.
+        with contextlib.redirect_stdout(io.StringIO()):
+            ST._digest(st, "claude-code-transcript",
+                       [str(HERE / "fixtures/sessions/sidechain-parent.jsonl")],
+                       "compost")
         V.render_all(st)
         recs, _ = st.load()
         g = R.Graph(recs)
@@ -51,14 +63,26 @@ def main():
         for r in recs:
             if r["record"] == "edge" and r["type"] == "contains":
                 kids.setdefault(r["source"], []).append(r["destination"])
-        djot = {n: (st.views / "default-djot" / f"{n}.dj").read_text()
-                for n in roots}
-        html = {n: (st.views / "default-html" / f"{n}.html").read_text()
-                for n in roots}
+        # Read what was rendered, not what was expected to be. Keying off
+        # `roots` meant the cases below silently ignored any page the renderer
+        # produced from a source this suite did not write itself — which is
+        # every subagent's parent, once digest started pulling extra files in.
+        djot = {f.stem: f.read_text()
+                for f in (st.views / "default-djot").glob("*.dj")}
+        html = {f.stem: f.read_text()
+                for f in (st.views / "default-html").glob("*.html")
+                if f.name != "index.html"}
 
         def every_session_rendered():
-            return len(djot) == len(SESSIONS) and all(djot.values()), \
-                f"{len(djot)} sessions rendered to all three views"
+            # Every session *except* one that something launched: a subagent
+            # is rendered inside the call that ran it, so a page of its own
+            # would be the same transcript twice.
+            launched = {r["destination"] for r in recs
+                        if r["record"] == "edge" and r["type"] == "launched"}
+            entry = [n for n in nodes.values() if n["type"] == "session"
+                     and n["guid"] not in launched]
+            return len(djot) == len(entry) and all(djot.values()), \
+                f"{len(entry)} entry-point sessions, {len(djot)} rendered"
         case("a session gets a view at all", every_session_rendered)
 
         def shown(n):
@@ -123,11 +147,16 @@ def main():
         case("djot shows tool output in full", output_is_whole_in_djot)
 
         def html_collapses():
+            # Tool output collapses, and so does a subagent transcript — it is
+            # the output of its `Agent` call, arriving in another file. One
+            # folding mechanism for both, which is why the count is a sum.
             n_details = sum(t.count("<details>") for t in html.values())
             outs = sum(1 for n in nodes.values() if n["type"] == "tooloutput")
-            return n_details == outs, \
-                f"{n_details} <details> for {outs} tool outputs"
-        case("html collapses every tool output", html_collapses)
+            subs = sum(1 for r in recs if r["record"] == "edge"
+                       and r["type"] == "launched")
+            return n_details == outs + subs, \
+                f"{n_details} <details> for {outs} outputs + {subs} subagents"
+        case("html collapses tool output and subagents", html_collapses)
 
         def djot_has_no_raw_html():
             leaked = sum(t.count("<details>") for t in djot.values())
@@ -178,6 +207,34 @@ def main():
             return calls and named == len(calls), \
                 f"{named}/{len(calls)} tool calls carry their name"
         case("a tool call says which tool it was", toolcalls_named)
+
+        def subagents_render_inside_their_call():
+            # Six unreadable `agent-<hex>` pages for one conversation is what
+            # this replaced. A launched transcript gets no page of its own; it
+            # appears where it was launched.
+            launched = {r["destination"] for r in recs
+                        if r["record"] == "edge" and r["type"] == "launched"}
+            if not launched:
+                return False, "no launched edge in the fixture base"
+            pages = {f.stem for f in (st.views / "default-html").glob("*.html")}
+            orphaned = [x for x in launched
+                        if Path(R._p(nodes[x], "source", "")).stem in pages]
+            page = (st.views / "default-html" / "sidechain-parent.html").read_text()
+            return not orphaned and "Hello from the subagent" in page, \
+                f"{len(launched)} launched, none with a page, prose inlined"
+        case("a subagent renders inside the call that launched it",
+             subagents_render_inside_their_call)
+
+        def render_removes_stale_pages():
+            # `render` only ever wrote, which was invisible until a transcript
+            # could stop having a page of its own. A stale page stays in the
+            # browser showing a document the graph no longer presents that way.
+            ghost = st.views / "default-html" / "ghost.html"
+            ghost.write_text("<p>from no record at all</p>")
+            V.render_all(st)
+            return not ghost.exists(), \
+                "a view file no render produced is removed"
+        case("render leaves only what it wrote", render_removes_stale_pages)
 
     for ok, name, detail in results:
         print(f"  {'pass' if ok else 'FAIL'}  {name:<52} {detail}")

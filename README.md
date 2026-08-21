@@ -63,7 +63,7 @@ test_views               6/6 view guarantees hold
 test_citations           7/7 citation guarantees hold
 test_bleach_session      7/7 session-fixture guarantees hold
 test_session             11/11 session-import guarantees hold
-test_session_views       11/11 session-view guarantees hold
+test_session_views       13/13 session-view guarantees hold
 test_lookup              7/7 lookup guarantees hold
 test_serve               9/9 serve guarantees hold
 test_manpage             6/6 man-page guarantees hold
