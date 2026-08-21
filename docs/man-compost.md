@@ -335,6 +335,15 @@ renders as a separate session, and the `launched` edge joining it to its parent
 tool call is in the graph but shows up on no page. A session view that inlines
 or links its subagents is the obvious next thing and is not built.
 
+**Views carry their full meaning to djot, HTML and markdown only.** Handles,
+authorship and tool names ride on `Div` attributes and format-specific raw
+blocks, which `latex`, `plain`, `man`, `typst`, `rst`, `docx` and `odt` drop —
+so a transcript exported to any of those, **PDF included**, is unattributed
+prose. This is a deliberate limit, not an oversight: the readers that matter
+(agents on djot, people on HTML, GitHub on markdown) are all on the surviving
+side. `docs/decisions.md` has the measurements and the staged plan for lifting
+it.
+
 **`logline` and `contentblock` have no view.** Loglines are harness machinery
 and are stored, addressable and not rendered. Envelope turns — a `user` line
 whose only content was a tool result, already folded into the call that

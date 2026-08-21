@@ -404,3 +404,108 @@ Colliding stems now take the root's handle as a suffix. A counter was rejected:
 it renumbers when an unrelated document arrives, so every URL in the browser
 moves, while a handle is the document's own and never does. Names that do not
 collide stay clean, which is the common case.
+
+## Output portability: what a view can carry, and where it stops
+
+*Measured and decided 2026-08-21. The decision is to accept the current limit
+deliberately, and the staged plan for lifting it is recorded so that accepting
+it stays a choice rather than becoming an assumption.*
+
+### The illusion worth naming
+
+"We generate a pandoc AST, so all 68 of pandoc's output formats come free."
+
+That is **true for every node that came from pandoc** — `Para`, `Header`,
+`Table`, `CodeBlock` are pandoc's own vocabulary and round-trip to everything.
+It is **false for every node compost invented**: `session`, `turn`, `toolcall`,
+`tooloutput`, `thinking`, `file`, `logline`, `contentblock`. Those have no
+pandoc equivalent, so `views.py` must *choose* a representation, and
+portability is a property of that choice — not of using pandoc.
+
+### The three strategies, and which writers survive them
+
+| | strategy | survives to |
+|---|---|---|
+| 1 | `Div` + attributes | djot, html, commonmark_x, gfm, markdown |
+| 2 | visible text (a Header, a bold label, a definition list) | **everything** |
+| 3 | `RawBlock(format)` | exactly one writer |
+
+`_render_session` uses **1 and 3**, and nothing at 2. Handles are
+`RawBlock("djot", "{#…}")`; author, timestamp and tool name are Div
+attributes; the HTML collapse is `RawBlock("html", "<details>")`.
+
+### Measured, on a fixture whose prose contains no guids
+
+One session, one set of records, every writer:
+
+| writer | prose | handle | author | tool name |
+|---|---|---|---|---|
+| djot | ✓ | ✓ | ✓ | ✓ |
+| html | ✓ | ✓ (as `id`) | ✓ | ✓ |
+| commonmark_x, gfm, markdown | ✓ | — | ✓ | ✓ |
+| latex, plain, man, typst, rst | ✓ | ✗ | ✗ | ✗ |
+| docx, odt | ✓ | ✗ | ✗ | ✗ |
+
+The same session is 924 bytes of djot, 749 of LaTeX and **215 of plain**. PDF
+goes through LaTeX, so PDF is on the losing side.
+
+**So: a transcript rendered to PDF today is unattributed prose.** You cannot
+tell who spoke, which tool ran, or cite any of it. That is the limit, stated
+plainly so nobody discovers it by exporting something important.
+
+### Crawl — accept it, today
+
+Deliberate, with reasons, and none of them are "we did not notice":
+
+- **All of pandoc's output formats was never the aim.** The reachable set
+  covers every real reader: **agents read djot**, **the human reads HTML**, and
+  the **markdown render is committed to GitHub** as `README.md` and friends.
+  Every one of those is in the attribute-preserving column.
+- **A prose-soup PDF is expectation management, not a missing feature.** It
+  looks bad, and it is not a capability anybody is waiting on. The correct
+  response is to say so — which is why it is in the man page — rather than to
+  build for it.
+- **Input breadth is worth more than output breadth.** If there is capacity for
+  work of this kind, spending it on getting the *input* formats understood — the
+  `pandoc-ast` research programme in `TODO.md` — returns far more than making a
+  transcript survive to LaTeX. Reading many kinds of document into one
+  addressable graph is what this tool is for; emitting many kinds of document is
+  not.
+
+### Walk — a fallback representation, when a format actually needs one
+
+Strategy 2, chosen per node type, used when the target cannot carry attributes:
+a turn becomes a small Header or a bolded `human — 10:00`; a tool call becomes
+a labelled code block.
+
+This is **legal and not a violation of the waist.** Views are read and never
+re-ingested — `render_djot` already says so in its own comment — so a view may
+say things the source did not literally say. `records_to_ast` stays exactly
+reversible; only `views.py` gains a branch. Build it the day a format is
+actually wanted, not before.
+
+### Run — make the out-mapping a real plugin
+
+The asymmetry underneath all of this: **a type is two bodies of work, and only
+one of them has a home.**
+
+| | where it lives | modular? |
+|---|---|---|
+| in: bytes → nodes and edges | `routes.py` dispatch, `session.py` reader | **yes** — one route entry, one module |
+| out: nodes → AST | `views.py`: an `if t == …` chain, plus `SESSION_TYPES`, plus `CITABLE` / `SELF_LABELLING` | **no** — three coupled places, both writers hard-coded |
+
+A node type should register `(node, target capabilities) -> blocks` beside its
+reader, so adding a type is one module rather than edits in four places. This
+is what makes *walk* maintainable rather than a second if-chain, and it is the
+thing the next type — whatever `claude --print` produces — will want.
+
+Do not start here. `run` without a concrete second format to serve is
+architecture for its own sake.
+
+### One consequence, immediately
+
+The subagent-folding design uses `<details>`, which is strategy 3 — the least
+portable of the three. Render the fold as a `Div` with a class and let the HTML
+view's CSS collapse it: same result in the browser, one fewer format-bound
+construct, and it moves the feature from the one-writer column to the
+five-writer one for free.

@@ -493,6 +493,36 @@ Note the two boundaries are genuinely different and both matter:
 | parsed → records | did *we* drop anything? | the round-trip properties |
 
 
+### Output portability — accepted at *crawl*, with walk and run written down
+
+`docs/decisions.md` has the measurements and the reasoning; this is the
+schedule. **Nothing here is scheduled**, and that is the point: the limit was
+accepted knowingly, so it must not quietly become an assumption.
+
+**The limit.** Eight node types are compost's own invention and have no pandoc
+equivalent, so `views.py` chooses how to represent them — currently as `Div`
+attributes and `RawBlock`. Both are format-bound. A transcript reaches djot,
+html and the markdown family with its handles, authorship and tool names
+intact, and reaches **latex, plain, man, typst, rst, docx and odt as
+unattributed prose**. PDF goes through LaTeX, so PDF is prose too.
+
+- **Crawl (today).** Accept it. Every real reader is in the surviving column:
+  agents read djot, the human reads HTML, markdown is committed to GitHub. A
+  prose-soup PDF is expectation management, not a missing feature — which is
+  why the man page says so out loud.
+- **Walk.** A per-node-type fallback using *visible text* rather than
+  attributes, so any writer carries the meaning. Legal: views are read and
+  never re-ingested. Build it when a format is actually wanted.
+- **Run.** Give the out-mapping the same modularity the in-mapping already
+  has — a node type registering its own rendering beside its reader, instead
+  of an `if t == …` chain plus two module-level sets. Do not start here; it is
+  architecture for its own sake without a second format to serve.
+
+**If there is capacity for work of this shape, spend it on input instead.**
+Getting more *input* formats understood — *What pandoc actually gets us*, above
+— returns more than making a transcript survive to LaTeX. Reading many kinds of
+document into one addressable graph is the point; emitting many kinds is not.
+
 ### `file` and `blob` nodes have no view
 
 Both are uncontained, so they appear in no document tree. Either the session
