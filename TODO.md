@@ -256,7 +256,7 @@ The one thing that makes v0.2 replace v0.1 rather than sit beside it.
 6. Optionally update the archived copies so the readable backup stays internally
    consistent. The pristine bytes stay in `compost-full-history.bundle`.
 
-### Sidechains ✓ — followed, joined, and shipped unreleased
+### Sidechains ✓ — followed, joined, and shipped in v0.2.3
 
 The corpus contains **zero** sidechain lines, so log order and reply order are
 indistinguishable in every fixture and subagent nesting has never been

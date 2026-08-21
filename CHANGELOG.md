@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## Unreleased — transcripts stop filtering, bring their subagents, and show them
+## v0.2.3 — 2026-08-21 — transcripts stop filtering, bring their subagents, and show them
 
 `--as=claude-code-transcript` was discarding **46% of a real transcript** and
 nobody could see it. It is now lossless, and the guarantee is a property:
