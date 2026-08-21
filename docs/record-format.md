@@ -215,6 +215,38 @@ which is a sibling of `blocks` and not reachable from any block. An importer
 that reads `doc["blocks"]` and stops loses frontmatter silently; `decisions.md`
 records this. Proposal: `params.meta`, verbatim, same rule as everywhere else.
 
+## `launched`: which agent ran under which tool call
+
+A subagent's transcript is its own source — its own blob, its own graph file,
+its own `session` root — and is joined to the parent by one edge in the `agent`
+layer:
+
+```
+toolcall  --launched-->  session        layer: agent
+```
+
+Not `contains`. The subagent's turns are not *inside* the tool call, and a node
+may have exactly one container. The direction is the parent's: the call
+launched the agent.
+
+**The edge is an equality, not an inference.** A sidechain's root carries its
+`.meta.json` sidecar verbatim under `params["agent"]`:
+
+```json
+{"agentType": "general-purpose", "toolUseId": "toolu_…",
+ "spawnDepth": 1, "model": "haiku", "parentAgentId": "…"}
+```
+
+`toolUseId` names an `Agent` block in the transcript that spawned it, and that
+block is already a `toolcall` node keyed by the same id. The edge is minted
+when both ends are present in one invocation. When they are not — digest a
+sidechain by itself — the **sidecar is still stored**, so the fact survives and
+the edge can be derived whenever the other end arrives. Same shape as citations
+being derived from stored links rather than asserted once.
+
+`spawnDepth` and `parentAgentId` are what make nesting work: a depth-2 agent's
+`toolUseId` resolves in its *parent agent's* transcript, not the root session's.
+
 ## `params["log"]`: the line as it was, beside what we made of it
 
 A transcript node — `turn` or `logline` — carries the whole original JSON of

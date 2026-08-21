@@ -256,7 +256,7 @@ The one thing that makes v0.2 replace v0.1 rather than sit beside it.
 6. Optionally update the archived copies so the readable backup stays internally
    consistent. The pristine bytes stay in `compost-full-history.bundle`.
 
-### Sidechains — measured, planned, not yet built
+### Sidechains ✓ — followed, joined, and shipped unreleased
 
 The corpus contains **zero** sidechain lines, so log order and reply order are
 indistinguishable in every fixture and subagent nesting has never been
@@ -363,48 +363,40 @@ its own prose; the parent's copies sit nested inside notification wrappers, on
 catches re-imports of the same file, not this. A `duplicates` edge here has to
 be asserted, or derived by something cleverer than a hash.
 
-#### The plan, now that guessing is over
+#### Built 2026-08-21 — what shipped, and what is still open
 
-All three joins verified end-to-end on 2026-08-21 against a base digested from
-a real transcript with four subagents:
+A transcript now brings its subagents with it, recursively, and each is joined
+to the `Agent` call that launched it by a `launched` edge in an `agent` layer.
 
-| | |
-|---|---|
-| `meta.toolUseId` → stored `toolcall.params.tool_use_id` | 4 of 4 direct launches |
-| `toolUseResult.agentId` → the sidechain filename | 4 of 4 |
-| the depth-2 agent against the *root* transcript | **0** — correct, it belongs to its parent agent |
+**Discovery follows references; it does not glob.** The earlier plan said to
+glob `<session-id>/subagents/`, which would have been an assumption about
+layout. Every transcript names its own children in `toolUseResult.agentId` —
+verified at depth 2, where a subagent names *its* child — so this reads only
+what the file said, which is the same contract as digesting the file itself.
+That distinction is what makes it acceptable as the one exception to "digest
+reads exactly the file it was given". `--no-follow` turns it off.
 
-`toolUseResult` reaches the graph only because the importer stopped filtering,
-so that work was a prerequisite and is done.
+**The join is an equality between two things already in the graph:** the
+sidecar's `toolUseId` and a stored `toolcall.params.tool_use_id`. The sidecar
+is stored on the sidechain's root either way, so digesting a sidechain alone
+keeps the fact and leaves the edge derivable.
 
-The shape, now that guessing is over:
+A referenced file that is absent is reported and skipped, not fatal — a
+transcript copied away from its `subagents/` directory is ordinary.
 
-1. **Discover** sidechains by globbing `<session-id>/subagents/agent-*.jsonl`
-   beside the parent, not from anything in the parent's own records.
-2. **Read the `.meta.json` sidecar** — `toolUseId`, `agentType`, `spawnDepth`,
-   `model`, and `parentAgentId` when nested.
-3. **Digest each sidechain as its own source.** One file, one blob, one graph
-   file, one `session` root — the same 1:1 that `--as=claude-code-transcript`
-   already guarantees. Do not fold them into the parent's records.
-4. **Join in its own layer.** An edge from the sidechain's `session` root to
-   the parent's `toolcall` node found via `tool_use_id`. Not `contains` — the
-   sidechain is not *inside* the turn, and `check` requires exactly one parent.
-   Its own layer beside `ingestion`, so the ingestion facts stay separable.
-5. **Resolve recursively.** `spawnDepth` says how deep; `parentAgentId` names
-   which transcript to look in. Depth 1 resolves against the root session,
-   depth *n* against the agent named by `parentAgentId`.
+Still open:
 
-Open, and not blocking: whether the CLI discovers sidechains itself or wants
-them named explicitly. Discovery reads files nobody asked for, which sits badly
-beside "digest reads exactly the file it is given"; naming them explicitly is
-honest and tedious. Decide when building.
-
-The duplication of a subagent's answer is **not** a blocker — see *Duplicates
-are described, not resolved*.
-
-Still unmeasured, because one session cannot answer it: whether a *synchronous*
-launch puts the answer in the `tool_result` itself. Every launch observed is
-`isAsync: true`.
+1. **No view joins them.** A subagent renders as a separate document and the
+   `launched` edge appears on no page. Inlining or linking a session's
+   subagents is the obvious next thing.
+2. **`next` versus `replies_to` is still undecided** — `docs/decisions.md:136`.
+   Sidechains did not settle it: within either file the two agree, and across
+   files there is no shared chain to disagree about.
+3. **Whether a *synchronous* launch puts the answer in the `tool_result`
+   itself.** Every launch observed is `isAsync: true`; a sync one may not be
+   reachable any more.
+4. **The duplicated answer** — see *Duplicates are described, not resolved*.
+   Not a blocker, and deliberately not solved here.
 
 ### Duplicates are described, not resolved
 
@@ -466,11 +458,40 @@ The accepted cost: a message's text is held twice, raw inside `log` and again
 as parsed blocks. Raw is the source, parsed is the derivation, which is the
 relationship `storage/` already has with the graph.
 
-**Still to check for the same fault elsewhere.** `--as=notes` and
-`--as=pandoc-ast` go through `ast_to_records`, which the round-trip property
-already covers at AST level — but nothing checks that pandoc's *reader* kept
-everything the file said, and that is a different question. Frontmatter is the
-known case (`docs/decisions.md`).
+### Every route must say what it drops — audit the other two, and each new one
+
+The transcript importer filtered for months and nobody could see it, because
+nothing ever asked the question. Asking it once is not the fix; asking it of
+every route is. **A route is not finished until it states what it discards and
+proves the statement.**
+
+`--as=claude-code-transcript` now answers with an exact round-trip. The others
+have never been asked:
+
+- **`--as=notes`.** `records_to_ast(ast_to_records(ast)) == ast` covers
+  records-versus-AST and says nothing about text-versus-AST. The question is
+  what **pandoc's reader** drops between the file and the AST, which is a
+  different boundary and an unmeasured one. Frontmatter is the known case
+  (`docs/decisions.md`) — `-s` keeps it, we do not pass `-s`. Measure the rest:
+  read a corpus document, write it back, diff against the source, and count
+  what never survived the *reader*. Anything found is either recorded as a
+  known limit with a number or fixed.
+- **`--as=pandoc-ast`.** Should be exactly lossless — it does no reading at all
+  — but "should be" is what was said about transcripts. Assert it: every
+  top-level key of the input JSON is represented, not just `blocks` and `meta`.
+
+**And for every route added after these.** The check belongs beside the route,
+in `tests/test_digest.py`, phrased the same way each time: everything the
+source said comes back. A route that cannot make that claim ships with the
+exception written down and measured, not with silence.
+
+Note the two boundaries are genuinely different and both matter:
+
+| boundary | question | covered by |
+|---|---|---|
+| bytes → parsed | did the *reader* drop anything? | **nothing, for `notes`** |
+| parsed → records | did *we* drop anything? | the round-trip properties |
+
 
 ### `file` and `blob` nodes have no view
 

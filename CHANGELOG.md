@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## Unreleased — the transcript importer stops filtering
+## Unreleased — transcripts stop filtering, and bring their subagents
 
 `--as=claude-code-transcript` was discarding **46% of a real transcript** and
 nobody could see it. It is now lossless, and the guarantee is a property:
@@ -54,14 +54,37 @@ Views are unchanged. Loglines and empty envelope turns are stored, addressable
 and deliberately not rendered, the same treatment empty `thinking` nodes
 already had.
 
-### Sidechains are now unblocked
+### A transcript brings its subagents with it
+
+Digesting a Claude Code log now digests the subagent transcripts it names,
+recursively, and joins each to the `Agent` call that launched it with a
+`launched` edge in a new `agent` layer. `--no-follow` digests exactly the file
+named and nothing else.
+
+This is the only place `digest` reads a file it was not handed, and the reason
+it is allowed is that **it is not a guess**. The plan had been to glob
+`<session-id>/subagents/` — an assumption about layout. Measurement showed
+every transcript names its own children in `toolUseResult.agentId`, including
+at depth 2 where a subagent names *its* child, so discovery follows references
+instead. Following a reference and globbing a directory are different acts, and
+only the first has the same contract as digesting the file itself.
+
+The join is an **equality between two things already in the graph**: the
+`.meta.json` sidecar's `toolUseId` and a stored `toolcall.params.tool_use_id`.
+The sidecar is stored on the sidechain's root regardless, so digesting a
+sidechain alone keeps the fact and leaves the edge derivable when the other end
+arrives — the same shape as citations being derived from stored links.
 
 `toolUseResult` reaches the graph only because the importer stopped filtering,
-and it carries one of the two joins. Verified end-to-end against a base
-digested from a real transcript with four subagents: the `.meta.json` sidecar's
-`toolUseId` matches a stored `toolcall.params.tool_use_id` for all four direct
-launches, and the depth-2 agent correctly matches none of them — it belongs to
-its parent agent's transcript, not the root. `TODO.md` has the five-step plan.
+so that change was a prerequisite rather than a coincidence.
+
+A referenced file that is absent is reported and skipped, not fatal: a
+transcript copied away from its `subagents/` directory is an ordinary thing to
+digest.
+
+Verified against a real session with four subagents including one nested two
+deep, which is joined to a tool call inside *its parent agent's* transcript
+rather than the root's.
 
 ### Tests
 
@@ -72,6 +95,17 @@ because the property compares content.
 
 `test_session_views` 10 → 11, with the deliberate non-rendering of envelope
 turns stated as its own guarantee rather than left as a silent exclusion.
+
+`test_digest` 13 → 17 for the subagent behaviour, on a hand-built parent and
+sidechain pair. Written rather than bleached from a real one: the join spans a
+`.meta.json` sidecar the bleacher does not process, so its `toolUseId` would
+stop matching the parent's remapped `tool_use.id` and the fixture would test
+nothing.
+
+Adding that fixture broke `test_records`, which rglobbed `*.json` across the
+whole tree and swallowed the sidecar. Its sweep is narrowed to `ast/*.json` —
+"a pandoc AST" is a claim about what is in a file, not about its extension,
+which is the mistake `digest` itself stopped making this release.
 
 ## v0.2.2 — 2026-08-21 — ingestion is asked for by name
 

@@ -151,6 +151,22 @@ class SessionImporter:
             "version": meta.get("version"),
             "lines": len(lines),
         }
+        # A sidechain's `.meta.json` sidecar, stored verbatim on the root. It
+        # carries `toolUseId`, which names the `Agent` call in the *parent*
+        # that launched this agent, plus `spawnDepth`, `agentType`, `model` and
+        # `parentAgentId` when nested.
+        #
+        # Stored rather than only used, so the join outlives the invocation
+        # that found it: digest a sidechain by itself and the fact that it
+        # belongs to a tool call is still recorded, and the edge can be derived
+        # whenever the other end turns up. Same reasoning as citations being
+        # derived from stored links rather than asserted once.
+        sidecar = path.with_suffix(".meta.json")
+        if sidecar.is_file():
+            try:
+                params["agent"] = json.loads(sidecar.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
         if route:
             params["route"] = route
         session = self.b.node("session", params)

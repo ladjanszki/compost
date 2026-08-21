@@ -36,6 +36,11 @@ from src import store as S       # noqa: E402
 HERE = Path(__file__).parent
 NOTE = HERE / "fixtures/notes"
 SESSION = HERE / "fixtures/sessions/session-smoke.jsonl"
+# A hand-built parent/sidechain pair. Written rather than bleached from a real
+# one, because the join spans a `.meta.json` sidecar that the bleacher does not
+# process — its `toolUseId` would stop matching the parent's remapped
+# `tool_use.id` and the fixture would test nothing.
+SIDECHAIN = HERE / "fixtures/sessions/sidechain-parent.jsonl"
 
 
 def run(*args):
@@ -262,6 +267,81 @@ def main():
                     "dashes, spaces and no extension at all"
             case("an awkward filename is still just a filename",
                  awkward_names_are_still_files)
+
+            def sidechains_are_followed():
+                # The one place digest reads a file it was not handed. Allowed
+                # because it is not a guess: the parent's own log names the
+                # agent, and the agent's turns are in a file named after it.
+                sub = tmp / "sc"
+                sub.mkdir(exist_ok=True)
+                code, out = run("digest", "--as=claude-code-transcript",
+                                str(SIDECHAIN))
+                st2 = S.Store(tmp)
+                recs, _ = st2.load()
+                roots = [r for r in recs if r["record"] == "node"
+                         and r["type"] == "session"
+                         and R._p(r, "source", "").startswith(
+                             ("sidechain-parent", "agent-"))]
+                launched = [r for r in recs if r["record"] == "edge"
+                            and r["type"] == "launched"]
+                # the parent and its one subagent, joined
+                return (code == 0 and len(roots) == 2 and len(launched) == 1
+                        and "named by" in out), \
+                    f"{len(roots)} transcripts, {len(launched)} launched edge"
+            case("a transcript's subagents come with it",
+                 sidechains_are_followed)
+
+            def the_join_is_ground_truth():
+                # The edge is an equality between two things already in the
+                # graph — the sidecar's toolUseId and a stored toolcall id —
+                # not an inference from filenames or ordering.
+                recs, _ = S.Store(tmp).load()
+                nodes = {r["guid"]: r for r in recs if r["record"] == "node"}
+                edge = next(r for r in recs if r["record"] == "edge"
+                            and r["type"] == "launched")
+                call, child = nodes[edge["source"]], nodes[edge["destination"]]
+                return (call["type"] == "toolcall"
+                        and call["params"]["name"] == "Agent"
+                        and child["type"] == "session"
+                        and call["params"]["tool_use_id"]
+                        == R._p(child, "agent")["toolUseId"]
+                        and edge["layer"] == "agent"), \
+                    "toolcall id == sidecar toolUseId, in its own layer"
+            case("the subagent join is an equality, not a guess",
+                 the_join_is_ground_truth)
+
+            def no_follow_stops_it():
+                other = tmp / "nf"
+                other.mkdir(exist_ok=True)
+                here2 = Path.cwd()
+                os.chdir(other)
+                try:
+                    run("init")
+                    code, out = run("digest", "--as=claude-code-transcript",
+                                    "--no-follow", str(SIDECHAIN))
+                    recs, _ = S.Store(other).load()
+                finally:
+                    os.chdir(here2)
+                roots = [r for r in recs if r["record"] == "node"
+                         and r["type"] == "session"]
+                launched = [r for r in recs if r["record"] == "edge"
+                            and r["type"] == "launched"]
+                return code == 0 and len(roots) == 1 and not launched, \
+                    "--no-follow digests exactly the file it was given"
+            case("following references can be turned off", no_follow_stops_it)
+
+            def a_missing_referral_is_not_fatal():
+                # A transcript copied out of ~/.claude without its subagents/
+                # directory is an ordinary thing to digest. Refusing it would
+                # break the common case for the sake of the rare one.
+                lone = tmp / "lonely.jsonl"
+                lone.write_bytes(SIDECHAIN.read_bytes())
+                code, out = run("digest", "--as=claude-code-transcript",
+                                str(lone))
+                return code == 0 and "not here" in out, \
+                    "a named file that is absent is reported and skipped"
+            case("a referenced file that is gone is reported, not fatal",
+                 a_missing_referral_is_not_fatal)
 
             def base_still_checks():
                 code, _ = run("check")

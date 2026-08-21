@@ -91,6 +91,21 @@ hidden. Nothing is filtered at read time, because a filter applied while
 reading is applied once and silently. What to ignore is a question for a view
 or a query, asked later.
 
+**A transcript brings its subagents with it.** A Claude Code log that launched
+a subagent records that agent's id in its own lines, and the agent's turns are
+in a file named after it — so digesting the parent digests those too,
+recursively, and joins each one to the `Agent` call that launched it. Every
+discovery is printed. `--no-follow` digests exactly the file named and nothing
+else.
+
+This is the only place `digest` reads a file it was not handed, and it is
+allowed because it is **not a guess**: the file says the other file exists.
+Following a reference and globbing a directory are different acts — globbing
+would be an assumption about layout, while this reads only what the source
+named. A referenced file that is absent is reported and skipped, since a
+transcript copied away from its `subagents/` directory is an ordinary thing to
+digest.
+
 `--as` is **required**. Omitting it, or naming a route that does not exist,
 prints the table above and exits 2 rather than guessing. This replaces
 dispatch on the file extension, which was wrong twice over: the fallback was
@@ -284,6 +299,7 @@ them; nothing mints one yet.
 | `claude-code` | `replies_to` — the `parentUuid` chain |
 | `citation` | `cites` — derived from links in the text |
 | `ingestion` | `derived_from` — which bytes a document was read from |
+| `agent` | `launched` — the tool call a subagent transcript ran under |
 
 ## EXIT STATUS
 
@@ -314,12 +330,10 @@ No `submit`, `new` or `artifact`. No view for `file` or `blob` nodes, which
 are uncontained and so appear in no document tree. No migration of a v0.1
 base. Empty `thinking` nodes are stored but not rendered.
 
-**Sidechains are not followed.** A `claude-code-transcript` reads exactly the
-file it was given. A subagent's turns live in a second file, discoverable at
-`<session-id>/subagents/agent-<agentId>.jsonl` with a `.meta.json` sidecar
-beside it. Everything needed to join them now reaches the graph — the sidecar's
-`toolUseId` matches a stored `toolcall`, verified on real data — but the join
-itself is deliberately a later, explicit step. See `TODO.md`.
+**A subagent transcript has no view of its own beyond being a document.** It
+renders as a separate session, and the `launched` edge joining it to its parent
+tool call is in the graph but shows up on no page. A session view that inlines
+or links its subagents is the obvious next thing and is not built.
 
 **`logline` and `contentblock` have no view.** Loglines are harness machinery
 and are stored, addressable and not rendered. Envelope turns — a `user` line

@@ -94,9 +94,16 @@ def invariants(recs, root):
 
 def main(argv):
     roots = [Path(a) for a in argv[1:]] or [HERE / "fixtures", HERE / "corpus"]
+    # `*.json` here means "a pandoc AST fixture", and that is a claim about
+    # what is *in* the file, not about its extension — so the sweep is narrowed
+    # to where AST fixtures live. It used to rglob the whole tree and swallowed
+    # a transcript's `agent-<id>.meta.json` sidecar the day one appeared, which
+    # is the same mistake `digest` stopped making: deciding what a file is from
+    # what it is called.
     files = sorted(f for root in roots
                    for f in ([root] if root.is_file()
-                             else list(root.rglob("*.md")) + list(root.rglob("*.json"))))
+                             else list(root.rglob("*.md"))
+                             + list(root.rglob("ast/*.json"))))
     if not files:
         print("no .md files found")
         return 1

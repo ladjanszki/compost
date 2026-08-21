@@ -42,6 +42,10 @@ MARKER = ".compost"
 # Ingestion facts — which bytes a document came from — kept apart from the
 # structure pandoc found inside them.
 INGEST_LAYER = "ingestion"
+# Which agent ran under which tool call. Its own layer: an agent launching
+# another is a different kind of fact from a document coming from some bytes,
+# and keeping them apart is what lets either be reasoned about alone.
+AGENT_LAYER = "agent"
 
 
 def _now() -> str:
@@ -181,14 +185,14 @@ class Store:
 # CLI
 # --------------------------------------------------------------------------
 
-def _route_of(argv: list) -> tuple[str | None, list[str], str | None]:
-    """Split `--as=ROUTE` out of the argument list.
+def _route_of(argv: list) -> tuple[str | None, list[str], bool, str | None]:
+    """Split `--as=ROUTE` and `--no-follow` out of the argument list.
 
-    Returns (route, files, error). The route is never inferred: a missing or
-    unknown `--as` is an error naming the routes, not a guess at what the
-    caller meant. That refusal is the point of the flag.
+    Returns (route, files, follow, error). The route is never inferred: a
+    missing or unknown `--as` is an error naming the routes, not a guess at
+    what the caller meant. That refusal is the point of the flag.
     """
-    route, files, i = None, [], 0
+    route, files, follow, i = None, [], True, 0
     while i < len(argv):
         a = argv[i]
         if a == "--":
@@ -200,24 +204,64 @@ def _route_of(argv: list) -> tuple[str | None, list[str], str | None]:
             route = a.split("=", 1)[1]
         elif a == "--as":
             if i + 1 >= len(argv):
-                return None, [], "--as needs a route"
+                return None, [], True, "--as needs a route"
             route = argv[i + 1]
             i += 1
+        elif a == "--no-follow":
+            follow = False
         elif a.startswith("-"):
-            return None, [], f"unknown option {a!r}"
+            return None, [], True, f"unknown option {a!r}"
         else:
             files.append(a)
         i += 1
     if route is None:
-        return None, files, "--as is required"
+        return None, files, True, "--as is required"
     if route not in RT.ROUTES:
-        return None, files, f"unknown route {route!r}"
-    return route, files, None
+        return None, files, True, f"unknown route {route!r}"
+    return route, files, follow, None
 
 
-def _digest(s: Store, route: str, args: list[str], prog: str) -> int:
+def _link_agents(plans) -> int:
+    """Join each subagent transcript to the tool call that launched it.
+
+    The sidechain's root carries its `.meta.json` sidecar, whose `toolUseId`
+    names an `Agent` block in the transcript that spawned it — and that block
+    is already a `toolcall` node keyed by the same id. So the join is an
+    equality between two things both already in the graph, not an inference.
+
+    `launched` rather than `contains`: the subagent's turns are not *inside*
+    the tool call, and `check` allows a node exactly one container. It runs
+    across the whole batch, which is why nesting works — a depth-2 agent finds
+    its parent among the depth-1 transcripts pulled in by the same invocation.
+
+    Only edges whose both ends are in this batch are minted. Digest a sidechain
+    alone and it simply carries its sidecar until the other end arrives; the
+    fact is stored either way, and this only writes down what follows from it.
     """
-    Ingest every file in `args` as `route`.
+    calls = {}
+    for _, _, recs, _, _, _, _ in plans:
+        for r in recs:
+            if r["record"] == "node" and r["type"] == "toolcall":
+                calls[r["params"].get("tool_use_id")] = r["guid"]
+    n = 0
+    for plan in plans:
+        recs, root = plan[2], plan[3]
+        node = next((r for r in recs if r.get("guid") == root), None)
+        tuid = (node or {}).get("params", {}).get("agent", {}).get("toolUseId")
+        parent = calls.get(tuid)
+        if parent is None:
+            continue
+        b = R.Builder()
+        b.edge("launched", parent, root, AGENT_LAYER)
+        plan[2] = recs + b.records
+        n += 1
+    return n
+
+
+def _digest(s: Store, route: str, args: list[str], prog: str,
+            follow: bool = True) -> int:
+    """
+    Ingest every file in `args` as `route`, plus the files those name.
 
     Two phases, and the split is load-bearing. **Nothing is written until
     every input has been read and parsed**, because storage names are now
@@ -226,19 +270,43 @@ def _digest(s: Store, route: str, args: list[str], prog: str) -> int:
     would ingest them a *second* time under fresh guids. Validating first
     makes a batch safe to re-run, which is the only reason it is safe to pass
     a glob to this command.
+
+    A route may also say that the file it read **names other files**, and those
+    join the batch. That is the one place this command reads something it was
+    not handed; `--no-follow` turns it off. Every discovery is printed, because
+    a side effect nobody can see is the kind that gets discovered by accident
+    two months later.
     """
     plans, seen = [], {}
     known = s.blobs()
-    for arg in args:
-        src = Path(arg)
+    queue = [(Path(a), None) for a in args]
+    done: set[Path] = set()
+    while queue:
+        src, referrer = queue.pop(0)
+        try:
+            key = src.resolve()
+        except OSError:
+            key = src
+        if key in done:
+            continue
+        done.add(key)
+
         if src.is_dir():
-            print(f"  {arg}: is a directory. Ingest the files themselves — "
+            print(f"  {src}: is a directory. Ingest the files themselves — "
                   f"the shell already expands them:")
-            print(f"    {prog} digest --as={route} {arg.rstrip('/')}/*")
+            print(f"    {prog} digest --as={route} {str(src).rstrip('/')}/*")
             return 1
         if not src.is_file():
-            print(f"  {arg}: no such file")
+            if referrer is not None:
+                # A referenced file that is not here is not an error: a
+                # transcript copied out of ~/.claude without its subagents/
+                # directory is an ordinary thing to digest. Say so and move on.
+                print(f"  {referrer.name} names {src.name}, which is not here"
+                      f" — skipped")
+                continue
+            print(f"  {src}: no such file")
             return 1
+
         data = src.read_bytes()
         sha = hashlib.sha256(data).hexdigest()
         try:
@@ -265,12 +333,18 @@ def _digest(s: Store, route: str, args: list[str], prog: str) -> int:
         # without touching the structure pandoc found.
         b.edge("derived_from", root, guid, INGEST_LAYER)
 
-        plans.append((src, stored, recs + b.records, root, guid,
-                      known.get(sha, []) + seen.get(sha, [])))
+        plans.append([src, stored, recs + b.records, root, guid,
+                      known.get(sha, []) + seen.get(sha, []), referrer])
         seen.setdefault(sha, []).append(guid)
 
+        if follow:
+            for ref in RT.referrals(route, src):
+                queue.append((ref, src))
+
+    _link_agents(plans)
+
     total_n = total_e = 0
-    for src, stored, recs, root, guid, dup in plans:
+    for src, stored, recs, root, guid, dup, referrer in plans:
         s.keep_blob(src, stored)
         # A fresh uuid, unrelated to the blob's. The two names must not be
         # derivable from each other, or something will eventually derive one
@@ -280,9 +354,10 @@ def _digest(s: Store, route: str, args: list[str], prog: str) -> int:
         n = sum(1 for r in recs if r["record"] == "node")
         total_n += n
         total_e += len(recs) - n
+        via = f"  (named by {referrer.name})" if referrer is not None else ""
         print(f"  {src.name} -> {dest.relative_to(s.root)}  "
               f"({n} nodes, {len(recs) - n} edges, "
-              f"root {root[:8]}, blob {guid[:8]})")
+              f"root {root[:8]}, blob {guid[:8]}){via}")
         if dup:
             # Not an error. Storage is a blob store and the same bytes may
             # legitimately arrive twice; what would be wrong is for the second
@@ -325,7 +400,7 @@ def main(argv):
         return 1
 
     if cmd == "digest":
-        route, files, err = _route_of(argv[2:])
+        route, files, follow, err = _route_of(argv[2:])
         if err or not files:
             print(f"usage: {prog} digest --as=<route> <file>...")
             if err:
@@ -336,7 +411,7 @@ def main(argv):
                   "named\n`notes.jsonl` digested --as=notes is markdown, "
                   "because that is what was asked for.")
             return 2
-        return _digest(s, route, files, prog)
+        return _digest(s, route, files, prog, follow)
 
     if cmd == "ls":
         recs, files = s.load()

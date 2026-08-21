@@ -48,7 +48,9 @@ compost init             # makes .compost/ here; every other command walks up to
 compost digest --as=R FILE...   # R is one of notes, claude-code-transcript,
                                 # pandoc-ast. Required; never inferred.
                                 # A transcript digest is lossless: every line
-                                # and key is kept, filter at query time.
+                                # and key is kept, filter at query time. It also
+                                # pulls in the subagent transcripts it names;
+                                # --no-follow reads only the file given.
 compost check            # must report 0 problems
 compost render           # views/default-{djot,html,md}
 compost lookup HANDLE    # the block a handle names
