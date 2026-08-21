@@ -129,7 +129,8 @@ graph names never coincide.
 hand, which is what surfaced the filename collision above: a view test that
 builds its own records can only check the views against itself.
 
-Twelve suites, 5/5 → 6/6 view guarantees, 8/8 → 10/10 storage.
+Twelve suites, up from eleven. View guarantees 5/5 → 6/6. Storage stays at
+ten: two cases whose mechanism is gone were replaced, not added to.
 
 ## v0.2.1 — 2026-08-20 — the daily loop closes
 

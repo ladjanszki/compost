@@ -58,7 +58,7 @@ $ ./tests/run.sh
 test_records             525/525 identity round-trip   |   19828 nodes, 35747 edges
 test_sabotage            6/6 sabotages caught
 test_store               10/10 storage guarantees hold
-test_digest              12/12 ingestion guarantees hold
+test_digest              13/13 ingestion guarantees hold
 test_views               6/6 view guarantees hold
 test_citations           7/7 citation guarantees hold
 test_bleach_session      7/7 session-fixture guarantees hold
