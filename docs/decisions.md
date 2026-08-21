@@ -290,8 +290,8 @@ nothing common. `-p` overrides it.
 
 ## Ingestion: named routes, minted storage names
 
-*Decided and built 2026-08-21, for v0.2.2 — untagged at time of writing.
-Supersedes dispatch on the file extension.*
+*Decided and built 2026-08-21, shipped in v0.2.2. Supersedes dispatch on
+the file extension.*
 
 ### The route is named, never inferred
 

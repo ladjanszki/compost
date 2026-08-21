@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.2 — unreleased — ingestion is asked for by name
+## v0.2.2 — 2026-08-21 — ingestion is asked for by name
 
 `compost import FILE...` is gone. Ingestion is `compost digest --as=ROUTE
 FILE...`, the route is required, and **nothing about it is inferred from a file
