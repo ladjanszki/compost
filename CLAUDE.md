@@ -93,6 +93,16 @@ shaped the way it is, never as a description of the current tool.
 
 - **Work on `main`, tag each version.** No feature branches; see
   `DEVELOPMENT.md` for why this was learned the hard way.
+- **Digest everything the file holds; filter at query time, never at import.**
+  Deciding a field is noise while reading it is a decision made once, silently,
+  and unrecoverably — the bytes are still in `storage/`, but every base built
+  in the meantime is missing them and nobody knows. Filtering later is free and
+  reversible; filtering at import is neither. This has been asked for at least
+  four times and `src/session.py` still drops 46% of a real transcript's lines
+  and seventeen log-line keys; `TODO.md` has the audit. If a new importer is
+  tempted to skip something, the answer is to store it and let a view or a
+  query ignore it. Volume is not the objection: this is not the main way the
+  base is read.
 - **Never scan raw file text for citations.** A citation is a `Link` node, and
   reading the parsed content is what makes "handles inside code blocks are not
   citations" true by construction. This rule was violated three times under the
