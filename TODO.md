@@ -287,65 +287,80 @@ order. **The importer has to be told to go and get the second file.**
 This entry used to say the join was the `agentId` inside the parent's `Agent`
 `tool_use`. **That was a guess and it is wrong** — see the measurements below.
 
-#### Measured 2026-08-21, on the one real sidechain on this disk
+#### Measured 2026-08-21 on purpose-made data — the join is settled
 
-Run against `b839d62a-…` — a session with one `Agent` call — because the
-fixtures contain zero sidechain lines. **Note this is still one session with
-one call**; the questions below it are the ones it cannot answer.
+The earlier entries here were built on one session with one `Agent` call, and
+guessed. Four subagents were launched deliberately to answer the rest: two of
+the **same** `agentType`, one of a different type, and one instructed to spawn
+its own. Five sidechain files resulted.
 
-**The parent's `tool_use` does not name the subagent.** Its `input` holds only
-`description`, `prompt` and `subagent_type`; neither the block nor the log line
-carries an `agentId`.
+**A sidechain file is per *call*, not per agent type.** Three of the four
+direct launches were `general-purpose` and each got its own file. Any design
+keying on agent type is wrong.
 
-**The join is `toolUseResult`, a sibling key on the parent's tool_result log
-line** — not inside `message.content` at all:
+**Every sidechain has a `.meta.json` sidecar, and that is the join.** Nothing
+in this repo knew these existed:
 
-```json
-{"agentId": "a1a0ded9a13801838", "outputFile": "…/a1a0ded9a13801838.output",
- "status": "async_launched", "resolvedModel": "claude-opus-5",
- "isAsync": true, "description": …, "prompt": …, "canReadOutputFile": …}
+```
+<session-id>/subagents/agent-<agentId>.jsonl        the turns
+<session-id>/subagents/agent-<agentId>.meta.json    the join
 ```
 
-`agentId` is exactly the sidechain filename, so this is the whole join, and it
-comes back in the **result** rather than going out in the call.
+```json
+{"agentType": "general-purpose", "description": "…",
+ "toolUseId": "toolu_…", "spawnDepth": 1, "model": "haiku"}
+```
 
-**`src/session.py` reads `d["message"]["content"]` and never `d["toolUseResult"]`,
-so it drops all of this today.** That is the expensive branch of the question
-this entry was holding open: every transcript ingested so far has lost the link.
-The `agentId` does survive inside the tool_result *text*, which is stored — but
-recovering it from there means scanning stored text for an identifier, which is
-the rule in `CLAUDE.md` that has already cost something three times. Do not.
+`toolUseId` names the parent's `tool_use` **block** directly, and it resolved
+for all four direct launches. **`session.py` already stores exactly that key**
+as `tool_use_id` on every `toolcall` and `tooloutput` node.
 
-**So capture `toolUseResult` on the `tooloutput` node before ingesting more
-transcripts.** It is a small change, it is now justified by measurement rather
-than by anticipation, and every session imported before it lands will need
-re-reading. That is worth doing ahead of the sidechain work itself.
+**So nothing has been lost, and the previous entry saying otherwise was wrong.**
+It concluded that dropping `toolUseResult` cost the link in every transcript
+ingested so far. It does not: the sidecar carries the join, the target is
+already in the graph, and no transcript needs re-reading. There is still a
+reason to capture `toolUseResult` — it holds a second, independent join
+(`agentId`, which matched a file for all four) plus `outputFile`,
+`resolvedModel` and `status` — but it is corroboration, not the mechanism, and
+it is not urgent.
 
-**`sourceToolAssistantUUID` is not the back-pointer it looks like.** The
-sidechain carries 30 distinct values and **none of them resolve into the parent
-file**; they are internal to the sidechain. Do not build the join on it.
+**Nesting is real, flat on disk, and makes the join recursive.** The depth-2
+agent got its own file in the *same* directory, with `spawnDepth: 2` and a
+`parentAgentId`. Its `toolUseId` does **not** resolve in the root transcript —
+it resolves in its parent *agent's* transcript. So resolution is: look up
+`toolUseId` in the log named by `parentAgentId`, or in the root session when
+`parentAgentId` is absent. "Hang the sidechain off the toolcall node" is
+therefore correct and recursive, and `spawnDepth` says how deep before you
+start.
 
-#### Still unanswered — one session, one call is not a design input
+**`isSidechain` is a reliable discriminator.** 0 of 756 parent lines carry it
+true; 5 of 5 lines in each sidechain do.
 
-1. **Is it one sidechain file per `Agent` call, or per agent?** Launch the same
-   `subagent_type` twice in one session and look. This is the difference
-   between an edge and a container, and it decides the whole shape.
-2. **Does the parent's `tool_result` text repeat the subagent's final message?**
-   If so, ingesting both files puts the same prose in the base twice under two
-   handles, and "which do I cite" has no good answer. Most likely of these to
-   change the design.
-3. **Do sidechains nest?** A subagent spawning a subagent — third file, and
-   whose `agentId` does its parent's `toolUseResult` carry? If nesting exists,
-   "hang the sidechain off the toolcall" is a recursion, not a step.
-4. **Is `outputFile` a stable second path to the same thing,** or an artefact of
-   `isAsync: true`? Every measurement here is from one async launch.
-5. **Is `isSidechain` trustworthy** as the discriminator — on every line of a
-   sidechain file and no line of a parent?
+**The subagent's answer comes back into the parent, so ingesting both
+duplicates it.** This is the one that still needs a decision. The `tool_result`
+at launch is *not* the answer — it is 1067 bytes of launch boilerplate, because
+every launch is async (`status: "async_launched"`, `isAsync: true`). The answer
+arrives later, in the completion notification, and each subagent's final message
+appears on **six** parent lines. So the same prose lands in the base twice: once
+as the subagent's own turn, once as notification text in the parent. Decide
+which one is citable before building the import, because after it there will be
+two handles for one sentence and no rule saying which to use.
 
-**The material to answer these is not on this disk.** One sidechain file exists
-in `~/.claude/projects`, and it is the one already measured; the multi-subagent
-session from 2026-08-20 is not there. Getting that transcript, or making a new
-one on purpose, is the first task of the sidechain work.
+Note all of this is measured with `isAsync: true`. Whether a synchronous launch
+puts the answer in the `tool_result` itself was not exercised and may not be
+reachable any more.
+
+#### Unrelated, found while measuring: the importer skips 46% of the log
+
+A census of one real transcript: `attachment` 179, `assistant` 268, `user` 144,
+`mode` 37, `permission-mode` 37, `ai-title` 37, `last-prompt` 36,
+`queue-operation` 12, `file-history-snapshot` 7, `system` 7,
+`file-history-delta` 2.
+
+`session.py` processes `user` and `assistant` and silently skips the rest —
+**354 of 766 lines.** Most of that is certainly noise, but it has never been
+looked at, and `attachment` at 179 lines is not obviously noise. This is its
+own question and should not be smuggled into the sidechain work.
 
 Do the import first and separately. It does **not** settle the question
 `docs/decisions.md:136` is waiting on — whether `next` (log order) and
