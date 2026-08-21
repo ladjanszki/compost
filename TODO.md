@@ -282,10 +282,70 @@ sidechain lines:
 
 So the reply chain does not cross the file boundary, and importing the parent
 alone yields what it always did: no sidechain, and log order equal to reply
-order. **The importer has to be told to go and get the second file.** The join
-is the `Agent` toolcall in the parent — one `tool_use` in the log, with the
-`agentId` that names the sidechain file — so the sidechain's root turn hangs off
-that toolcall node, not off a `replies_to` edge.
+order. **The importer has to be told to go and get the second file.**
+
+This entry used to say the join was the `agentId` inside the parent's `Agent`
+`tool_use`. **That was a guess and it is wrong** — see the measurements below.
+
+#### Measured 2026-08-21, on the one real sidechain on this disk
+
+Run against `b839d62a-…` — a session with one `Agent` call — because the
+fixtures contain zero sidechain lines. **Note this is still one session with
+one call**; the questions below it are the ones it cannot answer.
+
+**The parent's `tool_use` does not name the subagent.** Its `input` holds only
+`description`, `prompt` and `subagent_type`; neither the block nor the log line
+carries an `agentId`.
+
+**The join is `toolUseResult`, a sibling key on the parent's tool_result log
+line** — not inside `message.content` at all:
+
+```json
+{"agentId": "a1a0ded9a13801838", "outputFile": "…/a1a0ded9a13801838.output",
+ "status": "async_launched", "resolvedModel": "claude-opus-5",
+ "isAsync": true, "description": …, "prompt": …, "canReadOutputFile": …}
+```
+
+`agentId` is exactly the sidechain filename, so this is the whole join, and it
+comes back in the **result** rather than going out in the call.
+
+**`src/session.py` reads `d["message"]["content"]` and never `d["toolUseResult"]`,
+so it drops all of this today.** That is the expensive branch of the question
+this entry was holding open: every transcript ingested so far has lost the link.
+The `agentId` does survive inside the tool_result *text*, which is stored — but
+recovering it from there means scanning stored text for an identifier, which is
+the rule in `CLAUDE.md` that has already cost something three times. Do not.
+
+**So capture `toolUseResult` on the `tooloutput` node before ingesting more
+transcripts.** It is a small change, it is now justified by measurement rather
+than by anticipation, and every session imported before it lands will need
+re-reading. That is worth doing ahead of the sidechain work itself.
+
+**`sourceToolAssistantUUID` is not the back-pointer it looks like.** The
+sidechain carries 30 distinct values and **none of them resolve into the parent
+file**; they are internal to the sidechain. Do not build the join on it.
+
+#### Still unanswered — one session, one call is not a design input
+
+1. **Is it one sidechain file per `Agent` call, or per agent?** Launch the same
+   `subagent_type` twice in one session and look. This is the difference
+   between an edge and a container, and it decides the whole shape.
+2. **Does the parent's `tool_result` text repeat the subagent's final message?**
+   If so, ingesting both files puts the same prose in the base twice under two
+   handles, and "which do I cite" has no good answer. Most likely of these to
+   change the design.
+3. **Do sidechains nest?** A subagent spawning a subagent — third file, and
+   whose `agentId` does its parent's `toolUseResult` carry? If nesting exists,
+   "hang the sidechain off the toolcall" is a recursion, not a step.
+4. **Is `outputFile` a stable second path to the same thing,** or an artefact of
+   `isAsync: true`? Every measurement here is from one async launch.
+5. **Is `isSidechain` trustworthy** as the discriminator — on every line of a
+   sidechain file and no line of a parent?
+
+**The material to answer these is not on this disk.** One sidechain file exists
+in `~/.claude/projects`, and it is the one already measured; the multi-subagent
+session from 2026-08-20 is not there. Getting that transcript, or making a new
+one on purpose, is the first task of the sidechain work.
 
 Do the import first and separately. It does **not** settle the question
 `docs/decisions.md:136` is waiting on — whether `next` (log order) and
@@ -305,15 +365,6 @@ and one invocation means one source. That was a choice, not an oversight: the
 join is a *second* kind of fact — which agent ran under which toolcall — and
 it belongs in its own layer beside `ingestion`, asserted explicitly, rather
 than smuggled in as a side effect of reading a file. Do it as its own step.
-
-One thing to check before that step, cheaply, because it decides whether the
-join is still recoverable from what is already stored: **where `agentId`
-actually appears on the parent side.** `toolcall` nodes keep their `input`
-verbatim (`session.py`), so if it sits inside the `Agent` tool_use input it is
-already being captured and nothing is being lost today. If it is a sibling key
-on the log line instead, the current importer drops it and every transcript
-ingested until then will need re-reading to recover the link. The fixtures
-cannot answer this — they contain zero sidechain lines.
 
 ### `file` and `blob` nodes have no view
 
