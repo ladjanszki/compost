@@ -236,6 +236,14 @@ because it was found and named rather than discovered later.
 
 The one thing that makes v0.2 replace v0.1 rather than sit beside it.
 
+**Superseded — see `docs/roadmap.md`, v0.2.4–v0.2.6.** The plan below rewrites
+the old `.dj` files, and that was rejected on two grounds: it deletes the only
+record that the old handles ever existed, and step 3 is a *textual* pass
+deciding which `{#x}` occurrences are citations, which is the operation
+CLAUDE.md forbids. The replacement rewrites nothing and adds an opt-in alias
+layer instead. The numbered steps stay because their measurements still hold
+and the replacement reuses most of them.
+
 1. **Build the handle dictionary first.** Parse `conversations/*.dj` and
    `artifacts/*.dj` textually: a line that is exactly `{#xxxxxxxx}` assigns the
    following block. 5839 assignments, recovered with certainty. This must happen
@@ -630,8 +638,8 @@ leaving a tab open actually becomes the annoyance.
 - **Citations attach to blocks, not to references.** A `{@}`-era limitation that
   survives the move to links: two citations in one paragraph are two edges from
   the same source node, and nothing distinguishes which reference is which.
-- **`tests/corpus/` is fetched, not tracked.** A fresh checkout runs 5 of the
-  525 round-trip documents until `./tests/fetch-corpus.sh` runs; the pins are
+- **`tests/corpus/` is fetched, not tracked.** A fresh checkout runs 6 of the
+  526 round-trip documents until `./tests/fetch-corpus.sh` runs; the pins are
   in `tests/corpus.txt`. `vendor/pandoc-types` is a separate optional clone
   that no test reads — it is the AST grammar, kept for a human to consult.
 - **One pandoc call per text block** on session import — 19s for 7 sessions.
