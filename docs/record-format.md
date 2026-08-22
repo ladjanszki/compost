@@ -403,7 +403,7 @@ Extend `src/roundtrip.py` with a second stage, reusing every fixture:
    values and *different* `guid`s — the expected behaviour, not a defect, until
    re-import identity is answered.
 
-**Result.** 525/525 documents round-trip to the identity with the corpus
+**Result.** 526/526 documents round-trip to the identity with the corpus
 fetched — a curated corpus, 478 documents of `rust-book`, and one hand-built
 AST fixture reaching the
 constructors the reader cannot produce. 19,567 nodes and 35,308 edges. All

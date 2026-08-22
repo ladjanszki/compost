@@ -10,7 +10,7 @@ things are temporarily out of step. Read this before assuming either.
 conda env create -f environment.yml   # once; later, conda env update -f …
 conda activate compost                # pandoc 3.10 — base has 3.8 and won't say so
 pip install -e .                      # puts `compost` on PATH
-./tests/run.sh                        # twelve suites, all should pass
+./tests/run.sh                        # thirteen suites, all should pass
 compost --help
 ```
 
@@ -22,7 +22,7 @@ checkout either way.
 The suites run in two tiers. A bare clone has only the **smoke set** — about
 80 KB of fixtures, enough that every suite runs — and the last line of `run.sh`
 says `corpus ABSENT`. `./tests/fetch-corpus.sh` fetches the pinned corpus into
-`tests/corpus/`, which takes the round-trip from 5 documents to 525 and turns
+`tests/corpus/`, which takes the round-trip from 6 documents to 526 and turns
 four skipped guarantees back on. Never trust a green board without reading that
 last line.
 

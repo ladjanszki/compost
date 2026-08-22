@@ -17,6 +17,8 @@ src/            the implementation
   roundtrip.py  the pandoc-only fixed-point harness
 tests/          one suite per property; ./tests/run.sh runs them all
   fixtures/     the smoke set, ~80 KB: the documents suites name directly
+    grammar/    one instance of every constructor, so docs/record-grammar.md
+                is verified rather than believed
   corpus/       fetched, gitignored — see fetch-corpus.sh
   corpus.txt    the pinned commits
   fetch-corpus.sh
@@ -38,7 +40,7 @@ The **corpus** is fetched at pinned commits recorded in `tests/corpus.txt`:
 ./tests/fetch-corpus.sh
 ```
 
-That takes the round-trip from 5 documents to 525 and re-enables four
+That takes the round-trip from 6 documents to 526 and re-enables four
 guarantees that need volume — they report themselves `skip` when it is absent,
 and `run.sh` ends with `corpus present` or `corpus ABSENT` either way.
 
