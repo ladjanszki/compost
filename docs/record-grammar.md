@@ -41,9 +41,16 @@ of weight:
    records in one base, and a migration rewrites only the records whose shape
    actually changed. A base-wide version forces an all-or-nothing rewrite.
 
-**Measured cost: 4.4%.** Over the 767 records the fixtures produce (349,244
-bytes, mean 455 B/record), `"schema_version":1,` adds 20 bytes each — 15,340
-bytes. This is the cheapest of the three options and the least clever.
+**Measured cost.** Over the 972 records the fixtures currently produce (401,357
+bytes, mean 412 B), `"schema_version":1,` adds 20 bytes each — **+5.1%**. This is
+the cheapest of the three options and the least clever.
+
+That figure covers this field **alone**. The whole v0.2.4 record change —
+`schema_version` everywhere plus `created_at`, `tool_version` and `content_hash`
+on edges — costs **+27.1% overall and +78.8% on edges**, because three fields land
+on a record whose mean size is 213 B. An earlier draft published the 5% and not
+the 27%, which is the flattering half of a number in a project that measures
+`-smart` to the percentage point.
 
 ### Absent means 1
 
@@ -69,10 +76,15 @@ existed changes meaning or type:
 - a new node type, a new edge type, a new layer
 - a new *optional* key on an existing form
 
-By that rule the planned v0.2.4 work — the `layer` and `handle` node types, the
-`by` field on generated edges, the `alias` and `citation` layers — is **all
-additive, and schema stays 1.** A version that increments every release carries
-no information; this one is meant to be readable years later.
+By that rule the planned v0.2.4 work — the `alias` and `unresolved_citation` node
+types, the `names` edge, and the `by`, `created_at`, `tool_version` and
+`content_hash` fields on edges — is **all additive, and schema stays 1.** A
+version that increments every release carries no information; this one is meant to
+be readable years later.
+
+*(An earlier draft of this paragraph named a `layer` node type and a `handle` node
+type. Neither exists: the layer mechanism keeps no declarations, and the node that
+carries a name is called `alias`. See `docs/roadmap.md`.)*
 
 ---
 
@@ -290,11 +302,36 @@ of a graph that fails any of them is refused, not rendered.**
 8. **No two nodes share a handle.** Vacuous while `HANDLE_LEN == 36`, since a
    handle is the guid; it exists so that shortening handles cannot silently
    introduce collisions.
-9. **`content_hash` is present exactly when required** — when the node has
-   `content`, or its type is in `TEXT_IN_PARAMS` (`CodeBlock`, `RawBlock`).
+9. **`content_hash` is present exactly when required** — this assertion is about
+   **nodes only**: present when the node has `content`, or its type is in
+   `TEXT_IN_PARAMS` (`CodeBlock`, `RawBlock`); absent otherwise. Edges are not
+   inspected by it.
 
-`content_hash` is `sha256(canonical([type, params, content]))`, where
-`canonical` is JSON with sorted keys, no spaces, and `ensure_ascii=False`.
+### The two `content_hash` functions
+
+They share a field name and are **not comparable**. A query grouping by
+`content_hash` across record kinds is comparing nothing.
+
+| | node | edge |
+|---|---|---|
+| input | `[type, params, content]` | the record minus a skip list |
+| shape | a positional **array** | an **object** |
+| excludes | `record`, `guid` — by not being in the array | `record`, `guid`, `schema_version`, `content_hash`, `created_at`, `tool_version` |
+| present | only when the node has content | always |
+
+Both are `sha256(canonical(…))`, where `canonical` is JSON with sorted keys, no
+spaces, and `ensure_ascii=False`.
+
+The edge form excludes identity **and provenance** deliberately: a hash must say
+what the edge *claims*, never when or by what it was written, or the same fact
+rebuilt tomorrow would not match the one written today — which is the only thing
+the hash is for. See `docs/decisions.md`.
+
+**Neither reaches everything.** Transcript node types, `alias` and
+`unresolved_citation` carry no hash at all; and an edge pointing at a placeholder
+hashes differently on every build, because the placeholder's guid is fresh each
+time. `content_hash` is evidence for a future dedup design, not a mechanism
+anything acts on.
 
 ---
 

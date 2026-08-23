@@ -77,8 +77,24 @@ In `Builder.node()` (line 71) and `Builder.edge()` (line 83), add
 or `guid`, and `schema_version` must not enter it either. The existing call site
 already passes only those three values, so leave that line completely alone.
 
-Do **not** add a `check` assertion for the field. A base written before this
-release has no field and `check` must keep passing on it.
+Add **one** `check` assertion, at the end of `records.check()`:
+
+```python
+for r in records:
+    v = r.get("schema_version")
+    if v is not None and v > SCHEMA_VERSION:
+        problems.append(f"{r['guid']} is schema {v}; this tool writes "
+                        f"{SCHEMA_VERSION}")
+```
+
+It cannot fire on any existing base — absent means 1 — and it fires loudly the
+first time a newer tool's records are loaded by an older one, which is the only
+reason the field exists. **Do not** assert that the field is *present*: every
+record written before this release lacks it and `check` must keep passing on
+them.
+
+Also bump `src/__init__.py` to `0.2.4` in this step, so `tool_version` on every
+record written during this work is honest.
 
 **Verify:**
 
@@ -95,10 +111,13 @@ python3 -m tests.test_records     # count unchanged (526 with corpus, 6 without)
 
 ### 2a. A timestamp helper
 
-`src/store.py:51` already has `_now()`. Move it to `records.py` (or add an
-identical one there) so `Builder` can use it without importing `store` — that
-import direction does not exist today and must not be created. Update
-`store.py`'s call sites to use the `records` one.
+`src/store.py:51` already has `_now()`. Move it to `records.py` so `Builder` can
+use it without importing `store` — that import direction does not exist today and
+must not be created. Update `store.py`'s call sites to use the `records` one.
+
+**`records.py` does not currently import `datetime`** (see its import block at
+lines 21–24). Add it. `store.py` may then drop its own import if nothing else
+uses it — check before deleting.
 
 ### 2b. `Builder.edge()` gains three fields
 
@@ -171,11 +190,28 @@ No other change to `records.py` in this step. **No new `check` assertions.**
 
 This module owns `compost layer`. Do not put layer logic in `store.py`.
 
+**Imports this file needs**, none of which exist yet — write them first:
+
+```python
+import uuid
+from pathlib import Path
+
+from . import __version__          # NOT `import src`; that fails inside the package
+from . import records as R
+from . import store as S
+```
+
+**Write the sections below in the order 4a → 4b → 4c → 4d, but place the
+registry (4a) *after* the builder (4b) in the file.** A module-level dict that
+names a function defined below it raises `NameError` at import time, and the
+module will not load at all.
+
 ### 4a. The registry
 
 ```python
 # name -> {by -> builder}. Named the way routes are named, and for the same
 # reason: what produced a record is written down, never inferred.
+# Defined AFTER _citation — see the note above.
 BUILDERS = {
     "citation": {"uuid-link": _citation},
 }
@@ -201,6 +237,11 @@ def _citation(recs, name, by):
     b = R.Builder()
     edges, unresolved = R.citation_edges(recs)
     for e in edges:
+        # schema_version is NOT optional here. citation_edges builds raw dict
+        # literals rather than going through Builder.edge(), so nothing has
+        # added it — and "required on write" would be violated by the very
+        # release that introduces it.
+        e["schema_version"] = R.SCHEMA_VERSION
         e["layer"], e["by"] = name, by
         e["created_at"], e["tool_version"] = R._now(), __version__
         e["content_hash"] = R.edge_hash(e)
@@ -210,14 +251,23 @@ def _citation(recs, name, by):
     seen = {}
     for value, source in unresolved:
         if value not in seen:
-            prov = {"created_at": R._now(), "tool_version": __version__}
-            ph = b.node("unresolved_citation", dict(prov))
-            al = b.node("alias", {"value": value, "scheme": by, **prov})
+            ph = b.node("unresolved_citation")
+            al = b.node("alias", {"value": value, "scheme": by})
             b.edge("names", al, ph, name, by=by)
             seen[value] = ph
         b.edge("cites", source, seen[value], name, by=by)
-    return edges + b.records, sorted(seen)
+    return {"cites": len(edges) + sum(1 for _ in unresolved),
+            "placeholders": len(seen),
+            "records": edges + b.records,
+            "unresolved": sorted(seen)}
 ```
+
+**Provenance goes top-level, not in `params`.** `Builder.node()` must set
+`created_at` and `tool_version` as top-level keys on every node, exactly as
+`Builder.edge()` does. Putting them in `params` would work for these two types
+(neither carries a `content_hash`) but sets a precedent that breaks the moment a
+type with a hash needs provenance, since node hashing is
+`canonical([type, params, content])`. Decide it once, here.
 
 **`citation_edges` currently returns `unresolved` as a list of bare handle
 strings, not `(value, source)` pairs.** You need the citing node's guid to build
@@ -230,7 +280,7 @@ only change to `citation_edges` — leave everything else in it alone.
 ### 4c. `build`
 
 ```python
-def build(st, name: str, by: str) -> tuple[int, list[str]]:
+def build(st, name: str, by: str) -> dict:
     """Generate a layer. Reads the base; writes one new file. Nothing else.
 
     This does NOT look at what a previous run wrote. Running it twice produces
@@ -238,14 +288,21 @@ def build(st, name: str, by: str) -> tuple[int, list[str]]:
     docs/roadmap.md, "the tool does not hold your hand".
     """
     recs, _ = st.load()
-    out, unresolved = BUILDERS[name][by](recs, name, by)
-    st.write(f"{uuid.uuid4()}.jsonl", out)
-    return len(out), unresolved
+    r = BUILDERS[name][by](recs, name, by)
+    st.write(f"{uuid.uuid4()}.jsonl", r["records"])
+    return r
 ```
+
+The builder returns a dict rather than a count because `records` holds four
+kinds of thing — `cites` edges, `alias` nodes, `unresolved_citation` nodes and
+`names` edges. Reporting `len(records)` as "cites edges" inflates the headline
+number by roughly 3× the count of distinct unresolved values.
 
 ### 4d. `main(argv)`
 
 Mirror `src/views.py:main` — `S.Store.find()`, catch `S.NotABase`, return an int.
+**`views.main` is called as `views.main(argv[1:])`, so its `argv[0]` is the
+subcommand name.** Wire `layer` the same way and parse from `argv[1:]` inside.
 
 ```
 compost layer                        list what can be built
@@ -266,8 +323,22 @@ compost layer NAME [--by SCHEME]     build it
     7f0e91a2-…
 ```
 
-The unresolved list is the **only** place this information appears at build time.
-Print at most ten, then `… and N more`.
+Print at most ten unresolved values, then `… and N more`.
+
+### 4e. Wire it into `src/cli.py`
+
+**This is a step in its own right and is easy to miss.** `src/cli.py:62` has the
+dispatch chain; without a branch there, `compost layer` prints *unknown command*
+and `tests/test_manpage.py` goes red for a reason that does not point here.
+
+```python
+if cmd == "layer":
+    from . import layers
+    return layers.main(argv[1:])
+```
+
+Add it beside the `render` and `serve` branches. The `USAGE` string and module
+docstring are step 10.
 
 ---
 
@@ -292,6 +363,10 @@ def linked(self, guid, type_, by=None):
     return [e for e in out if by is None or e.get("by") == by]
 ```
 
+**Also update `_rel`'s type annotation** at `src/records.py:275` — it currently
+reads `dict[str, dict[str, list[str]]]` and becomes `dict[str, dict[str, list[dict]]]` —
+and the `linked()` docstring at `:288`, which promises "destinations".
+
 **There is exactly one caller today: `src/views.py:133`,** which does
 `for sub in g.linked(guid, "launched")` and expects guids. Update it to read
 `e["destination"]`. Confirm the count with `grep -rn "\.linked(" src/ tests/`
@@ -314,7 +389,15 @@ shape from `tests/test_views.py`.
 Any fixture you hand-write into `graph/` lives **inside that temp directory**, per
 `tests/test_sabotage.py`'s precedent. Never in a real base.
 
-Seven properties:
+**Use two separate bases.** Properties 1–3 need a base with **no** unresolved
+citations; properties 4–6 need one with them. Mixing them makes property 2 false,
+because a placeholder gets a fresh guid every build, so two builds' `cites` edges
+into placeholders have different `destination` and therefore different
+`content_hash`. Build the two bases in two helpers and say which is which.
+
+Eight properties:
+
+*Base A — every citation resolves:*
 
 1. **Building twice produces two full sets.** Build, count `cites` edges, build
    again, count again — the second count is exactly double. *This asserts the
@@ -323,6 +406,9 @@ Seven properties:
 3. **`content_hash` ignores `created_at` and `tool_version`.** Take one edge,
    copy it, change both fields, and confirm `edge_hash` returns the same value.
    *This property caught a real contradiction during design; it must exist.*
+
+*Base B — some citations do not resolve:*
+
 4. **An unresolved citation mints exactly one `alias` and one
    `unresolved_citation` per distinct value**, and the `cites` edge's destination
    is the placeholder. Cite the same missing handle twice in one document and
@@ -330,8 +416,14 @@ Seven properties:
 5. **`check` is clean after a build containing unresolved citations.** Nothing
    dangles.
 6. **`lookup` by an alias value returns the placeholder** and names the scheme.
+
+*Either base:*
+
 7. **`Graph.linked` preserves `by`** — build, then confirm the returned records
    carry it.
+8. **Every record in the base carries `schema_version`.** Sweep the whole loaded
+   base, not just the layer's output — this is the property that catches
+   `citation_edges`' raw dict literals, which no other test would.
 
 **Sabotage each before believing it.** In particular: remove `"alias"` from
 `UNCONTAINED` and confirm the board goes red; add `created_at` back into
@@ -375,17 +467,35 @@ Three additions:
    silently.**
 3. **Report incoming citations** — every `cites` edge whose `destination` is the
    node, with the citing block's type and a truncated `R.plain_text()`.
+4. **Also report citations that reached a placeholder naming this guid.** Without
+   this, `lookup <guid>` says *nothing cites this* for a block that **is** cited,
+   because the citing edge points at an `unresolved_citation` minted before the
+   target existed and never retracted. The reverse path is: find `alias` nodes
+   whose `value` equals the guid → follow `names` → collect `cites` edges into
+   those placeholders. Label them differently from direct citers, e.g.
+   *cited before this block was in the base*.
 
 `CLAUDE.md` currently says `lookup` "does not say what cites it — there is no
 citation layer yet". Fix that sentence in this commit.
 
 **Do not add a staleness warning.** On a base where the layer has not been
 rebuilt, `lookup` will under-report, and that is an accepted risk recorded in the
-roadmap. Silence here is deliberate.
+roadmap. Silence there is deliberate — but point 4 above is *not* staleness, it is
+a citation that was recorded and is simply one hop away.
 
-New properties in `tests/test_lookup.py`: a cited handle reports its citer; an
-uncited handle says so and still exits 0; an alias value resolves; two aliases
-with one value both appear.
+**`tests/test_lookup.py:97` currently asserts the opposite of this step.** Its
+property *"lookup names the node asked for and no other"* checks
+`set(re.findall(HANDLE_RE, out)) == {guid}`, with a comment explaining that a
+second node "would mean deriving the citation layer on every query". It stays
+green today only because the temp base has no citations — so the suite would
+silently stop testing anything. Rewrite the property as **"lookup names the node
+asked for, plus its citers, and nothing else"**, extend the harness to include a
+citation, and replace the module docstring's second paragraph, which states the
+old design as fact.
+
+New properties: a cited handle reports its citer; an uncited handle says so and
+still exits 0; an alias value resolves; two aliases with one value both appear; a
+guid cited only through a placeholder still reports that citer.
 
 ---
 
@@ -402,12 +512,22 @@ link — verified: `grep -rn '\[-\](#' tests/fixtures/` finds nothing, and
 `build()` to run the layer. Expect green until here; if the board goes red
 earlier, that is a real failure, not this one.
 
-1. Extend `test_grammar.build()` to call `layers.build(st, "citation",
-   "uuid-link")` after digesting, and to digest a citing document. **Generate that
-   document inside the test**, after reading a real block guid out of the graph —
-   a committed fixture with a hard-coded guid would never resolve in a fresh base.
-   That needs a two-phase digest: digest, read a guid, write a temp `.md`, digest
-   that, then build.
+**It will go red for three reasons, not one.** `NOT_YET_MINTED` is the obvious
+one. The other two come from this step's own documentation edits: once `alias`,
+`unresolved_citation` and `citation`/`names` are documented, the suite's
+*"every documented node type is exercised"* (`tests/test_grammar.py:146`) and
+*"every documented edge pair is exercised"* (`:162`) fail unless a fixture
+actually produces them. Their messages name the missing types and do not point at
+the cause.
+
+1. Extend `test_grammar.build()` to digest a citing document and then call
+   `layers.build(st, "citation", "uuid-link")`. **Generate that document inside
+   the test** — a committed fixture with a hard-coded guid would never resolve in
+   a fresh base. It needs a two-phase digest: digest the fixtures, read a real
+   block guid out of the graph, write a temp `.md`, digest it, then build.
+   **That document must contain two citations** — one to the real guid and one to
+   a fabricated one such as `deadbeef-0000-0000-0000-000000000000` — so the layer
+   mints both branches and all three node types and both edge types appear.
 2. Delete the `NOT_YET_MINTED` entry.
 3. Update `docs/record-grammar.md`:
    - **§2** — add `schema_version` (present), `by`, `created_at`, `tool_version`
@@ -415,15 +535,25 @@ earlier, that is a real failure, not this one.
      case / nothing derives a guid from content" sentence exactly as it is** — it
      is still true, and it also carries the unrelated storage/graph name
      separation invariant.
-   - **§3.4** — add `alias` (`value`, `scheme`, `created_at`, `tool_version`) and
-     `unresolved_citation` (`created_at`, `tool_version`).
+   - **§3.4** — add `alias` (`value`, `scheme`) and `unresolved_citation` (no
+     params). Note that provenance is top-level on both, not in `params`.
    - **§4** — `citation`/`cites` loses its "not yet minted" note; add
      `citation`/`names`.
-   - **§5** — state that assertion 9 is about **nodes** only, and that edges
-     always carry a `content_hash` whose input excludes identity and provenance.
-   - **§1** — the field is now written, not planned.
+   - **§5** — assertion 9 is about **nodes** only. State the **two hash
+     functions** side by side and that they are not comparable: a node's is
+     `sha256(canonical([type, params, content]))`, positional over an array with
+     no exclusions; an edge's is `sha256(canonical(record − EDGE_HASH_SKIP))`,
+     an object with a six-key skip list. Same field name, different inputs — a
+     query grouping by `content_hash` across record kinds is comparing nothing.
+     Add the new `schema_version` assertion.
+   - **§1** — the field is now written; delete the status banner. Also delete the
+     stale sentence in *When the number bumps* that names "the `layer` and
+     `handle` node types" as the planned v0.2.4 work — there is no `layer` node
+     type and the type is called `alias`.
    - **§6** — add `uuid-link` to the closed vocabularies.
    - **§8** — refresh the coverage numbers from the suite's own output.
+   - **Storage figures** — replace the 4.4% claim with the measured totals; see
+     step 10.
 
 ---
 
@@ -442,15 +572,33 @@ One commit, at the end.
   `usage_names()` matches) *and* the module docstring's list, which is a second
   copy of the same information.
 - **`docs/decisions.md`** — the home CLAUDE.md names for every non-obvious
-  decision. Four belong here: guids stay UUIDv4 and why UUIDv5 was rejected; the
+  decision. Four to **add**: guids stay UUIDv4 and why UUIDv5 was rejected; the
   `EDGE_HASH_SKIP` exclusion list and the contradiction it resolves; the two
   governing constraints (no dependency handling, no consistency guarantee) and
   the four unescapable states they removed; and that `content_hash` is evidence
   for a future dedup design rather than a mechanism anything acts on.
+  **And one to fix:** its `## Citations` section still says a reference is
+  written `{@a1b2c3d4}` and that the migration rewrites `{#x}` → `{@x}`. Both are
+  false — the syntax is `[-](#guid)` and v0.2.5 rejects the rewrite. Appending
+  four entries above a section that contradicts them is worse than not appending.
+- **`docs/record-format.md`** — **missing from the previous draft of this list,
+  and `CLAUDE.md:35` ranks it third in the reading order.** Its `## Edge` block
+  shows the six-key edge form, which gains five keys; and `## Defining
+  content_hash` defines the field for nodes only, ending *"A node with no content
+  gets no `content_hash`"* — still true of nodes, now misleading about edges. Its
+  note that an `identity_hash` "has to wait until the hash input is pinned down"
+  is answered by `EDGE_HASH_SKIP` and should say so.
 - **`DEVELOPMENT.md`** — `layers.py` in the module map.
 - **`README.md`** — the pipeline.
 - **`CHANGELOG.md`** — append. Do not edit an existing entry.
 - **`docs/roadmap.md`** — nothing.
+
+**Re-measure the storage cost and publish it.** The roadmap and
+`record-grammar.md` §1 currently quote 4.4%, which measured `schema_version`
+alone on a fixture set that has since grown. Re-run the measurement after the
+implementation and write down the real totals — the estimate is +27% overall and
++79% on edges, and a project that measures `-smart` to the percentage point
+should not ship the flattering half of a number.
 
 ---
 
@@ -460,23 +608,37 @@ One commit, at the end.
 ./tests/run.sh          # fourteen suites, all green, `corpus present`
 ```
 
-Then, by hand, in a scratch base:
+Then, by hand, in a scratch base. **The order matters: `b.md` cannot cite a guid
+until `a.md` has been digested and that guid exists.**
 
 ```bash
-compost init . && compost digest --as=notes a.md b.md
+compost init .
+echo "The block that gets cited."      > a.md
+compost digest --as=notes a.md
+compost render
+grep -o 'id="[0-9a-f-]\{36\}"' .compost/views/default-html/a.html | head -2
+#   ^ take the guid of a real block; call it G
+
+printf 'Answering [-](#G) here.\nAnd [-](#deadbeef-0000-0000-0000-000000000000) which is absent.\n' > b.md
+#   substitute the real G above
+
+compost digest --as=notes b.md
 compost layer                        # lists: citation (uuid-link)
-compost layer citation               # reports N edges, M unresolved
+compost layer citation               # 2 cites edges | 1 unresolved -> 1 placeholder
 compost check                        # 0 problems
 compost render
-compost layer citation               # runs again, reports the same N
+compost layer citation               # runs again, same counts
 compost check                        # STILL 0 problems — duplicates are legal
-compost lookup <a cited guid>        # shows the block AND its citer, twice
+compost lookup G                     # the block AND its citer, listed twice
+compost lookup deadbeef-0000-0000-0000-000000000000
+                                     # resolves via alias to the placeholder
 ```
 
-Two lines are the point of the release: `check` reports **0 problems after a
-second build** (duplicates are not an error), and `lookup` shows the citer
-**twice** (nothing dedups). If either surprises you, the implementation is wrong,
-not the plan.
+Three lines are the point of the release: `layer citation` reports **one
+unresolved and one placeholder** (the absence became a record), `check` reports
+**0 problems after a second build** (duplicates are not an error), and `lookup G`
+shows the citer **twice** (nothing dedups). If any of the three surprises you, the
+implementation is wrong, not the plan.
 
 **Do not tag.** Report back when the board is green and that sequence behaves.
 
@@ -497,6 +659,17 @@ not the plan.
   subcommand without updating that word fails the board with a message that does
   not obviously point at the man page.
 - **`src/__init__.py` still says `0.2.3`.** Bump it in step 1 so
-  `tool_version` on every record written during this work is honest.
+  `tool_version` on every record written during this work is honest. Note
+  `docs/man-compost.md` also hard-codes *"Version 0.2.3"* and nothing tests that
+  string.
+- **`compost layer` is not gated by `check`,** and neither is `Store.load()`. So
+  building a layer onto a broken graph is allowed. That follows the `lookup`
+  precedent and is intended — do not "fix" it by adding a gate.
+- **`plain_text()` folds `params["text"]` in at `src/records.py:598-599`**, not at
+  `:47` — that line is only the `TEXT_IN_PARAMS` constant. This matters if you go
+  looking for why the citation reader must walk `content` rather than flatten.
 - **The corpus tier.** `run.sh`'s last line is the only thing that says whether 6
   or 526 documents were exercised.
+- **Every line number in this document was correct when it was written and rots
+  within a release.** If one does not match, trust the code and say so rather than
+  editing around it.

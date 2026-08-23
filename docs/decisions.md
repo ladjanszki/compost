@@ -61,7 +61,14 @@ and comma-bearing fence info strings.
 
 ## Citations
 
-A reference is written **`{@a1b2c3d4}`**, not `{#a1b2c3d4}`.
+> **Superseded in two places, kept for the reasoning.** The syntax is
+> **`[-](#<guid>)`**, a markdown link — not `{@a1b2c3d4}`, which was an
+> intermediate step that was never shipped. And the migration **does not rewrite
+> the old corpus**; see `docs/roadmap.md` v0.2.5 and *Reading a v0.1 `.dj`*
+> below. The argument about `{#x}` meaning the wrong thing is what led to both,
+> and stands.
+
+A reference was to be written **`{@a1b2c3d4}`**, not `{#a1b2c3d4}`.
 
 `{#x}` means "this element *has* id x" in every markup language that knows the
 notation, and both pandoc and djot act on it. Using it to mean "points at x"
@@ -69,6 +76,13 @@ was backwards, and any reader with `attributes` enabled silently agreed with
 the language rather than with us. The two notations now say what they mean:
 `{#x}` assigns, `{@x}` refers. Verified unescaped through a full read/write
 cycle, plain and expanded.
+
+**`{@x}` was superseded by `[-](#guid)` for a stronger reason than either.** It
+fixed the *meaning* but not the *mechanism*: it was still text, so extraction was
+a regex over flattened content, and a handle quoted inside a code block became a
+real edge. A link is a `Link` node, and a code block holds text with no inlines —
+so "handles inside code are not citations" became true by construction rather than
+by vigilance.
 
 **Citation edges are derived, not asserted.** The draft classed them as
 asserted alongside `derived_from`, but the stated reason `derived_from` must be
@@ -81,12 +95,18 @@ a projection of it, so a stale edge is a rebuild to run rather than a conflict
 to resolve — exactly like `contains`. The original text is never rewritten to
 remove the reference, and the graph still gets real edges.
 
-**The existing corpus is normalised during migration, not by editing history.**
-A line that is exactly `{#xxxxxxxx}` is an assignment and stays one; every
-other occurrence is a citation and becomes `{@xxxxxxxx}` in the records the
-migration produces. The conversation files on disk are never rewritten, so the
-append-only rule holds — the change happens in the translation to a new store,
-with the originals preserved.
+**The existing corpus was to be normalised during migration.** *(Rejected — see
+below.)* A line that is exactly `{#xxxxxxxx}` is an assignment and stays one;
+every other occurrence is a citation and becomes `{@xxxxxxxx}` in the records the
+migration produces.
+
+**That normalisation is rejected.** The old syntax stays exactly as written, in
+the records and in every view, and an opt-in `alias` layer makes the old handles
+resolvable instead. Three reasons: it would delete the only record that the old
+handles ever existed; the rewrite pass is textual, which is the operation this
+project forbids, applied to the one corpus that quotes its own syntax constantly;
+and the corpus is full of conversations *about* eight-character handles, which
+would end up referencing a format appearing nowhere in the base they live in.
 
 ## Identifiers and citations, as settled
 
@@ -526,3 +546,133 @@ The real line is not which strategy, it is **what the construct carries**:
 So: `<details>` stays for tool output and is right for subagent folding too,
 which also keeps one folding mechanism instead of two. What must move to
 strategy 2, when *walk* arrives, is only the attribute-borne facts.
+
+---
+
+# v0.2.4 — the layer mechanism
+
+Everything below was settled while designing v0.2.4 and v0.2.5. `docs/roadmap.md`
+has the plan; this file has the reasons that were not obvious.
+
+## Guids stay UUIDv4, including for derived records
+
+A draft gave *derived* records — citation edges — a UUIDv5 over the relation they
+state, so a rebuild would be byte-identical and `Store.load()`'s dedup would
+collapse it for free. **Rejected.**
+
+It is a content hash with a uuid-shaped output. Two records stating the same fact
+would become *the same record*, silently, at write time — which is resolving
+duplicates at import, the thing this project forbids everywhere else. It also
+discarded citation multiplicity without anyone deciding to: two citations of one
+target from one block would have collapsed into one edge.
+
+And it falsified two sentences that carry unrelated weight. `record-grammar.md`
+§2 says *"GUID is a UUIDv4 in every case. Nothing derives a guid from content, and
+nothing derives one guid from another"* — the second clause is also what forbids
+deriving a document's guid from its blob's. Weakening the sentence for citations
+would have weakened it for storage.
+
+So: every guid is minted. Sameness is *described* by `content_hash` and resolved
+later, by a design written from evidence rather than in advance.
+
+## `content_hash` on an edge excludes provenance, not just identity
+
+```
+EDGE_HASH_SKIP = {record, guid, schema_version, content_hash,
+                  created_at, tool_version}
+```
+
+The first version of this said "hash all properties". With `created_at` also a
+property, the same citation rebuilt tomorrow would hash differently from the one
+written today — and finding the same fact restated is the *only* thing the hash
+is for. It would have been defeated for exactly the duplicates being deliberately
+accumulated.
+
+So the rule is: **a hash says what the record claims, never when or by what it
+was written.** `schema_version` is excluded for the same reason — two records
+stating one fact across a format change must still match.
+
+Note the node hash is a *different function* — a positional array
+`[type, params, content]`, with no skip list — and the two are not comparable.
+Same field name, different inputs.
+
+## The tool handles no dependencies, and guarantees no consistency
+
+An architecture review of a larger design found four states a base could enter and
+never leave, each escapable only by hand-editing `.compost/graph/`. All four came
+from one source: trying to keep the graph automatically consistent, through layer
+declarations, staleness detection, dependency-ordered rebuilds and a `drop` that
+had to find its own files.
+
+Two constraints replaced the machinery:
+
+1. **Dependencies are not handled.** The operator sequences `digest`, `layer` and
+   `render` themselves. Nothing infers what is out of date.
+2. **No deduplication, no preservation across rebuilds, no consistency
+   guarantee.** Duplicates accumulate, deliberately.
+
+Removing the goal removed all four failure modes with it. What remains is bare and
+honest: `compost layer NAME` builds and stops. The costs are listed in the
+roadmap's *Risks accepted without mitigation*, which exists so that meeting one is
+a known price rather than a discovery.
+
+## Hand-written graph files are allowed; `check` is the gate
+
+`CLAUDE.md` said *"Do not hand-edit `.compost/graph/`."* Relaxed, because the
+records `digest` writes are produced by ordinary Python and a migration script
+producing valid JSONL is not different in kind. `Store.load()` does not care who
+wrote a file, and **`check` is what enforces every invariant** — not the identity
+of the writer.
+
+The relaxation covers **deleting a whole file that one `layer` run wrote**, and
+must: `layer` only ever adds, so without whole-file deletion the sole remedy for
+the tool's intended accumulation would be an operation the project forbids.
+Editing a line inside a file is still banned.
+
+Known cost: `check` does not validate that a node's `type` is a known one, so a
+typo'd type passes if its parent count is right. Not fixed here; a central
+contract mechanism is planned well after this window.
+
+## Reading a v0.1 `.dj`: markdown, not djot
+
+**Pandoc's djot reader deletes the legacy handles.** `{#a3f2b1c4}` is djot
+*attribute* syntax, so it never reaches the AST as text:
+
+```
+source :  see {#a3f2b1c4} and `{#a3f2b1c4}` inline.
+-f djot:  Str "see  and "   Code "{#a3f2b1c4}"   Str " inline."
+```
+
+Only the occurrence inside backticks survives — the one case the citation rules
+exclude. A plan to read the corpus with `pandoc -f djot` and digest the result
+would have recovered **zero** citations and stored every migrated paragraph with a
+hole in it. That is the same harm the rewrite was rejected for, arriving silently
+by a different route.
+
+So the `.dj` files are digested as `--as=notes`. The comparison:
+
+| | djot reader | markdown reader |
+|---|---|---|
+| inline `{#a3f2b1c4}` | **deleted** | survives as text |
+| assignment line | a block attribute | survives as text |
+| `:::` fence, `{.turn author=…}` | a `Div` and its attrs | survive as text |
+
+The djot reader understands more and loses text; the markdown reader understands
+less and loses nothing. `logline` and `contentblock` already encode that
+preference one level down.
+
+It also makes the migration dictionary fall out for free: with no blank line
+between them, markdown folds a `{#x}` assignment into the paragraph it labelled,
+so the old handle becomes the first token of the block it identified.
+
+## Citation matching is `finditer` within a `Str`, not whole-`Str` equality
+
+Measured over the 18 documents in this repo carrying real v0.1 handles: **135 are
+a whole `Str` exactly, 98 are embedded** in a larger token — `{#aa813aa9}.`,
+`{#93360c21},`, `{#330f8531}:`. Whole-token matching has **57.9% recall**, and the
+exact ones are mostly assignment lines, which are excluded anyway.
+
+A draft specified whole-token equality on the strength of one hand-written example
+with spaces on both sides. Real prose puts punctuation after a citation. The
+pattern is self-delimiting, so matching within the `Str` costs nothing and the
+structural exclusions are unaffected.

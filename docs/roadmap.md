@@ -73,8 +73,25 @@ Every record carries the version of the grammar it conforms to.
 **On every record**, not per file and not per base: graph filenames carry no
 meaning, `load()` moves records between files freely, and a per-record field is
 the only form that survives regrouping and lets schema 2 sit beside schema 1
-during a migration. **Measured cost 4.4%** — 20 bytes against a mean record of
-455 B, over the 767 records the fixtures produce.
+during a migration.
+
+**The field is also read.** `check` asserts that a `schema_version`, when
+present, is not greater than the one this tool writes. It cannot fire on any
+existing base — absent means 1 — and it fires the first time a newer tool's
+records are loaded by an older one, which is the only reason to carry a version
+at all. Without it the field would be a comment in JSON.
+
+**Storage cost, measured on the whole change rather than the flattering half:**
+
+| | |
+|---|---|
+| `schema_version` alone | +5.1% |
+| **the whole v0.2.4 record change** | **+27.1% overall, +78.8% on edges** |
+
+An earlier draft published *4.4%*, which measured `schema_version` alone against
+a fixture set that has since grown. Edges nearly double, because three fields are
+added to a record whose mean size is 213 B. That is accepted — storage is not
+being optimised for — but it is accepted with the real number attached.
 
 **Absent means 1**, by definition rather than by guess: schema 1 *is* what
 compost has always written, so no existing base needs rewriting. Optional on
@@ -116,8 +133,20 @@ version said "hash all properties"; with `created_at` also a property, the same
 citation built twice would hash *differently*, and the entire purpose of the hash
 — finding the same fact restated — would have been defeated for exactly the
 duplicates being deliberately accumulated. Provenance is framing, not content.
-The node form has always worked this way: `canonical([type, params, content])`,
-excluding identity and framing.
+
+**The node hash and the edge hash are different functions and are not
+comparable.** A node's is `sha256(canonical([type, params, content]))` — a
+positional array with no exclusion list. An edge's is an object minus six keys.
+They share a field name because they answer the same question about different
+record shapes, but a query that groups by `content_hash` *across* record kinds is
+comparing nothing. `docs/record-grammar.md` §5 states both definitions side by
+side for this reason.
+
+**And it does not reach the records that grow fastest.** A `cites` edge into an
+`unresolved_citation` placeholder has a fresh placeholder guid every build, so
+two builds' edges for the same unresolved citation differ in `destination` and
+therefore hash differently. The same fact restated, unfindable. Unresolved
+citations are outside the hash's reach, deliberately and permanently.
 
 ### `created_at` and `tool_version`
 
@@ -140,13 +169,16 @@ alias("deadbeef-1111…") --names--> placeholder      layer: citation, by: uuid-
 ```
 
 ```json
-{"type":"alias",
- "params":{"value":"deadbeef-1111-…","scheme":"uuid-link",
-           "created_at":"…","tool_version":"0.2.4"}}
+{"type":"alias","created_at":"…","tool_version":"0.2.4",
+ "params":{"value":"deadbeef-1111-…","scheme":"uuid-link"}}
 
-{"type":"unresolved_citation",
- "params":{"created_at":"…","tool_version":"0.2.4"}}
+{"type":"unresolved_citation","created_at":"…","tool_version":"0.2.4"}
 ```
+
+**Provenance is top-level on nodes as well as edges**, never inside `params`. It
+would be harmless for these two types, which carry no `content_hash` — and it
+would be wrong the first time a hashed type needs provenance, since node hashing
+is `canonical([type, params, content])`. Decided once, here, while it is free.
 
 - **`UNCONTAINED` gains both** (`src/records.py:34`). They are entities: pointed
   at, inside nothing, like `file` and `blob`.
@@ -164,10 +196,10 @@ lookup-worthy string into a node's params would force `lookup` to know what an
 should have none. An alias is *any name that leads to a node*, and a placeholder
 is a perfectly ordinary thing to name.
 
-**What a placeholder is actually for, today.** Not deferred resolution — see the
-accepted risks below. Forensics: which guids the model hallucinated when writing
-an answer, which documentation examples parsed as citations, what was pasted in
-from another base.
+**What a placeholder is mostly for, today.** Forensics: which guids the model
+hallucinated when writing an answer, which documentation examples parsed as
+citations, what was pasted in from another base. Resolution is possible but
+uncommon — see below.
 
 ### `compost layer`
 
@@ -209,6 +241,16 @@ well as printed:
 - Reports **incoming citations**. `CLAUDE.md` currently says it "does not say what
   cites it — there is no citation layer yet"; that sentence has to stop being
   true in the release that makes the layer exist.
+- **Reports citations that reached a placeholder naming this guid**, labelled
+  distinctly. Without this, `lookup <guid>` says *nothing cites this* for a block
+  that **is** cited — because the citing edge points at an `unresolved_citation`
+  minted before the target existed, and nothing is ever retracted. The reverse
+  path is two hops: `alias` nodes whose `value` equals the guid → `names` → the
+  `cites` edges into those placeholders.
+
+  This is not the staleness case in the accepted risks below. Staleness is a
+  citation nobody built yet; this is one that *was* built, correctly, and is one
+  hop away from where a reader will look for it.
 
 ### `Graph._rel` keeps the discriminator
 
@@ -274,36 +316,118 @@ three reasons:
 **Nothing is rewritten — not on disk, not at render time.** The old syntax stays
 exactly as written; what is added is a way to look it up.
 
+### The ingest route: `--as=notes`, and why not djot
+
+**Pandoc's djot reader deletes the legacy handles.** In djot, `{#a3f2b1c4}` is
+*attribute* syntax, not text. Measured:
+
+```
+source :  see {#a3f2b1c4} and `{#a3f2b1c4}` inline.
+-f djot:  Str "see  and "   Code "{#a3f2b1c4}"   Str " inline."
+```
+
+The handle is **gone from the AST**. The only occurrence that survives is the one
+inside backticks — the exact case the exclusion rules discard. So an earlier
+plan to read the `.dj` files with `pandoc -f djot -t json` and digest the result
+as `--as=pandoc-ast` would have recovered **zero** citations, and every migrated
+paragraph would be stored with a hole where its citation used to be. That is the
+same harm the rewrite plan was rejected for, arriving silently by a different
+route.
+
+**So the corpus is digested through the existing `--as=notes` route.** The
+comparison that decides it:
+
+| | djot reader | markdown reader (`--as=notes`) |
+|---|---|---|
+| inline `{#a3f2b1c4}` | **deleted** | survives as literal text |
+| `{#a3f2b1c4}` assignment line | survives as a block attribute | survives as literal text |
+| `:::` fence | becomes a `Div` | becomes literal text |
+| `{.turn author="…"}` | becomes a `Div` attribute | becomes literal text |
+
+The djot reader understands more and *loses text*. The markdown reader
+understands less and *loses nothing*. Under this project's rules that is not a
+close call: `logline` and `contentblock` already exist to say *kept, not
+understood*, and this is the same trade one level up.
+
+**And it makes the dictionary fall out for free.** With no blank line between
+them, markdown folds a `{#x}` assignment into the paragraph it labelled — so the
+old handle becomes the first token of the very block it identified:
+
+```
+{#a3f2b1c4}
+The block that gets the handle.
+
+→  Para: '{#a3f2b1c4} The block that gets the handle.'
+```
+
+For every block whose text begins with `{#8hex}`, that handle maps to the block's
+new guid. **No comparison against the old file, no positional alignment, no fuzzy
+matching.**
+
 ### `--by kg-8hex`
 
-Verified against pandoc with the project's reader
-(`commonmark_x-smart-attributes-fancy_lists`):
+**Match `\{#[0-9a-f]{8}\}` *within* each `Str`, never as whole-`Str` equality.**
+Measured over the 18 documents in this repo that carry real v0.1 handles:
 
 ```
-see {#a3f2b1c4} and `{#a3f2b1c4}` inline.
-
-  Str  "{#a3f2b1c4}"            one whole token, exact
-  Code [attr, "{#a3f2b1c4}"]    text at c[1], NOT a Str
+135 handles are a whole Str exactly     98 are embedded in a larger Str
+whole-token recall: 57.9%
+missed: '{#aa813aa9}.'  '{#93360c21},'  '{#330f8531}:'  '({#b1c2d3e4}),'
 ```
 
-Every exclusion is **structural**:
+An earlier draft specified whole-token equality and would have dropped 42% of
+occurrences silently — and the 135 "exact" ones are mostly assignment lines,
+which are excluded, so citation recall would have been worse still. The pattern
+is self-delimiting, so `re.finditer` over a `Str` handles adjacent punctuation
+with nothing to assemble.
+
+Every exclusion stays **structural**:
 
 | case | excluded because |
 |---|---|
 | inline code | a `Code` node's text is a bare string at `c[1]`, not a `Str` |
 | code block | its text is in `params["text"]`; the walker never reads `TEXT_IN_PARAMS` |
 | `{#xxxxxxxx}` | `x` is not in `[0-9a-f]` |
-| **an assignment line** | the block's **entire** text is one matching `Str` |
+| **an assignment** | the block's plain text, stripped, is *exactly* one match |
 
 That last row is its own rule and it matters — without it, all ~5839 v0.1
-assignment lines become citations, each block citing itself or its neighbour.
+assignment lines become citations, each block citing itself.
 
-> **A block whose entire text is `{#xxxxxxxx}` is an assignment. A handle
-> appearing among other text is a citation.**
+> **A block whose whole text is one handle is an assignment. A handle appearing
+> among other text is a citation.**
 
 The `{@x}` era failed because it regexed `plain_text()`, which *does* fold
-`params["text"]` in (`records.py:47`). Walking `content` for `Str` nodes instead
-of flattening is the whole fix, and it mirrors `_links()` exactly.
+`params["text"]` in (`records.py:598-599`). Walking `content` for `Str` nodes
+instead of flattening is the whole fix, and it mirrors `_links()` exactly.
+
+### The syntax has four forms, not one
+
+Counted in the real v0.1-derived material already in this repo:
+
+| form | count |
+|---|---|
+| `{#8hex}` | 240 |
+| `{#8hex+++}` — the expansion marker | 13 |
+| `{#8hex@ver}` — the version pin | 2 |
+| metasyntactic: `{#handle}`, `{#uuid:hash}`, `{#xxxxxxxx}`, `{#...}` | 5 |
+
+The last row must **not** become citations.
+`tests/corpus/compost-corpus/curated/edge-cases/handles.md` is a curated fixture
+enumerating every one of these, including handles inside code spans and fences.
+**So this parser is testable today**, against real bleached v0.1 prose, without
+the private corpus — the migration is blocked on that material, the parser is not.
+
+### The resolver must ignore its own placeholders
+
+After one build with no dictionary present, every legacy handle already has an
+`alias` node naming an `unresolved_citation`. A second build looking up aliases
+by value would find those alongside the real target.
+
+> **Follow only `names` edges whose destination is not an `unresolved_citation`.
+> If more than one real target remains, mint nothing and report the ambiguity.**
+
+Without this rule, each pre-dictionary build adds another candidate and growth is
+quadratic in build count rather than linear. Sabotage-verify it.
 
 ### This is where a placeholder can actually resolve
 
@@ -335,6 +459,13 @@ So the alias dictionary is produced by a purpose-built script into its own
 directory and copied under `graph/`. There is no `compost layer alias`
 subcommand, and there will not be one.
 
+**The relaxation covers deletion too, and has to.** `layer` writes exactly one
+file per run and nothing removes it, so a base's records only ever grow — and the
+only remedy the design offers is deleting a graph file, which the unrelaxed rule
+forbids. The safe form is narrow and worth stating: **delete a whole file that one
+`layer` run wrote; never edit a line inside one.** Whole-file deletion is a clean
+inverse of a whole-file write. Anything finer is hand-editing and stays banned.
+
 **What is lost, and why it does not matter here:** the dictionary's bytes never
 enter `storage/`, so the base does not hold that source. But **the alias records
 *are* the dictionary in full** — nothing is recoverable from the file that is not
@@ -353,46 +484,44 @@ removed from the history, not merely deleted, and is kept privately.
 
 No version number, because it changes no code.
 
-**There is no `--as=djot` route and there will not be one.** Instead:
+**There is no `--as=djot` route and there will not be one** — and no external
+`pandoc -f djot` step either. Both destroy the handles; see *The ingest route*
+above. The `.dj` files are digested unchanged through the existing route:
 
 ```bash
-pandoc -f djot -t json old.dj > old.json
-compost digest --as=pandoc-ast old.json
+compost digest --as=notes old.dj
 ```
 
-Verified: `pandoc -f djot` reads a v0.1 turn div correctly — `Div` with class
-`turn` and `author="human"` intact. **`--as=notes` does not**: the same file
-through `commonmark_x-smart-attributes-fancy_lists` yields three bare `Para`s,
-the div and the author attribution silently gone. Measured under pandoc 3.8,
-outside the conda env; it is a reader-capability difference, not a version
-subtlety.
+The suffix is decoration and nothing reads it: `--as=notes` means *read this as
+markdown*, which is exactly what is wanted.
 
 Steps:
 
-1. Read the old `.dj` through `pandoc -f djot -t json`; digest as `pandoc-ast`.
-2. A one-off external script builds the dictionary and emits alias nodes and
-   `names` edges as JSONL. Copy it under `graph/`.
-   - **Check the cheap path first.** An assignment line digests into an ordinary
-     `Para` holding exactly one `Str`, sitting immediately before the block it
-     labelled — which now carries its own guid. If that holds, the dictionary is
-     readable from the new graph alone via `next`, with no comparison against the
-     old file. *Unverified: the corpus is not here.* Confirm before writing
-     anything else.
-   - **Measure feasibility before writing the script.** `src/roundtrip.py` has
-     `READ` and `WRITE` as two module constants; swap them to `djot` and run the
-     harness over the `.dj` files. A fixed point means alignment is positional and
-     exact. Anything less, and the miss count is the size of the job — the
-     precedent is on the record: re-deriving handles from `raw/` recovered
-     **103 of 217**, zero wrong, half simply not matching.
+1. `compost digest --as=notes` over the `.dj` files.
+2. A one-off external script builds the dictionary from the **digested graph** —
+   for every block whose text begins with `{#8hex}`, that handle maps to the
+   block's guid — and emits `alias` nodes and `names` edges as JSONL. Copy the
+   file under `graph/`. It never becomes part of the CLI.
 3. `compost layer citation --by kg-8hex`.
 4. Commit the dictionary script and its output as ordinary files.
 
-**Provenance.** `--as=pandoc-ast` means every migrated document records
-`route: "pandoc-ast"`, so the base will not say these came from djot. Put the
-exact pandoc invocation into the params of the alias records the script writes.
+**Blocked on one measurement, and only one.** The behaviour of `:::` fences and
+`{.turn author="…"}` lines under the markdown reader depends on whether the real
+`.dj` files put blank lines around them. With blank lines they become their own
+paragraphs — noise, harmless. Without, they fold into the adjacent content block's
+text — noise *inside* citable blocks. Nothing is lost either way, but the amount
+of junk in block text differs, and it should be measured on a real file rather
+than a constructed one. **One `.dj` from the private archive answers it;
+structure only, content irrelevant.**
 
-**Acceptance:** every handle resolvable before the migration resolves after;
-the count of prose-quoted example handles recorded rather than silently absorbed.
+**Provenance.** Every migrated document records `route: "notes"`, which is true
+and says nothing about the material having been djot. Put that fact, and the
+generating script's name, into the `alias` records the script writes.
+
+**Acceptance:** every handle resolvable before the migration resolves after; the
+count of prose-quoted example handles recorded rather than silently absorbed; and
+the recall of the citation match measured, not assumed — the first draft of this
+section assumed it and was 42% wrong.
 
 ### The residual risk, which cannot be engineered away
 
@@ -409,6 +538,12 @@ Deferred here from v0.2.4. v0.1 had *Referenced by* and v0.2 lost it.
 citation means; per document is what fits the page. The view must distinguish an
 exact citation from a recovered one — which is why `Graph.linked` keeping `by` is
 a v0.2.4 item.
+
+**Backlinks dedup in the view**, by `(source, destination, by)`. Two builds of the
+citation layer put every citer in the base twice, and a page listing the same
+citer twice is noise rather than information. Deduping in a view breaks no rule —
+views are derived, disposable and never re-ingested — and it touches no records,
+so the accumulation the dedup design needs to study stays intact underneath.
 
 ---
 
@@ -470,15 +605,24 @@ transcript route (`TODO.md`) and blocks nothing.
 ### The loop, end to end
 
 ```
-nvim /tmp/xxx.md
-compost digest --as=notes /tmp/xxx.md
+f=/tmp/round-$(date +%s).md          # a fresh name every round — see below
+nvim "$f"
+compost digest --as=notes "$f"       # read the view path back from this output
 compost layer citation
 compost render
-cat .compost/views/default-djot/xxx.dj | claude --print --output-format json > r.json
+cat .compost/views/default-djot/<stem>.dj | claude --print --output-format json > r.json
 compost digest --as=claude-code-response r.json
 compost layer citation
 compost render
 ```
+
+**The filename must be unique per round, and the wrapper must read the view path
+from `digest` rather than guessing it.** Reusing one name breaks at round two:
+`view_names()` (`src/views.py:372-375`) breaks a stem collision by appending the
+root's handle **to both documents**, so `xxx.dj` stops existing and each round's
+view is named `xxx-<36-char guid>.dj`. A loop that `cat`s a guessed stem reads a
+file that is no longer there — and the failure is a missing file, not a wrong
+answer, so at least it is loud.
 
 ---
 
@@ -489,10 +633,10 @@ compost render
 `environment.yml` says *no pip dependencies and no system dependencies beyond
 pandoc*. Graphviz is worth relaxing that for, and the reason is specific:
 
-**DOT is a deliverable on its own, so the binary stays optional.** `render`
-always writes `default-dot/NAME.dot` — text, from records. If `dot` is on PATH it
-also writes the SVG. If not, the DOT is still there, readable by an agent and
-renderable later on any machine that has graphviz.
+**DOT is a deliverable on its own, so the binary stays optional.** The command
+always writes the DOT — text, from records. If `dot` is on PATH it also writes the
+SVG. If not, the DOT is still there, readable by an agent and renderable later on
+any machine that has graphviz.
 
 So the line narrows rather than breaking: **no *required* system dependency
 beyond pandoc.** That is exactly what D3 cannot do — a vendored blob is all or
@@ -503,6 +647,26 @@ Other reasons: one generator serves the agent path and the human path; agents
 write DOT at least as fluently as mermaid; `dot` for hierarchical layout and
 `sfdp` for the thousands-of-nodes case, one flag apart; and it is thirty years
 old and finished.
+
+### It is its own subcommand, not part of `render`
+
+```
+compost graph [ROOT]        whole base, or one root's subgraph
+```
+
+**Not a fourth view.** v0.2.6 puts `compost render` in the inner loop — twice per
+conversational round — and v1 of this draws every node in the base, which for a
+single transcript is thousands. Folding an unbounded graphviz layout into the
+command the daily loop runs most is a cost nobody asked for on every turn.
+
+It also keeps two hard-coded lists out of trouble: `render_all`'s stale-file
+sweep names three view directories explicitly (`src/views.py:420`) and so does
+`main()`'s summary loop (`:461`), so a fourth directory would accumulate orphans
+and go uncounted until both are edited.
+
+`ROOT` optional resolves the contradiction an earlier draft carried, which
+described both a per-document `default-dot/NAME.dot` and "a walk over every node
+in the base" three lines apart. Whole base by default; one root when named.
 
 ### v1 draws everything
 
@@ -577,6 +741,25 @@ questions SQL made painful *is* the requirement document for a graph database.
 in SQL, required to agree on every fixture base. Sabotage-verifiable in both
 directions.
 
+**With one limit that has to be stated, or the test will fail for the wrong
+reason.** `Store.load()` deduplicates byte-identical records (`src/store.py:159`);
+SQL reading the raw files does not. On a base where one record appears in two
+files — which v0.2.5's copied and hand-written graph files make an ordinary
+occurrence — the two sides see different graphs and disagree about something
+neither assertion got wrong. Replicating `canonical()` in SQL means reproducing
+`sort_keys=True, separators=(',',':'), ensure_ascii=False` byte-for-byte through
+DuckDB's JSON serialiser, which is not a guarantee DuckDB offers. Either read a
+`load()`-produced snapshot on the SQL side, or scope the agreement test to bases
+with no cross-file duplicates and say so out loud.
+
+**And spike the read shape before designing on it.** *"`read_json` needs no
+schema"* is true of the syntax and not of the outcome: it infers by sampling and
+unifies types across rows, and `params` is an open object of 35 heterogeneous keys
+— `attr` an array, `level` an int, `log` a nested object. Inference will either
+explode into a vast `STRUCT` or drop what falls outside the sample. Expect to need
+`columns={… 'params': 'JSON'}`. One invocation against a real base settles it, and
+it costs half an hour before rather than a redesign after.
+
 **This is also where the accumulated duplicates finally become legible** — group
 by `content_hash`, by `created_at`, by `tool_version`, and the pattern that a
 dedup design needs becomes visible instead of theoretical.
@@ -616,22 +799,47 @@ release will re-run builders for you.
 
 **Rebuilds multiply.** Two runs of `compost layer citation` produce two complete
 sets of citation edges, two sets of placeholders, and two sets of aliases naming
-them. Nothing removes any of it, and there is no `drop`. **There is no way to
-reduce a base's records** short of deleting graph files by hand.
+them. Nothing removes any of it, and there is no `drop`. The only way to reduce a
+base is to delete a whole graph file that one `layer` run wrote — which the
+relaxed rule now permits explicitly, because otherwise the sole remedy for the
+tool's intended accumulation would be an operation the project forbids.
 
-**One alias value can name several nodes.** Two builds produce two aliases with
-the same value naming two different placeholders. `lookup` returns all matches.
-Two kinds of this exist and only one is dangerous: *benign* is one value naming N
-`unresolved_citation` nodes — N stand-ins for one missing thing; *dangerous* is
-one value naming two different real blocks, which would mean the dictionary is
-wrong. They are distinguishable by the target's node type.
+**One alias value can name several nodes** — two builds, two aliases, two
+placeholders. `lookup` returns all matches. Two kinds exist and only one is
+dangerous: *benign* is one value naming N `unresolved_citation` nodes, N stand-ins
+for one missing thing; *dangerous* is one value naming two different real blocks,
+which would mean the dictionary is wrong. They are distinguishable by the target's
+node type.
 
-**A `uuid-link` placeholder can never resolve.** Every digest mints fresh
-UUIDv4s, so a guid is base-local and unreproducible. A cited guid that is not in
-the base was never in it — a model hallucination, a paste from another base, a
-typo, or a documentation example — and digesting more material will never fix it.
-Placeholders are forensic evidence, not pending work. *(The `kg-8hex` scheme is
-the exception, because its aliases arrive from outside.)*
+**A bare 8-hex `lookup` is ambiguous in a migrated base.** `decisions.md` records
+why the prefix resolver was removed: a short string that resolves for a tool is a
+dead anchor for a person, and uniqueness degrades as the base grows. v0.2.5 makes
+`compost lookup a3f2b1c4` succeed again through aliases, and in a migrated base
+such a string could be both a legacy alias value and a prefix of a real guid.
+`lookup` names the scheme that answered, which makes the ambiguity visible rather
+than resolving it.
+
+**A `uuid-link` placeholder resolves only when records arrive from outside the
+tool.** Every digest mints fresh UUIDv4s, so digesting more material never
+resolves one. But guids do arrive from outside: v0.2.5 blesses copying externally
+produced JSONL into `graph/`, `graph/` is committed so a checkout or restore moves
+guids in and out, and whole-file deletion is the sanctioned way to shrink a base.
+An earlier draft of this list claimed such a placeholder *can never* resolve,
+which the same roadmap falsifies three sections later. Placeholders are mostly
+forensic — hallucinated guids, pastes, typos, documentation examples — and
+occasionally pending.
+
+**A citation to a not-yet-present block is recorded one hop away from where a
+reader looks for it.** The `cites` edge points at the placeholder and is never
+retracted, so a rebuild after the target arrives adds a second, direct edge beside
+the first. `lookup` compensates by following the reverse path; any other consumer
+— a view, a query, the graph picture — sees both and must decide what to do about
+it. Nothing collapses them.
+
+**`content_hash` does not reach unresolved citations.** A placeholder gets a fresh
+guid every build, so two builds' `cites` edges into placeholders for the same
+missing handle differ in `destination` and hash differently. For the records that
+multiply fastest, the hash finds nothing.
 
 **Documentation examples inflate the placeholder count.** A `[-](#…)` written in
 running prose to demonstrate the syntax is a citation by every structural rule and
@@ -662,17 +870,21 @@ nothing is coordinated either.
 ## Open questions carried forward
 
 - **Backlink placement in the HTML view** — per block or per document (v0.2.5).
-- **Whether the v0.1 assignment paragraph precedes its block** and is its sibling
-  (v0.2.5 migration, unverifiable here).
+- **Whether `:::` fences and `{.turn author="…"}` lines have blank lines around
+  them in the real v0.1 `.dj` files.** This is the single measurement v0.2.5 is
+  waiting on. It decides whether they become their own paragraphs (noise,
+  harmless) or fold into the adjacent content block's text (noise inside citable
+  blocks). Nothing is lost either way. One file from the private archive answers
+  it — structure only.
 - **Whether a DOT `id` survives into the SVG** (v0.2.7, unverifiable here).
-- **Do nodes get `created_at`?** Edges do. If nodes should too, it must be a
-  **top-level** key, never in `params` — node hashing is
-  `canonical([type, params, content])`, so anything in `params` would move every
-  existing `content_hash` in every base.
 - **The route name for the envelope.** `claude-code-response` is a placeholder.
 - **The conversation edge type name.** `includes` was proposed; not settled.
 - **How `represents` and `duplicates` relate to `alias`** — three ways of saying
   two records are about one thing.
+
+*Closed since the last draft:* provenance is top-level on nodes as well as edges;
+the v0.1 assignment question is answered by the markdown reader folding the
+handle into the block it labels, so no sibling traversal is needed.
 
 ## Beyond this window
 
