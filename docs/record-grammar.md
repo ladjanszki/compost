@@ -15,6 +15,12 @@ to behaviour that already existed.
 
 ## 1. `schema_version`
 
+> **Status: specified here, not yet written.** No code emits this field today.
+> It lands in v0.2.4 (`docs/plan-v0.2.4.md`, step 1). Everything else in this
+> document describes records the program writes right now; this section alone
+> describes one it is about to. The "absent means 1" rule below is what makes
+> that gap harmless.
+
 ### The field
 
 ```json
