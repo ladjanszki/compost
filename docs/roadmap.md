@@ -316,53 +316,64 @@ three reasons:
 **Nothing is rewritten — not on disk, not at render time.** The old syntax stays
 exactly as written; what is added is a way to look it up.
 
-### The ingest route: `--as=notes`, and why not djot
+### The ingest route: `pandoc -f djot` → `--as=pandoc-ast`
 
-**Pandoc's djot reader deletes the legacy handles.** In djot, `{#a3f2b1c4}` is
-*attribute* syntax, not text. Measured:
+**Measured against the real corpus**, not a constructed sample. Two earlier drafts
+of this section were written from samples that did not match the material, and
+both were wrong; the numbers below come from the 23 `.dj` files themselves.
 
-```
-source :  see {#a3f2b1c4} and `{#a3f2b1c4}` inline.
--f djot:  Str "see  and "   Code "{#a3f2b1c4}"   Str " inline."
-```
-
-The handle is **gone from the AST**. The only occurrence that survives is the one
-inside backticks — the exact case the exclusion rules discard. So an earlier
-plan to read the `.dj` files with `pandoc -f djot -t json` and digest the result
-as `--as=pandoc-ast` would have recovered **zero** citations, and every migrated
-paragraph would be stored with a hole where its citation used to be. That is the
-same harm the rewrite plan was rejected for, arriving silently by a different
-route.
-
-**So the corpus is digested through the existing `--as=notes` route.** The
-comparison that decides it:
-
-| | djot reader | markdown reader (`--as=notes`) |
-|---|---|---|
-| inline `{#a3f2b1c4}` | **deleted** | survives as literal text |
-| `{#a3f2b1c4}` assignment line | survives as a block attribute | survives as literal text |
-| `:::` fence | becomes a `Div` | becomes literal text |
-| `{.turn author="…"}` | becomes a `Div` attribute | becomes literal text |
-
-The djot reader understands more and *loses text*. The markdown reader
-understands less and *loses nothing*. Under this project's rules that is not a
-close call: `logline` and `contentblock` already exist to say *kept, not
-understood*, and this is the same trade one level up.
-
-**And it makes the dictionary fall out for free.** With no blank line between
-them, markdown folds a `{#x}` assignment into the paragraph it labelled — so the
-old handle becomes the first token of the very block it identified:
+The shape the v0.1 canonization produced:
 
 ```
-{#a3f2b1c4}
-The block that gets the handle.
-
-→  Para: '{#a3f2b1c4} The block that gets the handle.'
+{#376c3ce7 .turn author="human" turn="019ff17b-…"}
+:::
+{#acd83164}
+Now this definitely needs reworking \{#44670084+++\}
 ```
 
-For every block whose text begins with `{#8hex}`, that handle maps to the block's
-new guid. **No comparison against the old file, no positional alignment, no fuzzy
-matching.**
+Two things matter and neither was guessed correctly before:
+
+1. **Every block is wrapped in a div carrying its handle as a djot attribute.**
+2. **Inline citations are already escaped** — `\{#…\}`. The canonization did this
+   itself, so they are literal text to the djot reader, not attribute syntax.
+
+Through `pandoc -f djot`, the same bytes give:
+
+```
+Div  id=376c3ce7  class=turn  author=human  turn=019ff17b-…
+  Div  id=acd83164  wrapper=1
+    Para: 'Now this definitely needs reworking {#44670084+++}'
+```
+
+Turn structure and authorship intact; the old handle is the block's `id`; the
+citation survives as text, unescaped.
+
+**Across all 23 files:**
+
+| | |
+|---|---|
+| files parsed by `-f djot` | **23 / 23** |
+| blocks carrying their 8-hex handle as an AST `id` | **6,741** |
+| distinct ids — the collision check, done | **6,741, zero duplicates** |
+| escaped citations surviving as text | 206 |
+| bare handles inside fenced code / code spans | 948 / 226 |
+| **bare handles in prose — the only loss** | **13** |
+
+**13 occurrences out of ~8,400, about 0.15%**, and several of those sit inside
+quoted tool output rather than authored prose. Accepted, with the number
+attached. The one-off script can recover them from the `.dj` text if they turn out
+to matter.
+
+**Why not `--as=notes`.** A draft switched to the markdown reader on the theory
+that it loses nothing. It loses no handles, but it merges the turn attribute line,
+the `:::` fence, the first block's handle and the first block's text into a single
+paragraph — because none of those four lines has a blank line between them. That
+happens at the head of **every** turn, making the dictionary ambiguous for the
+first block of each. Djot loses 13 occurrences; markdown mangles ~2,400 turn
+heads.
+
+**The dictionary is a direct read of the AST** — 6,741 `(id, block)` pairs, no
+text matching, no positional alignment, no folding rule, nothing fuzzy.
 
 ### `--by kg-8hex`
 
@@ -376,25 +387,26 @@ missed: '{#aa813aa9}.'  '{#93360c21},'  '{#330f8531}:'  '({#b1c2d3e4}),'
 ```
 
 An earlier draft specified whole-token equality and would have dropped 42% of
-occurrences silently — and the 135 "exact" ones are mostly assignment lines,
-which are excluded, so citation recall would have been worse still. The pattern
-is self-delimiting, so `re.finditer` over a `Str` handles adjacent punctuation
-with nothing to assemble.
+occurrences silently. The surviving citations sit mid-sentence — *"…needs
+reworking {#44670084+++}"* — and real prose puts punctuation after them. The
+pattern is self-delimiting, so `re.finditer` over a `Str` handles adjacent
+punctuation with nothing to assemble.
 
-Every exclusion stays **structural**:
+Every exclusion is **structural**:
 
 | case | excluded because |
 |---|---|
 | inline code | a `Code` node's text is a bare string at `c[1]`, not a `Str` |
 | code block | its text is in `params["text"]`; the walker never reads `TEXT_IN_PARAMS` |
 | `{#xxxxxxxx}` | `x` is not in `[0-9a-f]` |
-| **an assignment** | the block's plain text, stripped, is *exactly* one match |
 
-That last row is its own rule and it matters — without it, all ~5839 v0.1
-assignment lines become citations, each block citing itself.
-
-> **A block whose whole text is one handle is an assignment. A handle appearing
-> among other text is a citation.**
+**There is no assignment rule, and there does not need to be one.** Earlier drafts
+carried one — *"a block whose whole text is one handle is an assignment"* — to
+stop ~6,700 block labels becoming self-citations. Reading the corpus as djot
+retires it entirely: **an assignment is an AST `id`, a citation is text.** The
+reader separates them, so any handle appearing in a `Str` is a citation, with no
+exception to state, test or get wrong. This is the single biggest simplification
+the measurement bought.
 
 The `{@x}` era failed because it regexed `plain_text()`, which *does* fold
 `params["text"]` in (`records.py:598-599`). Walking `content` for `Str` nodes
@@ -416,6 +428,10 @@ The last row must **not** become citations.
 enumerating every one of these, including handles inside code spans and fences.
 **So this parser is testable today**, against real bleached v0.1 prose, without
 the private corpus — the migration is blocked on that material, the parser is not.
+
+The `+++` form is not rare in what actually survives ingest: the first citation
+in the first file measured is `{#44670084+++}`. The pattern must cover all four
+forms, not just the bare one.
 
 ### The resolver must ignore its own placeholders
 
@@ -479,44 +495,42 @@ planned well after this window and will cover it.
 
 ### The migration — a procedure, not a release
 
-**Blocked on material deliberately not on this disk.** The v0.1 corpus was
-removed from the history, not merely deleted, and is kept privately.
+**The material is private but measured.** The v0.1 corpus was removed from this
+repository's history, not merely deleted, and is kept privately — 23 `.dj` files
+holding 6,741 handles. Everything in this section is measured against those files;
+nothing here is a guess about their shape any more.
 
 No version number, because it changes no code.
 
-**There is no `--as=djot` route and there will not be one** — and no external
-`pandoc -f djot` step either. Both destroy the handles; see *The ingest route*
-above. The `.dj` files are digested unchanged through the existing route:
+**There is no `--as=djot` route and there will not be one.** Pandoc reads djot,
+and `--as=pandoc-ast` takes what it produces:
 
 ```bash
-compost digest --as=notes old.dj
+pandoc -f djot -t json old.dj > old.json
+compost digest --as=pandoc-ast old.json
 ```
-
-The suffix is decoration and nothing reads it: `--as=notes` means *read this as
-markdown*, which is exactly what is wanted.
 
 Steps:
 
-1. `compost digest --as=notes` over the `.dj` files.
+1. `pandoc -f djot -t json`, then `compost digest --as=pandoc-ast`.
 2. A one-off external script builds the dictionary from the **digested graph** —
-   for every block whose text begins with `{#8hex}`, that handle maps to the
-   block's guid — and emits `alias` nodes and `names` edges as JSONL. Copy the
-   file under `graph/`. It never becomes part of the CLI.
+   every block whose `attr` id is 8 hex characters maps that handle to the block's
+   guid — and emits `alias` nodes and `names` edges as JSONL. Copy the file under
+   `graph/`. It never becomes part of the CLI.
 3. `compost layer citation --by kg-8hex`.
 4. Commit the dictionary script and its output as ordinary files.
 
-**Blocked on one measurement, and only one.** The behaviour of `:::` fences and
-`{.turn author="…"}` lines under the markdown reader depends on whether the real
-`.dj` files put blank lines around them. With blank lines they become their own
-paragraphs — noise, harmless. Without, they fold into the adjacent content block's
-text — noise *inside* citable blocks. Nothing is lost either way, but the amount
-of junk in block text differs, and it should be measured on a real file rather
-than a constructed one. **One `.dj` from the private archive answers it;
-structure only, content irrelevant.**
+**The collision check is already done.** 6,741 ids, 6,741 distinct — zero
+duplicates across the whole corpus. That was listed as a thing to confirm before
+minting anything; it is confirmed.
 
-**Provenance.** Every migrated document records `route: "notes"`, which is true
-and says nothing about the material having been djot. Put that fact, and the
+**Provenance.** Every migrated document records `route: "pandoc-ast"`, so the base
+will not say these came from djot. Put the exact pandoc invocation, and the
 generating script's name, into the `alias` records the script writes.
+
+**Back up the corpus before running any of this.** It is the only copy of 6,741
+handles' worth of history, and the migration is the first thing that will read it
+in anger.
 
 **Acceptance:** every handle resolvable before the migration resolves after; the
 count of prose-quoted example handles recorded rather than silently absorbed; and
@@ -870,21 +884,26 @@ nothing is coordinated either.
 ## Open questions carried forward
 
 - **Backlink placement in the HTML view** — per block or per document (v0.2.5).
-- **Whether `:::` fences and `{.turn author="…"}` lines have blank lines around
-  them in the real v0.1 `.dj` files.** This is the single measurement v0.2.5 is
-  waiting on. It decides whether they become their own paragraphs (noise,
-  harmless) or fold into the adjacent content block's text (noise inside citable
-  blocks). Nothing is lost either way. One file from the private archive answers
-  it — structure only.
-- **Whether a DOT `id` survives into the SVG** (v0.2.7, unverifiable here).
+- **Whether a DOT `id` survives into the SVG** (v0.2.7). Unverified — `dot` is not
+  installed here. One render answers it, and the citation story for diagrams
+  depends on the answer.
+- **DuckDB's `read_json` shape** on an open `params` object of 35 heterogeneous
+  keys (v0.2.8). Unverified. One invocation against a real base answers it.
 - **The route name for the envelope.** `claude-code-response` is a placeholder.
 - **The conversation edge type name.** `includes` was proposed; not settled.
 - **How `represents` and `duplicates` relate to `alias`** — three ways of saying
   two records are about one thing.
 
-*Closed since the last draft:* provenance is top-level on nodes as well as edges;
-the v0.1 assignment question is answered by the markdown reader folding the
-handle into the block it labels, so no sibling traversal is needed.
+The two unverified items are flagged deliberately. **Three separate claims in this
+document have already been wrong because they were argued from constructed
+samples rather than measured against real material** — the djot reader's treatment
+of handles, the citation match's recall, and the storage cost. Each was labelled
+*Verified* or *Measured* and each label is what stopped anyone looking again.
+Neither remaining item should be built on until it is measured.
+
+*Closed by measuring the corpus:* the `.dj` files' shape, the ingest route, the
+handle-collision check (6,741 distinct, zero duplicates), and the assignment rule,
+which turned out not to be needed at all.
 
 ## Beyond this window
 

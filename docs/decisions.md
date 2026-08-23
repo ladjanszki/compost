@@ -633,46 +633,67 @@ Known cost: `check` does not validate that a node's `type` is a known one, so a
 typo'd type passes if its parent count is right. Not fixed here; a central
 contract mechanism is planned well after this window.
 
-## Reading a v0.1 `.dj`: markdown, not djot
+## Reading a v0.1 `.dj`: djot, and what two wrong answers cost
 
-**Pandoc's djot reader deletes the legacy handles.** `{#a3f2b1c4}` is djot
-*attribute* syntax, so it never reaches the AST as text:
+**Settled by measuring the corpus.** Two earlier versions of this entry were
+argued from samples written by hand, and both were wrong. The numbers here come
+from the 23 real `.dj` files.
+
+The v0.1 canonization did two things nobody had recorded:
+
+1. **Every block is wrapped in a div carrying its handle as a djot attribute** —
+   `{#acd83164}` on the line above a `:::` fence, `wrapper="1"` on the div.
+2. **Inline citations are already escaped** — `\{#44670084+++\}`. So they are
+   literal text to the djot reader, not attribute syntax.
+
+Which means `pandoc -f djot` recovers both, and the AST does the hardest part:
 
 ```
-source :  see {#a3f2b1c4} and `{#a3f2b1c4}` inline.
--f djot:  Str "see  and "   Code "{#a3f2b1c4}"   Str " inline."
+Div  id=376c3ce7  class=turn  author=human  turn=019ff17b-…
+  Div  id=acd83164  wrapper=1
+    Para: 'Now this definitely needs reworking {#44670084+++}'
 ```
 
-Only the occurrence inside backticks survives — the one case the citation rules
-exclude. A plan to read the corpus with `pandoc -f djot` and digest the result
-would have recovered **zero** citations and stored every migrated paragraph with a
-hole in it. That is the same harm the rewrite was rejected for, arriving silently
-by a different route.
+| | |
+|---|---|
+| files parsed by `-f djot` | 23 / 23 |
+| blocks carrying their handle as an AST `id` | **6,741** |
+| distinct ids | 6,741 — **zero collisions** |
+| escaped citations surviving as text | 206 |
+| bare handles in fenced code / code spans | 948 / 226 |
+| **bare handles in prose — the only loss** | **13** (~0.15%) |
 
-So the `.dj` files are digested as `--as=notes`. The comparison:
+**Two consequences worth keeping.** The migration dictionary is a direct read of
+the AST, with no text matching of any kind. And the assignment-versus-citation
+rule is unnecessary: an assignment is an `id`, a citation is text, and the reader
+separates them — so there is no exception to state, test, or get wrong.
 
-| | djot reader | markdown reader |
-|---|---|---|
-| inline `{#a3f2b1c4}` | **deleted** | survives as text |
-| assignment line | a block attribute | survives as text |
-| `:::` fence, `{.turn author=…}` | a `Div` and its attrs | survive as text |
+**`--as=notes` was tried and rejected.** It loses no handles, but none of the four
+lines at the head of a turn — the turn attributes, the `:::` fence, the first
+block's handle, the first block's text — has a blank line between them, so
+markdown merges all four into one paragraph. That happens at every turn head,
+making the dictionary ambiguous ~2,400 times. Djot loses 13 occurrences instead.
 
-The djot reader understands more and loses text; the markdown reader understands
-less and loses nothing. `logline` and `contentblock` already encode that
-preference one level down.
-
-It also makes the migration dictionary fall out for free: with no blank line
-between them, markdown folds a `{#x}` assignment into the paragraph it labelled,
-so the old handle becomes the first token of the block it identified.
+**The cost of getting this wrong twice, recorded on purpose.** The first version
+claimed the djot reader was correct without checking what it did to citations. The
+second claimed it deleted them, measured on an *unescaped* sample that the corpus
+does not contain, and switched the whole release to the wrong reader. Both were
+written with the word *Verified* attached. The rule that follows: **a claim about
+how a reader treats material is only verified against that material.**
 
 ## Citation matching is `finditer` within a `Str`, not whole-`Str` equality
 
 Measured over the 18 documents in this repo carrying real v0.1 handles: **135 are
 a whole `Str` exactly, 98 are embedded** in a larger token — `{#aa813aa9}.`,
-`{#93360c21},`, `{#330f8531}:`. Whole-token matching has **57.9% recall**, and the
-exact ones are mostly assignment lines, which are excluded anyway.
+`{#93360c21},`, `{#330f8531}:`. Whole-token matching has **57.9% recall**.
 
 A draft specified whole-token equality on the strength of one hand-written example
-with spaces on both sides. Real prose puts punctuation after a citation. The
-pattern is self-delimiting, so matching within the `Str` costs nothing and the
-structural exclusions are unaffected.
+with spaces on both sides. Real prose puts punctuation after a citation, and in
+the corpus itself the first surviving citation is `{#44670084+++}` mid-sentence.
+The pattern is self-delimiting, so matching within the `Str` costs nothing and the
+structural exclusions — `Code` text is not a `Str`, `params["text"]` is never
+walked — are unaffected.
+
+It must also cover all four legacy forms, not just the bare one: `{#8hex}`,
+`{#8hex+++}`, `{#8hex@ver}`, and the metasyntactic `{#handle}` / `{#uuid:hash}` /
+`{#xxxxxxxx}` / `{#...}`, which must **not** become citations.
