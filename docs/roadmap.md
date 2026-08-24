@@ -717,20 +717,69 @@ Consequence to write down before someone optimises it away: **DOT output must
 stay readable to a person.** Indentation, `subgraph cluster_` grouping, honest
 labels. Minified for the layout engine, it serves half its purpose.
 
-### Must be verified first
+### Measured — graphviz 14.1.2, against a real base
 
-**Does an explicit `id` on a DOT node survive into the SVG's `<g id="…">`?** If
-so, the guid reaches the picture and clicking a node can copy `[-](#guid)` with
-the handler `views.py` already has. If not, the citation story for diagrams
-changes shape. **Unverified — `dot` is not installed on the development machine.
-One render answers it, and it must happen before the view is designed around it.**
+**The guid reaches the picture. Click-to-copy works.** An explicit `id=` on a DOT
+node becomes the SVG's `<g id="…">`, and on a real 1,910-node base all **5,051
+guids survived, none missing**. Edges carry ids by the same mechanism. The SVG is
+self-contained — no scripts, no external images, no fetched fonts — so it is safe
+under `compost serve`, which is loopback-only and offline.
 
-DOT quotes ids, so a guid with hyphens goes in verbatim — the collision that
-would break mermaid ids does not arise.
+**But the guid is not in the SVG bytes, and a naive test will say the feature is
+broken.** Graphviz escapes every hyphen, because it also emits `<!-- name -->`
+comments where `--` is illegal:
+
+```
+emitted : id="d826c4dd&#45;eb36&#45;4da9&#45;acab&#45;000000000007"
+grep    : 0 hits for the plain guid
+parsed  : d826c4dd-eb36-4da9-acab-000000000007   ← exact, all 500 of 500
+```
+
+So **assert through an XML parser, never with a substring match.** The earlier
+claim that "a guid with hyphens goes in verbatim" is right going *in* and wrong
+coming *out*. `href` is the one attribute not escaped.
+
+Two smaller findings: `<title>` holds the DOT node *name*, not its id — so name
+the node the guid as well if the native hover tooltip should show it. And
+`tooltip=` changes the emitted element structure, wrapping the shape in an `<a>`
+inside an extra `<g id="a_…">`, which introduces near-duplicate ids. Avoid it.
+
+### Measured — and `dot` cannot be the engine
+
+This is the finding that changes the release. On graphs shaped like compost's —
+a `contains` tree plus a `next` chain — `dot` collapses far below the sizes this
+plan assumed:
+
+| nodes | edges | `dot` | `sfdp` |
+|---|---|---|---|
+| 100 | 160 | 0.17 s | 0.11 s |
+| 250 | 409 | 1.00 s | 0.12 s |
+| 500 | 819 | **18 s** | 0.17 s |
+| 500 | 997 *(tree + next chain)* | **killed at 120 s** | **instant** |
+| 1,000 | 1,602 | **39 s** | 0.39 s |
+| 1,910 — one real base | 3,141 | **killed at 7m16s** | 1 s |
+| 31,371 — a corpus base | 56,557 | not attempted | 44 s |
+
+**`dot` stops being usable between 250 and 500 nodes** — below a single document.
+`docs/decisions.md` alone digests to 434 nodes. An earlier draft of this section
+said `dot` and `sfdp` were "one flag apart", to be chosen per scale; that
+underestimated by an order of magnitude.
+
+> **`compost graph` defaults to `sfdp`.** `dot` is available behind a flag for
+> graphs small enough to want hierarchy, and the help text should say where that
+> stops.
+
+**And output size, not layout time, is the real ceiling.** One corpus base
+renders to **58 MB of SVG**, handed to a browser over loopback. That arrives
+*before* any of the collapsing-policy questions this release deferred — so "v1
+draws everything" survives for a document and does not survive for a base, and
+the first filter will be forced by file size rather than by legibility.
 
 ### Costs, accepted knowingly
 
-- conda-forge graphviz pulls cairo, pango and friends — 50–100 MB with deps.
+- **231 MB and 51 packages**, measured, not the 50–100 MB estimated. That is
+  against pandoc's single binary, and it is the strongest argument for keeping
+  the DOT output useful on its own so the binary stays optional.
 - **A second tool whose version silently changes output.** `CLAUDE.md` already
   documents this trap for pandoc. Graphviz gets the same treatment on day one:
   pinned in `environment.yml`, producing version recorded on the view.
@@ -763,24 +812,54 @@ questions SQL made painful *is* the requirement document for a graph database.
 in SQL, required to agree on every fixture base. Sabotage-verifiable in both
 directions.
 
-**With one limit that has to be stated, or the test will fail for the wrong
-reason.** `Store.load()` deduplicates byte-identical records (`src/store.py:159`);
-SQL reading the raw files does not. On a base where one record appears in two
-files — which v0.2.5's copied and hand-written graph files make an ordinary
-occurrence — the two sides see different graphs and disagree about something
-neither assertion got wrong. Replicating `canonical()` in SQL means reproducing
-`sort_keys=True, separators=(',',':'), ensure_ascii=False` byte-for-byte through
-DuckDB's JSON serialiser, which is not a guarantee DuckDB offers. Either read a
-`load()`-produced snapshot on the SQL side, or scope the agreement test to bases
-with no cross-file duplicates and say so out loud.
+**The dedup divergence is real, and it was constructed rather than argued.**
+Measured on duckdb 1.5.5, by copying one graph file to a second filename inside a
+base so a record literally appears twice:
 
-**And spike the read shape before designing on it.** *"`read_json` needs no
-schema"* is true of the syntax and not of the outcome: it infers by sampling and
-unifies types across rows, and `params` is an open object of 35 heterogeneous keys
-— `attr` an array, `level` an int, `log` a nested object. Inference will either
-explode into a vast `STRUCT` or drop what falls outside the sample. Expect to need
-`columns={… 'params': 'JSON'}`. One invocation against a real base settles it, and
-it costs half an hour before rather than a redesign after.
+```
+base      Store.load() = 5051   SQL count(*) = 5051   agree
+dupbase   Store.load() = 5051   SQL count(*) = 5082   DISAGREE  (+31 = the copied file)
+```
+
+`Store.load()` deduplicates byte-identical records (`src/store.py:159`); SQL over
+the raw files does not. **And `compost check` calls the duplicated base perfectly
+healthy** — *1910 nodes, 3141 edges, 0 problems* — so "scope the agreement test to
+bases with no cross-file duplicates" has no mechanism to enforce its own
+precondition. Either read a `load()`-produced snapshot on the SQL side, or state
+the limit and accept that nothing detects when it is violated.
+
+> **Reject `count(DISTINCT guid)` as the bridge, in writing, before someone
+> reaches for it.** It reconciles the duplicate case and *hides a guid conflict* —
+> two different records under one guid, which is the first thing `check` exists to
+> catch. Measured: on a base with such a conflict, `check` reports 2 problems
+> while `DISTINCT guid` reports agreement.
+
+**The read shape: the predicted failure does not happen, but not for a reason
+worth relying on.** `read_json` with no schema works, and nothing is dropped —
+`params` infers as `MAP(VARCHAR, JSON)` and all 39 keys are reachable. Node and
+edge lines unify with no `union_by_name`. 88k records materialise in **0.25 s**.
+So `columns={… 'params': 'JSON'}` is **not** required, and planning as though it
+were would be over-fitting.
+
+But the safe MAP is chosen only because `params` is heterogeneous *enough*:
+inference flips to `STRUCT` below roughly 30 keys, and compost sits near that
+boundary — reading the same records one file at a time infers `STRUCT`. **When it
+is a STRUCT, keys past the sample vanish silently**, columns included. The lever
+is `map_inference_threshold=0`, which forces the lossless MAP with one argument
+and no column list to maintain.
+
+Three things the earlier draft did not anticipate, all of which change how the
+queries get written:
+
+- **`content`, not `params`, is the unstable inferred type** — `JSON[]` on one
+  base, `STRUCT(c JSON, t VARCHAR)[]` on another. The design attention went to
+  the wrong field.
+- **`->>` raises inside a `WHERE` that also filters on `record`.** The most
+  natural query against this schema fails with a cast error in both read modes.
+  Use `json_extract_string(params, '$.x')` in predicates.
+- **`guid`, `source` and `destination` infer as `UUID`, `created_at` as
+  `TIMESTAMP`** — so the two sides of the twin assertion compare different types
+  unless one is cast.
 
 **This is also where the accumulated duplicates finally become legible** — group
 by `content_hash`, by `created_at`, by `tool_version`, and the pattern that a
@@ -892,26 +971,27 @@ nothing is coordinated either.
 ## Open questions carried forward
 
 - **Backlink placement in the HTML view** — per block or per document (v0.2.5).
-- **Whether a DOT `id` survives into the SVG** (v0.2.7). Unverified — `dot` is not
-  installed here. One render answers it, and the citation story for diagrams
-  depends on the answer.
-- **DuckDB's `read_json` shape** on an open `params` object of 35 heterogeneous
-  keys (v0.2.8). Unverified. One invocation against a real base answers it.
 - **The route name for the envelope.** `claude-code-response` is a placeholder.
 - **The conversation edge type name.** `includes` was proposed; not settled.
 - **How `represents` and `duplicates` relate to `alias`** — three ways of saying
   two records are about one thing.
 
-The two unverified items are flagged deliberately. **Three separate claims in this
-document have already been wrong because they were argued from constructed
-samples rather than measured against real material** — the djot reader's treatment
-of handles, the citation match's recall, and the storage cost. Each was labelled
-*Verified* or *Measured* and each label is what stopped anyone looking again.
-Neither remaining item should be built on until it is measured.
+**Nothing in this document is now waiting on a measurement.** That is deliberate:
+three separate claims here had already been wrong because they were argued from
+constructed samples rather than measured against real material — the djot reader's
+treatment of handles, the citation match's recall, and the storage cost. Each was
+labelled *Verified* or *Measured*, and the label is what stopped anyone looking
+again. Every remaining number was taken from a real base or a real corpus.
 
-*Closed by measuring the corpus:* the `.dj` files' shape, the ingest route, the
-handle-collision check (6,741 distinct, zero duplicates), and the assignment rule,
-which turned out not to be needed at all.
+*Closed by measuring the v0.1 corpus:* the `.dj` files' shape, the ingest route,
+the handle-collision check (6,741 distinct, zero duplicates), and the assignment
+rule, which turned out not to be needed at all.
+
+*Closed by spiking graphviz and duckdb:* the SVG `id` question — it survives, and
+hyphens are escaped in the bytes; `dot`'s usable ceiling — between 250 and 500
+nodes, so `sfdp` is the default and not an option; the `read_json` shape — no
+schema needed, `MAP` not `STRUCT`, and `columns=` unnecessary; and the SQL-versus
+-`load()` dedup divergence, constructed and confirmed at 5,051 against 5,082.
 
 ## Beyond this window
 
