@@ -148,9 +148,11 @@ They write in nvim, open `.compost/views/default-html/` in a browser and click
 blocks to copy handles, then reply by citing them. A citation looks like
 `[-](#d826c4dd-eb36-4da9-acab-f6f424a90803)`. When they paste one, resolve it
 before answering: `compost lookup <guid>` prints the block it names, whole guid
-only. It does not say what cites it — there is no citation layer yet. They read
-the HTML view through `compost serve`, which does not render: when they ask to
-see a change, run `compost render` and tell them to refresh.
+only, and also what cites it — but only after `compost layer citation` has
+been rebuilt on the current base; `lookup` does not rebuild it for you and
+under-reports on a stale one. They read the HTML view through `compost serve`,
+which does not render: when they ask to see a change, run `compost render` and
+tell them to refresh.
 
 **Answer here, in this interface. Do not submit your reply as a turn.** They
 import the round afterwards, which makes the answer addressable anyway.

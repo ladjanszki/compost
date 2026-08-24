@@ -428,16 +428,14 @@ def main(argv):
         # whole graph is sound; a lookup answers one question from whatever is
         # on disk. Refusing to resolve a handle because some other file has a
         # dangling edge would make a broken base harder to debug, not safer.
+        # It is also not gated on `compost layer` having been rebuilt: on a
+        # base where the citation layer is stale, this under-reports rather
+        # than lies — an accepted risk, recorded in docs/roadmap.md.
         nodes = {r["guid"]: r for r in recs if r["record"] == "node"}
-        # A handle is a whole guid. A prefix is not a shorter handle, it is not
-        # a handle, and there is no resolver to make it one.
-        node = nodes.get(handle)
-        if node is None:
-            print(f"no node with handle {handle!r}")
-            return 1
+        edges = [r for r in recs if r["record"] == "edge"]
 
-        parent = {r["destination"]: r["source"] for r in recs
-                  if r["record"] == "edge" and r["type"] == "contains"}
+        parent = {e["destination"]: e["source"] for e in edges
+                  if e["type"] == "contains"}
 
         def where(g):
             """The source file of the root that contains `g`."""
@@ -447,12 +445,95 @@ def main(argv):
                 g = parent[g]
             return nodes.get(g, {}).get("params", {}).get("source", "?")
 
-        print(f"  {handle}  {node['type']}  in {where(handle)}")
-        text = R.plain_text(node).strip()
-        if text:
+        # value -> every alias node naming it. Several aliases sharing a
+        # value is expected, not an error — two builds of the citation layer
+        # mint two aliases for the same missing handle, naming two different
+        # placeholders. Never picked from silently; every match is printed.
+        by_value: dict[str, list[dict]] = {}
+        for n in nodes.values():
+            if n["type"] == "alias":
+                by_value.setdefault(n.get("params", {}).get("value"),
+                                    []).append(n)
+
+        names = {e["source"]: e["destination"] for e in edges
+                 if e["type"] == "names"}
+        cites_by_dest: dict[str, list[dict]] = {}
+        for e in edges:
+            if e["type"] == "cites":
+                cites_by_dest.setdefault(e["destination"], []).append(e)
+
+        def print_node(guid, node, indent="  "):
+            print(f"{indent}{guid}  {node['type']}  in {where(guid)}")
+            text = R.plain_text(node).strip()
+            if text:
+                print()
+                for line in textwrap.wrap(text, 74 - len(indent)):
+                    print(f"{indent}{line}")
+
+        def print_citers(guid):
+            """Every `cites` edge landing on `guid`, direct or reflected.
+
+            A citation to a guid that was not yet in the base points at a
+            placeholder rather than at `guid` itself, and that edge is never
+            retracted once the real target arrives — so a citer reachable
+            only through a placeholder is reported too, labelled apart, or
+            `lookup` would say "nothing cites this" about a block that is
+            cited (docs/roadmap.md).
+            """
+            direct = cites_by_dest.get(guid, [])
+            indirect = []
+            for al in by_value.get(guid, []):
+                ph = names.get(al["guid"])
+                if ph is not None:
+                    indirect.extend(cites_by_dest.get(ph, []))
+
+            def show(label, es):
+                print(f"  {label} ({len(es)}):")
+                for e in es:
+                    src = nodes.get(e["source"])
+                    if src is None:
+                        continue
+                    t = R.plain_text(src).strip().replace("\n", " ")
+                    if len(t) > 60:
+                        t = t[:60] + "…"
+                    print(f"    {e['source']}  {src['type']}  {t}")
+
+            if not direct and not indirect:
+                print("  nothing cites this")
+                return
+            if direct:
+                show("cited by", direct)
+            if indirect:
+                show("cited before this block was in the base", indirect)
+
+        node = nodes.get(handle)
+        if node is not None:
+            # A handle is a whole guid. A prefix is not a shorter handle, it
+            # is not a handle, and there is no resolver to make it one.
+            print_node(handle, node)
             print()
-            for line in textwrap.wrap(text, 74):
-                print(f"  {line}")
+            print_citers(handle)
+            return 0
+
+        matches = by_value.get(handle, [])
+        if not matches:
+            print(f"no node with handle {handle!r}")
+            return 1
+
+        plural = "es" if len(matches) != 1 else ""
+        print(f"  {handle!r} is not a guid in this base; resolved via "
+              f"{len(matches)} alias{plural}")
+        for al in matches:
+            target_guid = names.get(al["guid"])
+            scheme = al.get("params", {}).get("scheme", "?")
+            print(f"\n  alias {al['guid']}  (scheme {scheme})")
+            target = nodes.get(target_guid)
+            if target is None:
+                print(f"    -> {target_guid}  (missing)")
+                continue
+            print_node(target_guid, target, indent="    ")
+            print()
+            print_citers(target_guid)
         return 0
 
     if cmd == "check":
