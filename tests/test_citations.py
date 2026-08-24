@@ -16,13 +16,19 @@ contains no links and *cannot* contribute a citation however often it shows the
 syntax. The rule CLAUDE.md says has been broken three times becomes a property
 of the format rather than something to remember.
 """
+import contextlib
+import io
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src import records as R  # noqa: E402
+from src import layers as L    # noqa: E402
+from src import records as R   # noqa: E402
+from src import routes as RT   # noqa: E402
+from src import store as S     # noqa: E402
 
 RD = "commonmark_x-smart-attributes-fancy_lists"
 
@@ -149,6 +155,42 @@ def main():
                  for v in outs.values())
         return ok, "unescaped through both writers, unlike {@x} and [[x]]"
     case("the syntax survives every writer", survives_the_pipeline)
+
+    def cites_across_documents():
+        # The case unit tests against hand-built records can never reach:
+        # `_digest`'s batch isolation validates a batch in isolation
+        # (src/store.py:261), so a citation to a guid from an *earlier*
+        # import produces no edge until `compost layer citation` runs against
+        # the whole loaded base. This is the reason the layer exists.
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            st = S.Store.init(tmp)
+            a = tmp / "a.md"
+            a.write_text("A target paragraph in document A.\n")
+            with contextlib.redirect_stdout(io.StringIO()):
+                if S._digest(st, "notes", [str(a)], "compost"):
+                    return False, "digesting a.md failed"
+            recs_a, _ = st.load()
+            target = next(r for r in recs_a if r["record"] == "node"
+                          and r["type"] == "Para")
+
+            b = tmp / "b.md"
+            b.write_text(f"A paragraph in B citing [-](#{target['guid']}).\n")
+            with contextlib.redirect_stdout(io.StringIO()):
+                if S._digest(st, "notes", [str(b)], "compost"):
+                    return False, "digesting b.md failed"
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                r = L.build(st, "citation", "uuid-link")
+            recs, _ = st.load()
+            src = next(rr["source"] for rr in recs if rr["record"] == "edge"
+                      and rr["type"] == "cites"
+                      and rr["destination"] == target["guid"])
+            return (r["cites"] == 1,
+                    f"cites edge from a block of B ({src[:8]}) "
+                    f"to a block of A ({target['guid'][:8]})")
+    case("a citation resolves across documents, through digest then layer",
+         cites_across_documents)
 
     for ok, name, detail in results:
         print(f"  {'pass' if ok else 'FAIL'}  {name:<44} {detail}")
