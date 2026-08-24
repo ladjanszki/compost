@@ -750,24 +750,45 @@ This is the finding that changes the release. On graphs shaped like compost's �
 a `contains` tree plus a `next` chain — `dot` collapses far below the sizes this
 plan assumed:
 
-| nodes | edges | `dot` | `sfdp` |
+All six engines on one 500-node graph shaped like a `contains` tree plus a `next`
+chain, 180 s ceiling:
+
+| engine | what it does | time |
+|---|---|---|
+| **`twopi`** | **radial tree, root at centre** | **0.13 s** |
+| `sfdp` | multilevel force-directed | 0.18 s |
+| `neato` | spring model | 0.40 s |
+| `fdp` | force-directed | 6.21 s |
+| `circo` | circular | **killed at 180 s** |
+| `dot` | layered hierarchy | **killed at 180 s** |
+
+And at scale, on the same shape:
+
+| nodes | edges | `twopi` | `sfdp` |
 |---|---|---|---|
-| 100 | 160 | 0.17 s | 0.11 s |
-| 250 | 409 | 1.00 s | 0.12 s |
-| 500 | 819 | **18 s** | 0.17 s |
-| 500 | 997 *(tree + next chain)* | **killed at 120 s** | **instant** |
-| 1,000 | 1,602 | **39 s** | 0.39 s |
-| 1,910 — one real base | 3,141 | **killed at 7m16s** | 1 s |
-| 31,371 — a corpus base | 56,557 | not attempted | 44 s |
+| 5,000 | 9,997 | 0.29 s / 4.7 MB | 0.98 s / 4.6 MB |
+| 20,000 | 39,997 | **0.65 s** / 19 MB | 4.46 s / 18.8 MB |
 
 **`dot` stops being usable between 250 and 500 nodes** — below a single document.
-`docs/decisions.md` alone digests to 434 nodes. An earlier draft of this section
-said `dot` and `sfdp` were "one flag apart", to be chosen per scale; that
-underestimated by an order of magnitude.
+`docs/decisions.md` alone digests to 434 nodes. An earlier draft said `dot` and
+`sfdp` were "one flag apart", to be chosen per scale; that underestimated by an
+order of magnitude.
 
-> **`compost graph` defaults to `sfdp`.** `dot` is available behind a flag for
-> graphs small enough to want hierarchy, and the help text should say where that
-> stops.
+> **`compost graph` defaults to `twopi`**, not `sfdp`. It is the fastest measured
+> — 7× `sfdp` at 20,000 nodes — *and* it is the only fast engine whose model
+> matches the data: compost's structure is a forest of `contains` trees, and
+> `twopi` lays out a rooted tree radially. `sfdp` was the first answer only
+> because it is the usual reply to "too big for `dot`"; it produces a
+> force-directed blob of something that is not a blob.
+>
+> `sfdp` stays available for when cross-document `cites` edges dominate and the
+> graph stops being tree-shaped. `dot` stays available for a small scoped
+> subgraph, where hierarchy is worth the wait.
+
+**Caveat on the measurement:** the test graphs are pure tree-plus-chain. A base
+with a dense citation layer is no longer a tree, and `twopi`'s advantage is
+untested there. Re-measure when there is a real base with many `cites` edges —
+today's has five.
 
 **And output size, not layout time, is the real ceiling.** One corpus base
 renders to **58 MB of SVG**, handed to a browser over loopback. That arrives
