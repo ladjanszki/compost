@@ -25,6 +25,12 @@ import uuid
 
 LAYER = "pandoc-ast"
 
+# The grammar version a record conforms to. See docs/record-grammar.md.
+# Absent means 1 by definition: schema 1 is what compost has always written, so
+# every record ever produced already conforms and nothing needs rewriting.
+# Optional on read, required on write.
+SCHEMA_VERSION = 1
+
 # Nodes that sit at the top of a containment tree rather than inside one.
 ROOT_TYPES = {"document", "session"}
 # Nodes that are entities rather than content, and so belong to no tree. A
@@ -69,7 +75,8 @@ class Builder:
         return self._mint()
 
     def node(self, type_, params=None, content=None, guid=None) -> str:
-        n = {"record": "node", "guid": guid or self._mint(), "type": type_}
+        n = {"record": "node", "schema_version": SCHEMA_VERSION,
+             "guid": guid or self._mint(), "type": type_}
         if params:
             n["params"] = params
         if content is not None:
@@ -81,7 +88,8 @@ class Builder:
         return n["guid"]
 
     def edge(self, type_, src, dst, layer: str = LAYER):
-        self.records.append({"record": "edge", "guid": self._mint(),
+        self.records.append({"record": "edge", "schema_version": SCHEMA_VERSION,
+                             "guid": self._mint(),
                              "layer": layer, "type": type_,
                              "source": src, "destination": dst})
 
@@ -545,6 +553,12 @@ def check(records: list) -> list[str]:
             problems.append(
                 f"{n['type']} {n['guid']}: content_hash should "
                 f"{'be present' if want else 'be absent'}")
+
+    for r in records:
+        v = r.get("schema_version")
+        if v is not None and v > SCHEMA_VERSION:
+            problems.append(f"{r['guid']} is schema {v}; this tool writes "
+                            f"{SCHEMA_VERSION}")
 
     return problems
 
