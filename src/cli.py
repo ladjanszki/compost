@@ -55,6 +55,10 @@ def main(argv=None) -> int:
         from . import views
         return views.main(argv[1:])
 
+    if cmd == "layer":
+        from . import layers
+        return layers.main(argv[1:])
+
     if cmd == "serve":
         from . import serve
         return serve.main(argv[1:])

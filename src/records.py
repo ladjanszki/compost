@@ -657,7 +657,7 @@ def _links(node: dict) -> list[str]:
     return out
 
 
-def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
+def citation_edges(records: list, mint=None) -> tuple[list, list[tuple[str, str]]]:
     """
     Read citations out of the *parsed* content and turn each into an edge.
 
@@ -674,7 +674,7 @@ def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
     exact opposite. So the text stays the source of truth, the edge is a
     projection, and a stale edge is a rebuild rather than a conflict.
 
-    Returns (edges, unresolved targets).
+    Returns (edges, unresolved (handle, source guid) pairs).
     """
     b = Builder(mint)
     nodes = [r for r in records if r["record"] == "node"]
@@ -688,7 +688,7 @@ def citation_edges(records: list, mint=None) -> tuple[list, list[str]]:
                 continue                      # an ordinary link, not a citation
             handle = m.group(1)
             if handle not in guids:
-                unresolved.append(handle)
+                unresolved.append((handle, n["guid"]))
                 continue
             edges.append({"record": "edge", "guid": b._mint(),
                           "layer": CITATION_LAYER, "type": "cites",

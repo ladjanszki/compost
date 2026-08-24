@@ -103,10 +103,14 @@ def main():
 
     def unresolved_reported():
         recs, _ = ingest("A paragraph.\n")
-        cite(recs, "Para", "deadbeef-0000-0000-0000-000000000000")
+        src = cite(recs, "Para", "deadbeef-0000-0000-0000-000000000000")
         edges, unresolved = R.citation_edges(recs)
-        return not edges and len(unresolved) == 1, \
-            "an invented handle is reported, not silently dropped"
+        # unresolved is (handle, citing node guid) pairs, not bare handles — a
+        # layer builder needs the citing node to mint a `cites` edge to a
+        # placeholder, and the handle alone cannot say where it came from.
+        return (not edges
+                and unresolved == [("deadbeef-0000-0000-0000-000000000000", src)],
+                "an invented handle is reported with its citing node")
     case("an unresolvable handle is reported", unresolved_reported)
 
     def prefix_is_not_a_handle():
