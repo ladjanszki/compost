@@ -26,7 +26,6 @@ is silent rather than loud:
 The loaded file list is returned rather than hidden, because the failure mode
 of "everything in graph/ is the graph" is surprise about what was in there.
 """
-import datetime
 import hashlib
 import os
 import sys
@@ -46,11 +45,6 @@ INGEST_LAYER = "ingestion"
 # another is a different kind of fact from a document coming from some bytes,
 # and keeping them apart is what lets either be reasoned about alone.
 AGENT_LAYER = "agent"
-
-
-def _now() -> str:
-    return (datetime.datetime.now(datetime.timezone.utc)
-            .replace(microsecond=0).isoformat().replace("+00:00", "Z"))
 
 
 class NotABase(Exception):
@@ -325,7 +319,7 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
             "original_name": src.name,
             "stored_as": stored,
             "bytes_sha256": sha,
-            "imported_at": _now(),
+            "imported_at": R._now(),
             "route": route,
         }, guid=guid)
         # The document was derived *from* the bytes; it is not contained by

@@ -18,10 +18,13 @@ table's children are told apart by what they are. Only the three places where
 pandoc's grammar is anonymous need invented types — ListItem, DefinitionTerm
 and DefinitionItem.
 """
+import datetime
 import hashlib
 import json
 import re
 import uuid
+
+from . import __version__
 
 LAYER = "pandoc-ast"
 
@@ -58,6 +61,24 @@ def canonical(obj) -> bytes:
                       ensure_ascii=False).encode("utf-8")
 
 
+def _now() -> str:
+    return (datetime.datetime.now(datetime.timezone.utc)
+            .replace(microsecond=0).isoformat().replace("+00:00", "Z"))
+
+
+# Provenance and identity are excluded on purpose. An edge's hash must say what
+# it *claims* — type, layer, by, source, destination — and never when or by what
+# it was written, or the same fact rebuilt tomorrow would not match the one
+# written today, which is the entire use of the hash.
+EDGE_HASH_SKIP = {"record", "guid", "schema_version", "content_hash",
+                  "created_at", "tool_version"}
+
+
+def edge_hash(e: dict) -> str:
+    return hashlib.sha256(canonical(
+        {k: v for k, v in e.items() if k not in EDGE_HASH_SKIP})).hexdigest()
+
+
 class Builder:
     """Accumulates records while walking an AST."""
 
@@ -87,11 +108,15 @@ class Builder:
         self.records.append(n)
         return n["guid"]
 
-    def edge(self, type_, src, dst, layer: str = LAYER):
-        self.records.append({"record": "edge", "schema_version": SCHEMA_VERSION,
-                             "guid": self._mint(),
-                             "layer": layer, "type": type_,
-                             "source": src, "destination": dst})
+    def edge(self, type_, src, dst, layer: str = LAYER, **props):
+        e = {"record": "edge", "schema_version": SCHEMA_VERSION,
+             "guid": self._mint(), "layer": layer, "type": type_,
+             "source": src, "destination": dst}
+        e.update(props)                       # `by`, and anything a builder adds
+        e["created_at"] = _now()
+        e["tool_version"] = __version__
+        e["content_hash"] = edge_hash(e)
+        self.records.append(e)
 
     def children(self, parent: str, kids: list[str], layer: str = LAYER):
         """`contains` for each child, plus the `next` chain between them."""
