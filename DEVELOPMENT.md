@@ -10,6 +10,8 @@ src/            the implementation
                 a file extension to decide anything
   session.py    Claude Code JSONL -> records
   store.py      the .compost/ base: init, digest, ls, check, lookup
+  layers.py     compost layer: derives records from the base itself
+                (citations today), the base's second writer after digest
   views.py      the three views, and the per-node-type view dispatch
   serve.py      a static server over the HTML view; renders nothing
   bleach.py     lorem-ise a markdown file, keep the formatting

@@ -596,6 +596,27 @@ Note the node hash is a *different function* — a positional array
 `[type, params, content]`, with no skip list — and the two are not comparable.
 Same field name, different inputs.
 
+## `content_hash` is evidence, not a mechanism
+
+Nothing in `src/` reads `content_hash` to decide anything. No load path
+collapses two records because their hashes match, no `check` assertion
+compares them, and `compost layer` does not consult them before writing. It
+is written and never consulted — on purpose, for now.
+
+That is a decision, not an oversight. A dedup design needs to be written from
+the *pattern* of how duplicates actually accumulate — which fields tend to
+match, which never do, whether a `cites` edge into a placeholder should ever
+be treated as "the same fact" as one into a real target once the placeholder
+resolves — and none of that pattern exists yet, because nothing has minted
+duplicates at scale under this design. Writing the hash now and acting on it
+later means the evidence is there the day someone sits down to design that
+layer; acting on it now would mean guessing the policy before there is
+material to guess from, and re-deciding it once real accumulation shows the
+guess was wrong. `docs/roadmap.md`, v0.2.8, is where the accumulated
+duplicates are meant to finally become legible — grouped by `content_hash`,
+by `created_at`, by `tool_version` — and that grouping is the first use this
+field is expected to have.
+
 ## The tool handles no dependencies, and guarantees no consistency
 
 An architecture review of a larger design found four states a base could enter and

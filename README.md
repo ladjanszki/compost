@@ -13,8 +13,9 @@ compost init
 compost digest --as=notes notes.md
 compost digest --as=claude-code-transcript ~/.claude/projects/<slug>/*.jsonl
 compost check
+compost layer citation         # mint `cites` edges from the links already there
 compost render
-compost lookup d826c4dd        # the block a handle names
+compost lookup d826c4dd-eb36-4da9-acab-f6f424a90803   # the block, and what cites it
 compost serve                  # read it at http://127.0.0.1:7373
 ```
 
@@ -26,14 +27,23 @@ generates every view from those records and from nothing else.
 
 ```
 --as=notes           ─► pandoc AST ─┐
---as=pandoc-ast      ─────────────► ├─► records ──► views/default-djot  (agents)
---as=claude-code-transcript ──────► ┘               views/default-html  (people)
-                                                    views/default-md    (README, …)
+--as=pandoc-ast      ─────────────► ├─► records ──► compost layer ──► records ──► views/default-djot  (agents)
+--as=claude-code-transcript ──────► ┘               (derives, e.g.                views/default-html  (people)
+                                                      citations)                  views/default-md    (README, …)
 ```
 
 How a source is read is **named, never inferred from its extension**. The
 suffix is a decoration that follows the bytes into storage; nothing routes on
 it. `compost digest --as` lists the routes.
+
+`compost layer` is the base's **second** writer: unlike `digest`, it reads
+records already in the base and derives more from them — `compost layer
+citation` mints a `cites` edge for every `[-](#guid)` link that resolves, and
+an `alias`/`unresolved_citation` placeholder for every one that does not, so
+the absence becomes a record instead of scrolling off a terminal. It is a
+step of its own, not folded into `digest` or `render`: a citation can point at
+a guid from an *earlier* import, so resolving it needs the whole loaded base,
+not the batch a single `digest` validates in isolation.
 
 The middle is the waist. Everything downstream reads two record types and never
 an AST, which is what keeps the graph from drifting away from what is displayed:
@@ -43,10 +53,10 @@ a missing edge is a visibly broken page the same day.
 
 | | |
 |---|---|
-| **nodes** | pandoc's own constructor names — `Para`, `Header`, `CodeBlock`, `Table` — plus `ListItem` and two others where pandoc's grammar is anonymous, plus `session`, `turn`, `toolcall`, `tooloutput`, `thinking`, `file`, `document`, `blob` |
-| **edges** | `contains` and `next` per layer, `touches`, `replies_to`, `cites` |
-| **identity** | a UUIDv4 per node, and a SHA256 `content_hash` where a node has content of its own |
-| **citations** | `[-](#<guid>)` — a link, so a handle quoted inside a code block cannot become an edge |
+| **nodes** | pandoc's own constructor names — `Para`, `Header`, `CodeBlock`, `Table` — plus `ListItem` and two others where pandoc's grammar is anonymous, plus `session`, `turn`, `toolcall`, `tooloutput`, `thinking`, `file`, `document`, `blob`, `alias`, `unresolved_citation` |
+| **edges** | `contains` and `next` per layer, `touches`, `replies_to`, `cites`, `names` |
+| **identity** | a UUIDv4 per node, and a SHA256 `content_hash` where a node has content of its own; every edge also carries `content_hash`, `created_at` and `tool_version` |
+| **citations** | `[-](#<guid>)` — a link, so a handle quoted inside a code block cannot become an edge. `compost layer citation` turns each into a `cites` edge, or an `alias`/`unresolved_citation` placeholder when the target is not in the base yet |
 
 ## Guarantees, and how they are kept
 
@@ -55,26 +65,28 @@ each has been made to fail on purpose:
 
 ```
 $ ./tests/run.sh
-test_records             525/525 identity round-trip   |   19828 nodes, 35747 edges
+test_records             526/526 identity round-trip   |   19853 nodes, 35788 edges
 test_sabotage            6/6 sabotages caught
 test_store               10/10 storage guarantees hold
 test_digest              17/17 ingestion guarantees hold
 test_views               6/6 view guarantees hold
-test_citations           7/7 citation guarantees hold
+test_citations           8/8 citation guarantees hold
 test_bleach_session      7/7 session-fixture guarantees hold
 test_session             11/11 session-import guarantees hold
 test_session_views       13/13 session-view guarantees hold
-test_lookup              7/7 lookup guarantees hold
+test_lookup              12/12 lookup guarantees hold
 test_serve               9/9 serve guarantees hold
 test_manpage             6/6 man-page guarantees hold
+test_grammar             7/7 grammar guarantees hold  |  35 node types, 10 edge pairs, 377 nodes
+test_layer               8/8 layer guarantees hold
 corpus                   present, 520 documents
 ```
 
 The first line is the whole format in one assertion:
-`records_to_ast(ast_to_records(ast)) == ast`, exact equality, over 525
+`records_to_ast(ast_to_records(ast)) == ast`, exact equality, over 526
 documents once the corpus is fetched — a documentation site, a curated corpus,
 and one hand-built AST reaching the constructors no markdown reader can
-produce. A bare clone runs the same property over a five-document smoke set,
+produce. A bare clone runs the same property over a six-document smoke set,
 and says so.
 
 ## Requirements

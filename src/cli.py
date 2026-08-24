@@ -11,7 +11,8 @@ behaviour here.
     compost digest --as=R FILE...  ingest, by a named route
     compost ls              list what is loaded
     compost check           verify the graph
-    compost lookup HANDLE   print the node a handle names
+    compost layer NAME      derive records from the base itself, e.g. citations
+    compost lookup HANDLE   print the node a handle names, and what cites it
     compost render          generate the three views
     compost serve [-p N]    hand the HTML view to a browser
     compost version         print the version
@@ -29,7 +30,9 @@ USAGE = """usage: compost <command> [args]
   digest FILE...  ingest via --as=<route>; --as alone lists the routes
   ls              list loaded graph files and counts
   check           verify the graph, non-zero if it fails
-  lookup HANDLE   print the node a handle names
+  layer NAME      derive records from the base, e.g. `layer citation`;
+                  bare `layer` lists what can be built
+  lookup HANDLE   print the node a handle names, and what cites it
   render          generate views/default-{djot,html,md}
   serve [-p N]    serve the HTML view on 127.0.0.1:7373
   version         print the version

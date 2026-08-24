@@ -3,6 +3,121 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.4 — 2026-08-24 — the citation layer, and the naming machinery it needs
+
+`records.citation_edges()` was written, tested, and never called by anything
+in `src/`. A `[-](#guid)` in a digested document minted no edge, and
+`compost lookup` could not say what cited a block. This release wires it in —
+`compost layer citation`, a second writer to `graph/` alongside `digest` —
+and builds what wiring it required: a version field on every record, edge
+provenance and hashing, and two node types for a citation whose target is
+not (yet) in the base.
+
+### `compost layer`
+
+```
+compost layer                        list what can be built
+compost layer NAME [--by SCHEME]     build it
+```
+
+`compost layer citation` reads every `[-](#guid)` link in the whole loaded
+base and mints a `cites` edge for each one that resolves. Resolving against
+the *whole* base, not a single `digest` batch, is the reason this is a
+command of its own: a citation routinely points at a guid from an earlier
+import, and `_digest` validates a batch in isolation on purpose.
+
+A target not in the base cannot become an edge — a dangling endpoint fails
+`check` and would take the whole graph down. Before this the absence had
+nowhere to live: not in the text, not in the graph, only in terminal output
+that scrolled away. Now it becomes one `alias` node (naming the missing
+value) and one `unresolved_citation` node it points at, per *distinct*
+unresolved value in the run, plus a `cites` edge from every citing block into
+that placeholder — two citations of one missing handle share one placeholder.
+
+**Running the builder twice writes two complete sets of records.** `layer`
+never reads what an earlier run wrote, so nothing is deduplicated and nothing
+is removed. That is the release's central decision, not an oversight: see
+`docs/roadmap.md`, "the tool does not hold your hand", and
+`tests/test_layer.py`, which asserts the doubling on purpose so nobody
+"fixes" it later.
+
+### `compost lookup` reports citations
+
+- Resolves an **alias** when the argument is not a guid in the graph — every
+  alias sharing a value is printed, never one picked silently, naming the
+  scheme that resolved it.
+- Reports every `cites` edge whose destination is the node.
+- Also reports a citer that only reached a **placeholder** naming this guid,
+  labelled apart. Without this, a block that genuinely *is* cited would say
+  "nothing cites this" the moment its citing edge points at an
+  `unresolved_citation` minted before the block existed — which is never
+  retracted once the real target arrives.
+
+Not gated on `compost layer citation` having been rebuilt; on a stale base
+this under-reports rather than lies, the same accepted risk `lookup` already
+carried by not gating on `check`.
+
+### `schema_version`, `by`, `created_at`, `tool_version`, `content_hash` on edges
+
+Every record now carries `schema_version` (currently `1`); absent means `1`
+by definition, so no existing base needs rewriting, and the field is what
+lets a future schema 2 sit beside schema 1 during a migration that rewrites
+only what changed shape.
+
+Every edge — ingest-time and built alike — now also carries `created_at`,
+`tool_version` and a `content_hash` of its own:
+
+```
+content_hash = sha256(canonical(edge − {record, guid, schema_version,
+                                        content_hash, created_at, tool_version}))
+```
+
+The exclusion list is deliberate and found the hard way: an earlier version
+hashed every property, so the same citation built twice — with a different
+`created_at` — hashed differently, defeating the one thing the hash is for.
+It makes two edges stating the same fact *findable* later; nothing collapses
+them now, and a `cites` edge into a placeholder is outside its reach anyway,
+since a placeholder gets a fresh guid every build. `content_hash` is evidence
+for a future dedup design, not a mechanism anything acts on today.
+
+**Measured cost**, over the 972 records `tests/fixtures/` produce: `+27.1%`
+overall, `+78.8%` on edges, because three fields land on a record whose mean
+size is 213 B. Re-verified independently against the full 520-document test
+corpus: `+78.8%` on edges again, `+22.1%` overall — lower, because real
+documents run node-heavy relative to the fixture set, and only edges gained
+the three big fields. Storage is not being optimised for; both numbers are
+published rather than the flattering one.
+
+### `Graph.linked` keeps `by`
+
+`Graph` used to index every non-`contains`, non-`next` edge by type and
+source alone, discarding everything else the record said — including `by`,
+which is exactly what would let a view tell an exact citation from some
+future legacy one apart. `linked()` now returns edge records, takes an
+optional `by=` filter, and its one caller (`views.py`'s subagent rendering)
+was updated to match.
+
+### Everywhere else
+
+- `alias` and `unresolved_citation` join `UNCONTAINED` — pointed at, inside
+  nothing, like `file` and `blob`. Neither carries a `content_hash`.
+  Provenance (`created_at`, `tool_version`) is top-level on both, decided
+  once here: it would be harmless for these two hash-less types but would set
+  a precedent that breaks the day a hashed node type needs provenance.
+- `records.citation_edges()` now reports each unresolved target as
+  `(handle, citing guid)` rather than a bare handle, since a layer builder
+  needs to know where an unresolved citation came from.
+- `docs/record-grammar.md` documents the new fields and node/edge types, and
+  gains a tenth `check()` assertion: `schema_version`, when present, may not
+  exceed what this tool writes — the only way that can fire is a newer tool's
+  records loaded by an older one.
+- `tests/test_layer.py` is new: eight properties over two bases, every one
+  sabotage-verified. `tests/test_citations.py` gains the case only the real
+  pipeline can exercise — a citation across two separately digested
+  documents, resolved by `compost layer citation`. `tests/test_lookup.py` is
+  substantially rewritten: its old property asserted that a lookup names
+  *only* the node asked for, which is the opposite of this release.
+
 ## v0.2.3 — 2026-08-21 — transcripts stop filtering, bring their subagents, and show them
 
 `--as=claude-code-transcript` was discarding **46% of a real transcript** and

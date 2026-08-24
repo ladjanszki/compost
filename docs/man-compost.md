@@ -12,6 +12,7 @@ compost init [DIR]
 compost digest --as=ROUTE FILE...
 compost ls
 compost check
+compost layer NAME [--by SCHEME]
 compost lookup HANDLE
 compost render
 compost serve [-p PORT]
@@ -20,7 +21,7 @@ compost version
 
 ## STATUS
 
-Version 0.2.3. The eight subcommands below are the whole program.
+Version 0.2.4. The nine subcommands below are the whole program.
 
 `compost` is on PATH inside the `compost` conda env, which `DEVELOPMENT.md`
 describes; from a checkout `python3 -m src.cli` is equivalent.
@@ -175,8 +176,8 @@ What it enforces:
 
 - no edge points at a node that does not exist
 - every node has exactly one incoming `contains`, except roots (`document`,
-  `session`) which have none, and entities (`file`, `blob`) which are pointed
-  at rather than contained
+  `session`) which have none, and entities (`file`, `blob`, `alias`,
+  `unresolved_citation`) which are pointed at rather than contained
 - the containment graph is acyclic
 - each parent's `next` chain has exactly one head and reaches every child
   exactly once, without leaving the parent
@@ -186,21 +187,65 @@ What it enforces:
 - no guid carries two different records
 - no two nodes share a handle
 - `content_hash` is present exactly when a node has content of its own
+- `schema_version`, when present on a record, is not greater than what this
+  tool writes — the check exists to fire the day a newer tool's records are
+  loaded by an older one
+
+### layer NAME [--by SCHEME]
+
+Derive new records from the base **itself**, rather than from bytes nobody
+has seen before — `digest`'s job. Bare `compost layer` lists what can be
+built; today that is one thing:
+
+```
+compost layer citation [--by uuid-link]
+```
+
+Reads every `[-](#guid)` link in the base and mints a `cites` edge for every
+one that resolves. A target not yet in the base cannot become an edge — a
+dangling endpoint would fail `check` — so instead it mints one `alias` node
+(naming the missing value) and one `unresolved_citation` node it points at,
+per *distinct* unresolved value in the run, and a `cites` edge from the
+citing block to that placeholder.
+
+Prints a line like:
+
+```
+  1,204 cites edges  |  3 unresolved -> 3 placeholders
+    deadbeef-0000-0000-0000-000000000000
+    …
+```
+
+**Running it twice writes two complete sets of records.** `layer` does not
+read what a previous run wrote, so nothing is deduplicated and nothing is
+removed — the same governing decision as everywhere else in this tool: it
+does not hold your hand. See `docs/roadmap.md`.
+
+Like `lookup` and unlike `render`, this is **not** gated on `check` passing.
 
 ### lookup HANDLE
 
 Print the node a handle names: the guid, the node type, the source file it came
-from, and the node's own text. Exits 0 on a hit and 1 on a miss.
+from, and the node's own text. Then print what **cites** it — every `cites`
+edge whose destination is the node — and, separately, any citer that only
+reached a placeholder minted before this block existed, labelled apart.
+Exits 0 on a hit and 1 on a miss.
 
 **The handle is the whole guid.** A prefix is not a shorter handle, and there is
 no resolver that would make it one. Shortening handles is an optimisation
 nobody has yet felt the need for, and an abbreviation that silently stops
 resolving as a base grows is a worse failure than a long citation.
 
-It does **not** report what cites the node. That is the citation layer's
-question and the citation layer does not exist yet; answering it here would
-have meant deriving `cites` edges on every query, and a layer built by accident
-is harder to replace than one that was never built.
+**If the argument is not a guid in the graph, it is tried as an alias
+value.** Every `alias` node whose `params["value"]` matches is resolved and
+printed — never one picked silently, since several aliases legitimately share
+a value (two builds of the citation layer mint two aliases for the same
+missing handle, naming two different placeholders).
+
+This does not rebuild the citation layer, and is not gated on it having been
+rebuilt. On a base where a citing document arrived after the last
+`compost layer citation`, this **under-reports rather than lies** — an
+accepted risk, recorded in `docs/roadmap.md`.
 
 Unlike `render`, this does **not** require `check` to pass. A view asserts the
 whole graph is sound; a lookup answers one question from what is on disk, and
@@ -303,6 +348,14 @@ faced this splits it the same way (PROV-O, NFO, FRBR, DCAT): a path is a
 locator, not a thing. When the same path is both, a `represents` edge joins
 them; nothing mints one yet.
 
+`alias` and `unresolved_citation` are minted by `compost layer citation`, not
+by `digest` — the base's second writer. An `alias` names a value
+(`params["value"]`, `params["scheme"]`) that leads to another node by a
+`names` edge; today that node is always an `unresolved_citation`, a
+placeholder for a citation target not yet in the base. Both carry
+`created_at` and `tool_version` as top-level fields, the same as an edge, and
+neither carries a `content_hash`.
+
 ## EDGE LAYERS
 
 | layer | edges |
@@ -310,7 +363,7 @@ them; nothing mints one yet.
 | `pandoc-ast` | `contains`, `next` — structure and order within parsed prose |
 | `session` | `contains`, `next`, `touches` — transcript structure; `next` is log order |
 | `claude-code` | `replies_to` — the `parentUuid` chain |
-| `citation` | `cites` — derived from links in the text |
+| `citation` | `cites` — derived from links in the text; `names` — an `alias` to what it names |
 | `ingestion` | `derived_from` — which bytes a document was read from |
 | `agent` | `launched` — the tool call a subagent transcript ran under |
 
@@ -333,15 +386,25 @@ cd ~/notes
 compost digest --as=notes draft.md
 compost digest --as=claude-code-transcript ~/.claude/projects/-Users-me-notes/*.jsonl
 compost check
+compost layer citation
 compost render
 compost serve
 ```
 
 ## NOT YET IMPLEMENTED
 
-No `submit`, `new` or `artifact`. No view for `file` or `blob` nodes, which
-are uncontained and so appear in no document tree. No migration of a v0.1
-base. Empty `thinking` nodes are stored but not rendered.
+No `submit`, `new` or `artifact`. No view for `file`, `blob`, `alias` or
+`unresolved_citation` nodes, which are uncontained and so appear in no
+document tree. No migration of a v0.1 base. Empty `thinking` nodes are
+stored but not rendered.
+
+`layer` keeps no record of what it has built. Nothing tells you a base's
+citation layer is stale, and nothing rebuilds it for you — `lookup` and any
+future view under-report on a base where a citing document arrived after the
+last `compost layer citation`. There is no `drop`, no deduplication of what a
+rerun produces, and no way to shrink a base other than deleting a whole graph
+file. All deliberate: see `docs/roadmap.md`, "the tool does not hold your
+hand".
 
 **Views carry their full meaning to djot, HTML and markdown only.** Handles,
 authorship and tool names ride on `Div` attributes and format-specific raw

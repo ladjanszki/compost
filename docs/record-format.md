@@ -88,13 +88,21 @@ render.
 ```json
 {
   "record": "edge",
+  "schema_version": 1,
   "guid": "6b4e5bfa-d8bf-4dc5-9581-70f8d38a2af9",
   "layer": "pandoc-ast",
   "type": "contains",
   "source": "1218c3a0-d84e-4900-92db-ed29a915d7bd",
-  "destination": "d826c4dd-eb36-4da9-acab-f6f424a90803"
+  "destination": "d826c4dd-eb36-4da9-acab-f6f424a90803",
+  "created_at": "2026-08-24T12:00:00Z",
+  "tool_version": "0.2.4",
+  "content_hash": "…"
 }
 ```
+
+A `citation`-layer edge carries one more key, `by`, naming which scheme wrote
+it — absent on the structural edges above, since only a layer builder has
+more than one way to produce the same edge type.
 
 `layer` and `type` stay two sibling scalar keys. That *is* the JSON-native
 encoding of a two-level taxonomy — the same as two columns in a table — and
@@ -105,6 +113,16 @@ validator. Never concatenate them into `structure/contains`.
 Edges carry a `guid` in this version, as decided: an `identity_hash` for
 free deduplication is attractive but has to wait until the hash input is
 pinned down, and a guid cannot lose information to an unforeseen case.
+
+**The hash input is pinned down now, as of v0.2.4** — `content_hash` on an
+edge is `sha256(canonical(record − EDGE_HASH_SKIP))`, where `EDGE_HASH_SKIP`
+excludes `record`, `guid`, `schema_version`, `content_hash`, `created_at` and
+`tool_version` (`src/records.py`). It answers the question this paragraph
+left open, but not the way "for free deduplication" imagined: the hash makes
+two edges stating the same fact *findable*, it does not collapse them. Guids
+still stay minted, never derived — see `docs/decisions.md`, "Guids stay
+UUIDv4, including for derived records" — and `content_hash` is evidence a
+future dedup design can use, not a mechanism anything acts on today.
 
 ## Ordering: `next` edges, in the `pandoc-ast` layer
 
@@ -328,6 +346,12 @@ imports of one file need comparing, an `ingestion` node is the shape to reach
 for.
 
 ## Defining `content_hash`
+
+**This section is about the node form.** As of v0.2.4 an edge carries a
+`content_hash` too, computed by a *different* function over a different
+input — see the Edge section above and `docs/record-grammar.md` §5, which
+states both side by side and says why they are not comparable. Nothing below
+this line changed for nodes.
 
 The hash input must be specified exactly or a different JSON encoder silently
 duplicates every record. Proposal:
