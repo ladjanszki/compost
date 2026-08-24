@@ -547,6 +547,50 @@ edge joins them; nothing mints one yet, and doing so means matching an
 `original_name` against a `path`, which is a guess worth designing rather than
 writing in passing.
 
+### Provenance is on every edge and on only two node types
+
+**Deferred until the planned work through v0.2.8 is finished**, then decided
+deliberately rather than by omission. See `docs/roadmap.md`.
+
+As of v0.2.4, `created_at` and `tool_version` are top-level on **every edge**,
+ingest-time and built alike, and on exactly **two node types** — `alias` and
+`unresolved_citation`. Every other node has neither.
+
+| | `created_at` / `tool_version` |
+|---|---|
+| every edge | yes |
+| `alias`, `unresolved_citation` | yes |
+| `Para`, `document`, `blob`, every other node | no |
+
+**Two defensible rules are in tension, and the shipped state follows neither
+cleanly.**
+
+- *Provenance belongs where nothing else records it.* Records written by
+  `compost layer` have no other trace of when they were made; ingested nodes
+  are reachable from a `blob` carrying `imported_at` and `route`. Under this
+  rule the two node types are right and **ingest-time edges should not have it
+  either** — and `docs/roadmap.md` says those are kept "for uniformity", which
+  is the other rule wearing this one's clothes.
+- *Uniformity: every record says when and by what it was written.* Simple to
+  state, simple to query, nothing to remember. Under this rule **every node
+  should carry it too**.
+
+**Why it was not settled in v0.2.4.** The plan's text said `Builder.node()`
+should set provenance on every node; the storage measurement published beside
+it — `+27.1%` overall, `+78.8%` on edges — was computed with provenance on
+edges only. The two contradicted, and the narrow reading is what shipped and
+what the published number describes.
+
+**What deciding it costs.** Widening to every node changes every record written
+from then on, so a base spans both shapes — which `schema_version` exists to
+make survivable, and which is a good first exercise of it. It does **not** move
+any `content_hash`: node hashing is `canonical([type, params, content])` and
+provenance is top-level, which is the whole reason it was put there. Re-measure
+the storage figures either way, because the published ones stop being true.
+
+Note the reverse direction is also open: dropping provenance from ingest-time
+edges would shrink the largest category of record in any base.
+
 ### `check` does not verify `storage/`
 
 It reads records and stops there, so a blob whose bytes were altered on disk

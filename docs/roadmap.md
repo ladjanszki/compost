@@ -175,10 +175,18 @@ alias("deadbeef-1111…") --names--> placeholder      layer: citation, by: uuid-
 {"type":"unresolved_citation","created_at":"…","tool_version":"0.2.4"}
 ```
 
-**Provenance is top-level on nodes as well as edges**, never inside `params`. It
-would be harmless for these two types, which carry no `content_hash` — and it
-would be wrong the first time a hashed type needs provenance, since node hashing
-is `canonical([type, params, content])`. Decided once, here, while it is free.
+**Provenance on these two node types is top-level, never inside `params`.** It
+would be harmless in `params` for these two, which carry no `content_hash` — and
+it would be wrong the first time a hashed type needs provenance, since node
+hashing is `canonical([type, params, content])`. Decided once, here, while it is
+free.
+
+**These are the only two node types that carry it.** Every edge does,
+ingest-time and built alike; every other node does not. That asymmetry is real
+and is not settled — see `TODO.md`, *Provenance is on every edge and on only two
+node types*. It is deferred to after v0.2.8 on purpose, because widening it
+changes every record written from then on and invalidates the storage figures
+above, and neither is worth doing mid-plan.
 
 - **`UNCONTAINED` gains both** (`src/records.py:34`). They are entities: pointed
   at, inside nothing, like `file` and `blob`.

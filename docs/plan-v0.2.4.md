@@ -262,12 +262,20 @@ def _citation(recs, name, by):
             "unresolved": sorted(seen)}
 ```
 
-**Provenance goes top-level, not in `params`.** `Builder.node()` must set
-`created_at` and `tool_version` as top-level keys on every node, exactly as
-`Builder.edge()` does. Putting them in `params` would work for these two types
-(neither carries a `content_hash`) but sets a precedent that breaks the moment a
-type with a hash needs provenance, since node hashing is
-`canonical([type, params, content])`. Decide it once, here.
+**Provenance goes top-level, not in `params`** — on the two node types this
+release adds, and **only** those two. Do **not** change `Builder.node()`'s
+general behaviour; every other node type stays as it is. Set `created_at` and
+`tool_version` as top-level keys where `layers.py` mints an `alias` or an
+`unresolved_citation`, exactly as `Builder.edge()` does for edges.
+
+Putting them in `params` would work for these two (neither carries a
+`content_hash`) but sets a precedent that breaks the moment a hashed type needs
+provenance, since node hashing is `canonical([type, params, content])`.
+
+*An earlier draft of this paragraph said "on every node", which contradicted the
+storage measurement published beside it — that figure was computed with
+provenance on edges only. Whether to widen it later is `TODO.md`, deferred until
+after v0.2.8.*
 
 **`citation_edges` currently returns `unresolved` as a list of bare handle
 strings, not `(value, source)` pairs.** You need the citing node's guid to build
