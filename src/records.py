@@ -305,7 +305,7 @@ class Graph:
         # the tree and everything else was invisible here. Keeping this generic
         # rather than adding a `launched` field means the next relation a view
         # wants to draw needs no change to this class.
-        self._rel: dict[str, dict[str, list[str]]] = {}
+        self._rel: dict[str, dict[str, list[dict]]] = {}
         for r in records:
             if r["record"] != "edge":
                 continue
@@ -315,11 +315,12 @@ class Graph:
                 self._next[r["source"]] = r["destination"]
             else:
                 self._rel.setdefault(r["type"], {}).setdefault(
-                    r["source"], []).append(r["destination"])
+                    r["source"], []).append(r)
 
-    def linked(self, guid: str, type_: str) -> list[str]:
-        """Destinations of `type_` edges leaving `guid`, in record order."""
-        return self._rel.get(type_, {}).get(guid, [])
+    def linked(self, guid, type_, by=None):
+        """Edges of `type_` leaving `guid`, in record order."""
+        out = self._rel.get(type_, {}).get(guid, [])
+        return [e for e in out if by is None or e.get("by") == by]
 
     def children(self, guid: str) -> list[str]:
         """Children of `guid`, ordered by walking the next chain."""

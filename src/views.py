@@ -130,12 +130,12 @@ def _render_session(g, n, mode):
         # have arrived in another file. Rendering it here is what stops a
         # conversation fragmenting into six unreadable `agent-<hex>` pages, and
         # it is why `render_all` gives it no page of its own.
-        for sub in g.linked(guid, "launched"):
-            n_sub = g.nodes[sub]
+        for e in g.linked(guid, "launched"):
+            n_sub = g.nodes[e["destination"]]
             ag = n_sub.get("params", {}).get("agent", {})
             body = _render_session(g, n_sub, mode) or []
             if mode == "html":
-                turns = sum(1 for k in g.children(sub)
+                turns = sum(1 for k in g.children(e["destination"])
                             if g.nodes[k]["type"] == "turn")
                 label = (f"subagent — {ag.get('agentType', 'unknown')}, "
                          f"{turns} turns")
