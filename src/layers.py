@@ -24,6 +24,24 @@ from . import records as R
 from . import store as S
 
 
+def _entity(b, type_, params=None):
+    """`b.node()`, plus provenance as top-level keys, never inside `params`.
+
+    Only `alias` and `unresolved_citation` need this today — both carry no
+    `content_hash`, whose input is `canonical([type, params, content])` and
+    so is blind to whatever else a record carries. Putting created_at and
+    tool_version in `params` would work for these two but set a precedent
+    that breaks the first time a *hashed* type needs provenance. Decided
+    once, here, while it is free — general node types keep Builder.node()'s
+    existing shape, since the grammar (record-grammar.md §2) already gives
+    nodes no provenance fields and this release does not extend that.
+    """
+    guid = b.node(type_, params)
+    n = b.records[-1]
+    n["created_at"], n["tool_version"] = R._now(), __version__
+    return guid
+
+
 def _citation(recs, name, by):
     """Citation edges, plus a placeholder for every target that is not here.
 
@@ -49,8 +67,8 @@ def _citation(recs, name, by):
     seen = {}
     for value, source in unresolved:
         if value not in seen:
-            ph = b.node("unresolved_citation")
-            al = b.node("alias", {"value": value, "scheme": by})
+            ph = _entity(b, "unresolved_citation")
+            al = _entity(b, "alias", {"value": value, "scheme": by})
             b.edge("names", al, ph, name, by=by)
             seen[value] = ph
         b.edge("cites", source, seen[value], name, by=by)
