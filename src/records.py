@@ -40,7 +40,7 @@ ROOT_TYPES = {"document", "session"}
 # `file` is *referenced* by the calls that touched it. A `blob` is the bytes
 # of an ingested source, which a document is derived *from* rather than
 # contained *by*. Both are pointed at; neither is inside anything.
-UNCONTAINED = {"file", "blob"}
+UNCONTAINED = {"file", "blob", "alias", "unresolved_citation"}
 
 # What a view shows, a human pastes, and a citation names: the whole guid.
 # A prefix is not a handle. There was a resolver that accepted any unambiguous
