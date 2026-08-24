@@ -37,11 +37,13 @@ GRAMMAR = HERE.parent / "docs/record-grammar.md"
 FIX = HERE / "fixtures"
 
 # Written down rather than discovered, because "the program cannot produce this
-# yet" is a claim about intent that no probe can make. `cites` is defined in
-# `records.citation_edges` and called by nothing in `src/`; the grammar says so
-# out loud, and this list is what keeps the two statements in step. Wiring the
-# citation layer means deleting an entry here, which is the point.
-NOT_YET_MINTED = {("citation", "cites")}
+# yet" is a claim about intent that no probe can make. Empty since v0.2.4: it
+# used to hold `("citation", "cites")`, while `citation_edges` was defined and
+# tested but called by nothing in `src/`. Wiring the citation layer
+# (`compost layer citation`) was the point of deleting that entry — kept as an
+# empty set rather than removed outright, since a future edge pair may need
+# the same "documented, not yet exercised" allowance.
+NOT_YET_MINTED = set()
 
 
 def documented_nodes(text: str) -> dict:
@@ -95,6 +97,15 @@ def build() -> list:
     `derived_from` and `launched` are minted by the store and a route-level
     sweep would report them missing when they are merely elsewhere. That is the
     measurement error this suite exists to not repeat.
+
+    Also digests one document written *inside this test*, citing two handles —
+    one a real block guid read out of the base already built, one fabricated —
+    and runs `compost layer citation` over the whole thing. A committed fixture
+    with a hard-coded guid would never resolve in a fresh base, so the
+    resolvable citation has to be minted at test time; the fabricated one needs
+    no such care. Two citations, so both branches of the layer fire at once: a
+    resolved `cites` edge, and an `alias`/`unresolved_citation`/`names` triple
+    for the one that does not resolve.
     """
     with tempfile.TemporaryDirectory() as d:
         st = S.Store.init(Path(d))
@@ -114,6 +125,20 @@ def build() -> list:
             with contextlib.redirect_stdout(io.StringIO()):
                 if S._digest(st, route, args, "compost"):
                     raise RuntimeError(f"digest failed for {route}")
+
+        recs, _ = st.load()
+        target = next(r for r in recs
+                      if r["record"] == "node" and r["type"] == "Para")
+        citing = Path(d) / "citing.md"
+        citing.write_text(
+            f"Citing [-](#{target['guid']}) and also "
+            f"[-](#deadbeef-0000-0000-0000-000000000000).\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            if S._digest(st, "notes", [str(citing)], "compost"):
+                raise RuntimeError("digest failed for citing.md")
+            from src import layers as LY
+            LY.build(st, "citation", "uuid-link")
+
         recs, _ = st.load()
         return recs
 

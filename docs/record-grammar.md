@@ -15,12 +15,6 @@ to behaviour that already existed.
 
 ## 1. `schema_version`
 
-> **Status: specified here, not yet written.** No code emits this field today.
-> It lands in v0.2.4 (`docs/plan-v0.2.4.md`, step 1). Everything else in this
-> document describes records the program writes right now; this section alone
-> describes one it is about to. The "absent means 1" rule below is what makes
-> that gap harmless.
-
 ### The field
 
 ```json
@@ -76,15 +70,11 @@ existed changes meaning or type:
 - a new node type, a new edge type, a new layer
 - a new *optional* key on an existing form
 
-By that rule the planned v0.2.4 work — the `alias` and `unresolved_citation` node
+By that rule the v0.2.4 work — the `alias` and `unresolved_citation` node
 types, the `names` edge, and the `by`, `created_at`, `tool_version` and
 `content_hash` fields on edges — is **all additive, and schema stays 1.** A
 version that increments every release carries no information; this one is meant to
 be readable years later.
-
-*(An earlier draft of this paragraph named a `layer` node type and a `handle` node
-type. Neither exists: the layer mechanism keeps no declarations, and the node that
-carries a name is called `alias`. See `docs/roadmap.md`.)*
 
 ---
 
@@ -107,12 +97,20 @@ node     ::= { "record": "node"
              }
 
 edge     ::= { "record": "edge"
-             , "schema_version": 1
+             , "schema_version": 1     ; present, same as on a node
              , "guid":   GUID
              , "layer":  LAYER
              , "type":   EDGE_TYPE
              , "source": GUID
              , "destination": GUID
+             , "by":     STRING        ; optional — which scheme wrote this
+                                        ; edge; absent on structural edges
+                                        ; (contains, next, derived_from,
+                                        ; launched, touches, replies_to),
+                                        ; present on citation-layer edges
+             , "created_at": TIMESTAMP ; present, ISO 8601 UTC
+             , "tool_version": STRING  ; present, the writer's own version
+             , "content_hash": SHA256  ; present — see §5, the edge form
              }
 
 GUID     ::= [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
@@ -123,7 +121,7 @@ nothing derives one guid from another — including the two names one source
 carries: a document's guid and its blob's storage name are minted separately
 and **must not** be derivable from each other.
 
-A **handle** is the whole guid: `HANDLE_LEN = 36` (`src/records.py:42`). A
+A **handle** is the whole guid: `HANDLE_LEN = 36` (`src/records.py:51`). A
 prefix of a guid is not a handle and resolves to nothing.
 
 `content` holds pandoc **inline** elements verbatim, as read. Inlines are never
@@ -219,7 +217,7 @@ Four things this table is load-bearing about:
 | `document` | `meta`, `pandoc_api_version`, `source`, `route` |
 | `session` | see §3.2 |
 
-`ROOT_TYPES = {"document", "session"}` (`src/records.py:29`). A root has **no**
+`ROOT_TYPES = {"document", "session"}` (`src/records.py:38`). A root has **no**
 `contains` parent. `route` is recorded here because it is the only node that
 knows: every block below looks identical whether it arrived via `notes` or
 `pandoc-ast`.
@@ -227,13 +225,15 @@ knows: every block below looks identical whether it arrived via `notes` or
 ### 3.4 Entities
 
 Nodes that belong to no containment tree at all —
-`UNCONTAINED = {"file", "blob"}` (`src/records.py:34`). They are pointed at;
-they are inside nothing.
+`UNCONTAINED = {"file", "blob", "alias", "unresolved_citation"}`
+(`src/records.py:43`). They are pointed at; they are inside nothing.
 
 | type | params |
 |---|---|
 | `file` | `path` — a path a session touched |
 | `blob` | `original_name`, `stored_as`, `bytes_sha256`, `imported_at`, `route` |
+| `alias` | `value`, `scheme` — a name that leads to another node |
+| `unresolved_citation` | — (no params) |
 
 **`file` and `blob` are not the same thing and are not to be merged.** A `file`
 is a path some session mentioned; a `blob` is bytes that live in
@@ -245,12 +245,49 @@ join — nothing mints one yet.
 record. Reconstructing a storage path from `params["source"]` is guessing, and
 will guess wrong; `records.blob_of()` is the supported route.
 
+**`alias` and `unresolved_citation` are the citation layer's naming
+machinery** (`compost layer citation`, `src/layers.py`). A citation whose
+target is not in the base cannot become an edge — a dangling endpoint fails
+`check` and would take the whole graph down — so the layer mints an
+`unresolved_citation` placeholder and an `alias` naming it, and points the
+`cites` edge at the placeholder instead:
+
+```json
+{"type": "alias", "created_at": "…", "tool_version": "0.2.4",
+ "params": {"value": "deadbeef-1111-…", "scheme": "uuid-link"}}
+
+{"type": "unresolved_citation", "created_at": "…", "tool_version": "0.2.4"}
+```
+
+**Provenance is top-level on both, exactly as on an edge — never inside
+`params`.** Neither type carries a `content_hash` (§5.9), so putting
+`created_at`/`tool_version` in `params` would have worked for these two, but
+it would set a precedent that breaks the first time a *hashed* node type
+needs provenance, since node hashing is positional over
+`[type, params, content]` and blind to anything else the record carries.
+This is decided once, here; it does not apply to any other node type, whose
+shape (§2, §3.1–3.3) is unchanged by this release.
+
+**One alias and one placeholder per distinct unresolved value, per build.**
+Two citations of the same missing handle in one run of `compost layer
+citation` mint one placeholder and two `cites` edges into it. Running the
+builder again mints a *second*, independent alias/placeholder pair — nothing
+is deduplicated or reused across builds.
+
+**Why the value lives on the alias, not on the placeholder.** `lookup`
+resolves a guid, else an alias, and nothing else; putting a lookup-worthy
+string on `unresolved_citation` itself would force `lookup` to know what that
+type is, a type-specific exception in a mechanism that has none. An alias is
+*any* name that leads to a node, and a placeholder is an ordinary thing to
+name.
+
 ---
 
 ## 4. Edge types, by layer
 
-`layer` says which *kind of statement* an edge is making. Six exist, five of
-them written by `digest`.
+`layer` says which *kind of statement* an edge is making. Seven exist, five of
+them written by `digest`; `citation` is written by `compost layer citation`
+(`src/layers.py`), the base's second writer.
 
 | layer | type | source → destination | written by |
 |---|---|---|---|
@@ -262,7 +299,8 @@ them written by `digest`.
 | `claude-code` | `replies_to` | `turn` → `turn`, **reply order** | " |
 | `ingestion` | `derived_from` | root → `blob` | `store._digest` |
 | `agent` | `launched` | `toolcall` → `session` | `store._link_agents` |
-| `citation` | `cites` | any node → any node | `records.citation_edges` |
+| `citation` | `cites` | any node → any node, or → `unresolved_citation` | `layers._citation` |
+| `citation` | `names` | `alias` → the node it names | `layers._citation` |
 
 **`next` and `replies_to` are both stored, deliberately.** `next` is log order
 and is what regenerates the file; `replies_to` is the conversational truth. The
@@ -270,8 +308,10 @@ two diverge the moment a session has a sidechain, and storing only one means
 guessing the other. Which of them a *view* should follow is still undecided
 (`docs/decisions.md:136`).
 
-**`cites` is defined and not yet minted.** `citation_edges()` exists and is
-tested; nothing in `src/` calls it. See `docs/roadmap.md`, v0.2.4.
+**`names` is how an alias resolves.** Exactly one `names` edge leaves each
+`alias` node, pointing at the node the alias's `params["value"]` stands for —
+today always an `unresolved_citation`, since `uuid-link` is the only scheme
+and it never mints an alias for a value that already resolves.
 
 **A citation is a `Link` node in `content`, never text.** A code block holds
 text with no inlines, so it contains no links and *cannot* contribute a
@@ -283,7 +323,7 @@ times.
 
 ## 5. Invariants
 
-The nine assertions `records.check()` makes over a whole loaded graph. **A view
+The ten assertions `records.check()` makes over a whole loaded graph. **A view
 of a graph that fails any of them is refused, not rendered.**
 
 1. **No guid carries two different records.** Byte-identical duplicates are
@@ -306,6 +346,10 @@ of a graph that fails any of them is refused, not rendered.**
    **nodes only**: present when the node has `content`, or its type is in
    `TEXT_IN_PARAMS` (`CodeBlock`, `RawBlock`); absent otherwise. Edges are not
    inspected by it.
+10. **`schema_version`, when present, is not greater than the one this tool
+    writes.** Absent means 1 by definition, so this can never fire on an
+    existing base; it fires the first time a newer tool's records are loaded
+    by an older one — the only reason the field is read as well as written.
 
 ### The two `content_hash` functions
 
@@ -337,7 +381,7 @@ anything acts on.
 
 ## 6. Closed vocabularies
 
-Three lists are closed in schema 1. Everything else is open.
+Four lists are closed in schema 1. Everything else is open.
 
 **Layers** (§4): `pandoc-ast`, `session`, `claude-code`, `ingestion`, `agent`,
 `citation`.
@@ -348,6 +392,10 @@ extension.** The suffix survives into `storage/` as a decoration for whoever
 pulls the bytes back out, and nothing reads it.
 
 **Authors** on a `turn`: `human`, `assistant`, `envelope`.
+
+**Schemes** — the `by` field on a citation-layer edge and an alias's own
+`params["scheme"]`, naming which resolver produced it: `uuid-link`, the only
+one `compost layer citation` knows (`BUILDERS["citation"]`, `src/layers.py`).
 
 ---
 
@@ -388,13 +436,22 @@ Seven guarantees, each sabotage-verified:
    updated to say so.
 7. The assembled base passes `records.check()`.
 
-Current coverage: **33 node types, 8 edge pairs, 372 nodes.** The one documented
-edge pair not exercised is `citation` / `cites`, which nothing in `src/` mints
-yet (`docs/roadmap.md`, v0.2.4).
+Current coverage: **35 node types, 10 edge pairs, 377 nodes.** `citation` /
+`cites` and `citation` / `names` are exercised by a document written *inside
+the test itself* — `tests/test_grammar.py`'s `build()` digests the fixtures,
+reads a real block guid out of the base, writes a temporary document citing
+that guid and a fabricated one, digests it, and runs `compost layer citation`
+over the whole thing, so both branches of the layer (a resolved edge, and an
+`alias`/`unresolved_citation` pair for the one that does not resolve) are
+exercised without a committed fixture that would have to hard-code a guid
+that could never actually resolve in a fresh base. The *not yet minted* list
+(§8, item 6) is empty as of v0.2.4 — it held `("citation", "cites")` while
+`citation_edges()` was defined and tested but called by nothing in `src/`.
 
-Two fixtures exist for this and nothing else. Before them the fixtures reached
-28 of the 33 types, and `CodeBlock`, `RawBlock`, `BlockQuote`, `Div` and
-`contentblock` were documented from the code alone:
+Two fixtures exist for the base-constructor coverage below and nothing else.
+Before them the fixtures reached 28 of the 33 pre-v0.2.4 types, and
+`CodeBlock`, `RawBlock`, `BlockQuote`, `Div` and `contentblock` were documented
+from the code alone:
 
 - **`tests/fixtures/grammar/all-constructors.md`** — one instance of every block
   constructor the `notes` reader emits. It is also swept by `test_records.py`,
