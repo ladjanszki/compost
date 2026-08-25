@@ -14,9 +14,9 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src import bleach_session as B    # noqa: E402
+from tools import bleach_session as B    # noqa: E402
 from tests import tier as T  # noqa: E402
-from src.bleach import LOREM      # noqa: E402
+from tools.bleach import LOREM      # noqa: E402
 
 FIXTURES = T.sessions()
 

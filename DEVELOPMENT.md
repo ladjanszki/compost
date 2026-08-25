@@ -14,6 +14,7 @@ src/            the implementation
                 (citations today), the base's second writer after digest
   views.py      the three views, and the per-node-type view dispatch
   serve.py      a static server over the HTML view; renders nothing
+tools/          committed scripts that are not the tool, and never installed
   bleach.py     lorem-ise a markdown file, keep the formatting
   bleach_session.py   the same for a transcript
   roundtrip.py  the pandoc-only fixed-point harness
@@ -29,6 +30,14 @@ tests/          one suite per property; ./tests/run.sh runs them all
 docs/           man page, decisions, record format, the original drafts
 vendor/         pandoc-types, cloned to read the AST grammar; no test uses it
 ```
+
+**Every module in `src/` is reachable from `cli.py`, and that is the entry
+rule.** `pyproject.toml` says `packages = ["src"]`, so anything put there is
+installed into the environment of everyone who runs `pip install -e .` —
+which is the wrong home for a fixture bleacher or a one-off migration script.
+Those live in `tools/`, which is importable from a checkout and installed
+nowhere. Until v0.2.5 the bleachers and the round-trip harness sat in `src/`
+and shipped with the package for no reason at all.
 
 The test material is in two tiers. The **smoke set** under `tests/fixtures/`
 is committed, ~80 KB, and holds the documents the suites name directly — the

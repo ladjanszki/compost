@@ -14,7 +14,7 @@ records_to_ast(ast_to_records(ast)) == ast
 ```
 
 Exact equality on the pandoc AST, for every document in `fixtures/` and
-`corpus/`. This is the same test `src/roundtrip.py` already runs against
+`corpus/`. This is the same test `tools/roundtrip.py` already runs against
 pandoc alone, with our format spliced into the middle:
 
 ```
@@ -414,7 +414,7 @@ clever about it in advance.
 
 ## How this gets tested
 
-Extend `src/roundtrip.py` with a second stage, reusing every fixture:
+Extend `tools/roundtrip.py` with a second stage, reusing every fixture:
 
 1. `ast_to_records`, then `records_to_ast`, assert equality with the input AST.
 2. Assert every node has exactly one incoming `contains`, except document roots.

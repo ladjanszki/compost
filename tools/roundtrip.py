@@ -13,7 +13,7 @@ failures that are not losses. What must survive is what the graph stores, and
 the graph stores the AST.
 
 Usage:
-    python3 -m src.roundtrip [path ...]          default: tests/fixtures/
+    python3 -m tools.roundtrip [path ...]          default: tests/fixtures/
 """
 import json
 import subprocess
