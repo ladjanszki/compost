@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.5 — unreleased — the legacy handle scheme
+## v0.2.5 — 2026-08-25 — tools/, and the legacy handle scheme
 
 ### `compost layer citation --by kg-8hex` — the v0.1 handle scheme
 
