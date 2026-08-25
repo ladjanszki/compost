@@ -361,8 +361,8 @@ citation survives as text, unescaped.
 | | |
 |---|---|
 | files parsed by `-f djot` | **23 / 23** |
-| blocks carrying their 8-hex handle as an AST `id` | **6,741** |
-| distinct ids — the collision check, done | **6,741, zero duplicates** |
+| blocks carrying their 8-hex handle as an AST `id` | **5,834** |
+| distinct ids — the collision check, done | **5,834, zero duplicates** |
 | escaped citations surviving as text | 206 |
 | bare handles inside fenced code / code spans | 948 / 226 |
 | **bare handles in prose — the only loss** | **13** |
@@ -380,7 +380,7 @@ happens at the head of **every** turn, making the dictionary ambiguous for the
 first block of each. Djot loses 13 occurrences; markdown mangles ~2,400 turn
 heads.
 
-**The dictionary is a direct read of the AST** — 6,741 `(id, block)` pairs, no
+**The dictionary is a direct read of the AST** — 5,834 `(id, block)` pairs, no
 text matching, no positional alignment, no folding rule, nothing fuzzy.
 
 ### `--by kg-8hex` — shipped in v0.2.5
@@ -517,7 +517,7 @@ planned well after this window and will cover it.
 
 **The material is private but measured.** The v0.1 corpus was removed from this
 repository's history, not merely deleted, and is kept privately — 23 `.dj` files
-holding 6,741 handles. Everything in this section is measured against those files;
+holding 5,834 handles. Everything in this section is measured against those files;
 nothing here is a guess about their shape any more.
 
 No version number, because it changes no code.
@@ -540,7 +540,7 @@ Steps:
 3. `compost layer citation --by kg-8hex`.
 4. Commit the dictionary script and its output as ordinary files.
 
-**The collision check is already done.** 6,741 ids, 6,741 distinct — zero
+**The collision check is already done.** 5,834 ids, 5,834 distinct — zero
 duplicates across the whole corpus. That was listed as a thing to confirm before
 minting anything; it is confirmed.
 
@@ -548,7 +548,7 @@ minting anything; it is confirmed.
 will not say these came from djot. Put the exact pandoc invocation, and the
 generating script's name, into the `alias` records the script writes.
 
-**Back up the corpus before running any of this.** It is the only copy of 6,741
+**Back up the corpus before running any of this.** It is the only copy of 5,834
 handles' worth of history, and the migration is the first thing that will read it
 in anger.
 
@@ -556,6 +556,45 @@ in anger.
 count of prose-quoted example handles recorded rather than silently absorbed; and
 the recall of the citation match measured, not assumed — the first draft of this
 section assumed it and was 42% wrong.
+
+### The dry run — done before v0.2.5 was tagged
+
+The whole procedure was executed against the real corpus, read-only, into a
+scratch base outside the repository. Not the migration: no base was kept. This
+is the acceptance test this section asks for, run **before** tagging, because
+two earlier drafts of the parser were argued from constructed samples and both
+were wrong.
+
+| step | result |
+|---|---|
+| `pandoc -f djot -t json`, 23 files | **23 parsed, 0 failed** |
+| `compost digest --as=pandoc-ast` | 10,973 nodes, 15,880 edges, **0 problems** |
+| 8-hex ids in the AST | **5,834**, zero collisions — and the same count at record level, so `digest` loses none |
+| dictionary from the digested graph | 5,834 aliases, 11,668 records |
+| `compost layer citation --by kg-8hex` | **206 cites edges**, 0 ambiguous |
+| — resolving to a real block | **110** |
+| — into a placeholder | 96, across **74 distinct handles** |
+| `compost check` afterwards | 16,955 nodes, 21,994 edges, **0 problems** |
+| built three times | identical every run: 206 cites, 110 resolved |
+
+**206 matches this section's predicted count exactly.** So does 159 distinct
+cited handles, the figure `docs/migration.md` has carried since v0.1. The block
+count did not: it said 6,741 and the corpus holds 5,834. Corrected everywhere.
+
+**47% of surviving citations point outside the corpus** — 96 of 206
+occurrences, 74 of 159 handles. These are ordinary prose citations, *"just as
+in {#6daeba36}"*, naming blocks that are not among the 23 files. Not an error
+and not a parser fault: it is what the corpus is. Without placeholders those 96
+citations would vanish on import and nobody would know a reference had ever
+been there, which is the argument for the two node types v0.2.4 added, made in
+numbers.
+
+**The resolver rule holds at scale.** Three consecutive builds each produced
+206 cites and 110 resolutions, with 74 placeholders added per run and never
+consulted by the next. Accumulation is linear in build count, as designed.
+
+**Whole-`Str` equality would have found 127 of the 206** — 38.3% lost, matching
+the 40% measured on the test material.
 
 ### The residual risk, which cannot be engineered away
 
@@ -1012,7 +1051,7 @@ labelled *Verified* or *Measured*, and the label is what stopped anyone looking
 again. Every remaining number was taken from a real base or a real corpus.
 
 *Closed by measuring the v0.1 corpus:* the `.dj` files' shape, the ingest route,
-the handle-collision check (6,741 distinct, zero duplicates), and the assignment
+the handle-collision check (5,834 distinct, zero duplicates), and the assignment
 rule, which turned out not to be needed at all.
 
 *Closed by spiking graphviz and duckdb:* the SVG `id` question — it survives, and

@@ -57,6 +57,30 @@ Two aliases naming two *different* real blocks is **ambiguous**: the handle
 mints nothing and the run says so, because a handle that mints no record looks
 exactly like one nobody cited.
 
+#### Measured against the real v0.1 corpus before tagging
+
+The scheme was exercised end to end on the 23 private `.dj` files, read-only,
+into a scratch base that was then discarded — not the migration, its rehearsal.
+All 23 parse as djot; `digest --as=pandoc-ast` produces 10,973 nodes with zero
+`check` problems; the AST carries **5,834 handles with zero collisions**, and
+the record level agrees, so nothing is lost on the way in.
+
+`compost layer citation --by kg-8hex` then minted **206 cites edges, 110 of
+them to real blocks**, with 96 into 74 placeholders and nothing ambiguous.
+Built three times, identical each time — the rule that a build never follows
+its own placeholders holds at 5,834 aliases, and accumulation stays linear.
+
+Two predictions survived to the digit: 206 surviving citations and 159 distinct
+cited handles. One did not — the corpus was recorded as 6,741 blocks and holds
+5,834. That figure was labelled *Measured* in three documents and is corrected
+in all of them.
+
+**47% of the corpus's surviving citations point outside it**: 96 occurrences
+across 74 handles name blocks that are not in the 23 files. Ordinary prose
+references, not parser errors. Without the placeholder types added in v0.2.4
+they would vanish silently on import, which is that design's justification
+stated in numbers rather than in principle.
+
 #### `--by` now has a written-down default
 
 `DEFAULT_BY` names `uuid-link` per layer. Until now `citation` had a single

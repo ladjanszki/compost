@@ -678,8 +678,8 @@ Div  id=376c3ce7  class=turn  author=human  turn=019ff17b-…
 | | |
 |---|---|
 | files parsed by `-f djot` | 23 / 23 |
-| blocks carrying their handle as an AST `id` | **6,741** |
-| distinct ids | 6,741 — **zero collisions** |
+| blocks carrying their handle as an AST `id` | **5,834** |
+| distinct ids | 5,834 — **zero collisions** |
 | escaped citations surviving as text | 206 |
 | bare handles in fenced code / code spans | 948 / 226 |
 | **bare handles in prose — the only loss** | **13** (~0.15%) |
