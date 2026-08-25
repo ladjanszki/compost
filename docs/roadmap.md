@@ -361,8 +361,9 @@ citation survives as text, unescaped.
 | | |
 |---|---|
 | files parsed by `-f djot` | **23 / 23** |
-| blocks carrying their 8-hex handle as an AST `id` | **5,834** |
-| distinct ids — the collision check, done | **5,834, zero duplicates** |
+| handles assigned in the text, outside code fences | **6,601** |
+| of those, surviving `pandoc -f djot` untreated | 5,834 — **767 dropped**, see the dry run |
+| distinct ids after `tools/dj_prepare` — the collision check, done | **6,601, zero duplicates** |
 | escaped citations surviving as text | 206 |
 | bare handles inside fenced code / code spans | 948 / 226 |
 | **bare handles in prose — the only loss** | **13** |
@@ -380,7 +381,7 @@ happens at the head of **every** turn, making the dictionary ambiguous for the
 first block of each. Djot loses 13 occurrences; markdown mangles ~2,400 turn
 heads.
 
-**The dictionary is a direct read of the AST** — 5,834 `(id, block)` pairs, no
+**The dictionary is a direct read of the AST** — 6,601 `(id, block)` pairs, no
 text matching, no positional alignment, no folding rule, nothing fuzzy.
 
 ### `--by kg-8hex` — shipped in v0.2.5
@@ -517,7 +518,7 @@ planned well after this window and will cover it.
 
 **The material is private but measured.** The v0.1 corpus was removed from this
 repository's history, not merely deleted, and is kept privately — 23 `.dj` files
-holding 5,834 handles. Everything in this section is measured against those files;
+holding 6,601 handles. Everything in this section is measured against those files;
 nothing here is a guess about their shape any more.
 
 No version number, because it changes no code.
@@ -532,7 +533,9 @@ compost digest --as=pandoc-ast old.json
 
 Steps:
 
-1. `pandoc -f djot -t json`, then `compost digest --as=pandoc-ast`.
+1. `python3 -m tools.dj_prepare CORPUS OUTDIR` — without it 767 handles are
+   lost silently — then `pandoc -f djot -t json` and `compost digest
+   --as=pandoc-ast`. `--verify` asserts every assigned handle survived.
 2. A one-off external script builds the dictionary from the **digested graph** —
    every block whose `attr` id is 8 hex characters maps that handle to the block's
    guid — and emits `alias` nodes and `names` edges as JSONL. Copy the file under
@@ -540,7 +543,7 @@ Steps:
 3. `compost layer citation --by kg-8hex`.
 4. Commit the dictionary script and its output as ordinary files.
 
-**The collision check is already done.** 5,834 ids, 5,834 distinct — zero
+**The collision check is already done.** 6,601 ids, 6,601 distinct — zero
 duplicates across the whole corpus. That was listed as a thing to confirm before
 minting anything; it is confirmed.
 
@@ -548,7 +551,7 @@ minting anything; it is confirmed.
 will not say these came from djot. Put the exact pandoc invocation, and the
 generating script's name, into the `alias` records the script writes.
 
-**Back up the corpus before running any of this.** It is the only copy of 5,834
+**Back up the corpus before running any of this.** It is the only copy of 6,601
 handles' worth of history, and the migration is the first thing that will read it
 in anger.
 
@@ -565,29 +568,89 @@ is the acceptance test this section asks for, run **before** tagging, because
 two earlier drafts of the parser were argued from constructed samples and both
 were wrong.
 
-| step | result |
-|---|---|
-| `pandoc -f djot -t json`, 23 files | **23 parsed, 0 failed** |
-| `compost digest --as=pandoc-ast` | 10,973 nodes, 15,880 edges, **0 problems** |
-| 8-hex ids in the AST | **5,834**, zero collisions — and the same count at record level, so `digest` loses none |
-| dictionary from the digested graph | 5,834 aliases, 11,668 records |
-| `compost layer citation --by kg-8hex` | **206 cites edges**, 0 ambiguous |
-| — resolving to a real block | **110** |
-| — into a placeholder | 96, across **74 distinct handles** |
-| `compost check` afterwards | 16,955 nodes, 21,994 edges, **0 problems** |
-| built three times | identical every run: 206 cites, 110 resolved |
+Run twice: once as specified, which is how the reader defect below was found,
+and again with `tools/dj_prepare` in front of pandoc. The second column is the
+procedure that will actually run.
+
+| step | as specified | with `dj_prepare` |
+|---|---|---|
+| `pandoc -f djot -t json`, 23 files | **23 parsed, 0 failed** | 23, 0 failed |
+| `compost digest --as=pandoc-ast` | 10,973 nodes, **0 problems** | 12,466 nodes, **0 problems** |
+| 8-hex ids reaching the AST | 5,834 — **767 short** | **6,601**, zero collisions |
+| the dictionary | 5,834 aliases | **6,601 aliases** |
+| `compost layer citation --by kg-8hex` | 206 cites, 0 ambiguous | 206 cites, 0 ambiguous |
+| — resolving to a real block | 110 — **53%** | **197 — 96%** |
+| — into a placeholder | 96, across 74 handles | **9, across 7 handles** |
+| `compost check` afterwards | **0 problems** | 19,081 nodes, **0 problems** |
+| built three times | identical every run | identical every run |
+
+The record count matching the AST count in both runs is what proves `digest`
+loses nothing: the 767 were already gone before compost saw them.
 
 **206 matches this section's predicted count exactly.** So does 159 distinct
-cited handles, the figure `docs/migration.md` has carried since v0.1. The block
-count did not: it said 6,741 and the corpus holds 5,834. Corrected everywhere.
+cited handles, the figure `docs/migration.md` has carried since v0.1.
 
-**47% of surviving citations point outside the corpus** — 96 of 206
-occurrences, 74 of 159 handles. These are ordinary prose citations, *"just as
-in {#6daeba36}"*, naming blocks that are not among the 23 files. Not an error
-and not a parser fault: it is what the corpus is. Without placeholders those 96
-citations would vanish on import and nobody would know a reference had ever
-been there, which is the argument for the two node types v0.2.4 added, made in
-numbers.
+**The block count did not, and the first correction was also wrong.** The
+recorded figure was 6,741; the dry run emitted 5,834 and this section briefly
+said the corpus "holds 5,834". It does not. 5,834 is what *pandoc emits*. The
+corpus assigns **6,601** handles outside code fences, and the gap was a defect,
+not a counting error — see below. A number relabelled without asking why it
+moved is the same failure as a number never measured.
+
+### The reader drops a list item's handle — 767 of them
+
+`pandoc -f djot` **silently drops a block attribute at the start of a list item
+when a blank line separates it from the item's content.** The v0.1 canonizer
+wrote every handled list item that way:
+
+```
+- {#1221ba74}
+
+  Volume. One session in that directory is 2.8 MB, because …
+```
+
+The text survives; only the identity is lost, so nothing looks wrong anywhere.
+Every one of the 767 lost handles has this single cause — no second pattern
+exists in the corpus — and 74 of the 159 distinct cited handles were among them.
+
+`tools/dj_prepare.py` deletes that one blank line on a **copy**. The handle then
+becomes a `Div` wrapping the item's content, which is what every other handled
+block already is, so the result is more uniform rather than less.
+`tests/test_dj_prepare.py` asserts the defect against the live pandoc, so the
+day a release fixes it the suite says the repair can be retired.
+
+**This repairs pandoc's input, never its output.** `CLAUDE.md` forbids the
+latter because patching an emitted AST breaks the round-trip by construction.
+This runs before pandoc reads anything and the round-trip is untouched.
+
+| | before | after |
+|---|---|---|
+| handles surviving | 5,834 | **6,601** |
+| citations resolving | 110 / 206 — 53% | **197 / 206 — 96%** |
+
+**96% is the ceiling, and the remaining 9 are genuinely unresolvable.** Six
+handles are cited up to 17 times each and assigned nowhere in the 23 files; one
+appears only inside quoted JSON in a code fence. They are what
+`unresolved_citation` is for — and the honest count of it is 9, not 96.
+
+### `commonmark_x` was measured, and rejected
+
+It reads `{#id}` too, so it would need no repair at all — worth testing rather
+than assuming, since the reader question had already been answered wrongly twice.
+
+| reader | ids | citations resolving | turn divs | `:::` left as text |
+|---|---|---|---|---|
+| djot | 5,834 | 110/206 — 53% | 1,461 | 2 |
+| **djot + `dj_prepare`** | **6,601** | **197/206 — 96%** | **1,461** | **2** |
+| commonmark_x | 6,166 | 207/207 | 1,291 | **4,251** |
+
+**Its 100% is inflated.** It mints ids for handles that are assigned nowhere in
+the corpus — as empty inline `Span`s — so those citations resolve to nothing
+real. All seven of the provably-undefined handles get one. And it leaves 4,251
+`:::` fences as literal text while losing 170 turn divs, which is the structural
+objection this document raised against the markdown reader, confirmed by a
+different mechanism than the one predicted. A 96% that is true beats a 100% that
+is partly fabricated.
 
 **The resolver rule holds at scale.** Three consecutive builds each produced
 206 cites and 110 resolutions, with 74 placeholders added per run and never
@@ -1051,7 +1114,7 @@ labelled *Verified* or *Measured*, and the label is what stopped anyone looking
 again. Every remaining number was taken from a real base or a real corpus.
 
 *Closed by measuring the v0.1 corpus:* the `.dj` files' shape, the ingest route,
-the handle-collision check (5,834 distinct, zero duplicates), and the assignment
+the handle-collision check (6,601 distinct, zero duplicates), and the assignment
 rule, which turned out not to be needed at all.
 
 *Closed by spiking graphviz and duckdb:* the SVG `id` question — it survives, and

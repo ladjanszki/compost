@@ -678,8 +678,9 @@ Div  id=376c3ce7  class=turn  author=human  turn=019ff17b-…
 | | |
 |---|---|
 | files parsed by `-f djot` | 23 / 23 |
-| blocks carrying their handle as an AST `id` | **5,834** |
-| distinct ids | 5,834 — **zero collisions** |
+| handles assigned in the text | **6,601** |
+| surviving `pandoc -f djot` untreated | 5,834 — 767 dropped from list items |
+| distinct ids after `tools/dj_prepare` | 6,601 — **zero collisions** |
 | escaped citations surviving as text | 206 |
 | bare handles in fenced code / code spans | 948 / 226 |
 | **bare handles in prose — the only loss** | **13** (~0.15%) |

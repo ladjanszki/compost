@@ -9,18 +9,18 @@ numbers are measured, not estimated.
 
 ## Why it matters more than it looks
 
-The tool being thrown away was the easy half. The corpus is **5,834** blocks
+The tool being thrown away was the easy half. The corpus is **6,601** blocks
 with **159** of them cited by handle, and the reasoning behind every decision
 in v0.2 lives in it.
 
-> **Corrected in v0.2.5.** This said *6,741 blocks*. Measured by parsing all 23
-> `.dj` files with `pandoc -f djot -t json` and counting AST ids, the number is
-> **5,834**, and it is the same at record level after `digest --as=pandoc-ast`,
-> so nothing is lost on the way in. The collision check still passes — 5,834
-> ids, 5,834 distinct, zero duplicates. The *159 cited handles* was right to the
-> digit. `docs/roadmap.md` and `docs/decisions.md` carried the wrong figure too
-> and are corrected; it was labelled *Measured* in both, which is the exact
-> failure those documents warn about twice. Without a migration, v0.2 is a nicer program that knows nothing,
+> **Corrected in v0.2.5, twice.** This said *6,741 blocks*. The first correction
+> put it at **5,834** — the count of ids `pandoc -f djot` emits — and that was
+> wrong in a more interesting way than the original: the reader silently drops a
+> block attribute opening a list item, so 767 handles never reach the AST. The
+> corpus assigns **6,601** handles outside code fences, all distinct, zero
+> collisions, and `tools/dj_prepare.py` recovers every one. The *159 cited
+> handles* was right to the digit all along. See `docs/roadmap.md`, "The reader
+> drops a list item's handle". Without a migration, v0.2 is a nicer program that knows nothing,
 and every handle in `CLAUDE.md`, in `docs/`, in commit messages and in the
 conversations themselves points at nothing.
 

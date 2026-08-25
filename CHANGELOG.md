@@ -71,15 +71,50 @@ Built three times, identical each time — the rule that a build never follows
 its own placeholders holds at 5,834 aliases, and accumulation stays linear.
 
 Two predictions survived to the digit: 206 surviving citations and 159 distinct
-cited handles. One did not — the corpus was recorded as 6,741 blocks and holds
-5,834. That figure was labelled *Measured* in three documents and is corrected
-in all of them.
+cited handles. The recorded block count of 6,741 did not, and the first attempt
+to correct it — to 5,834 — was also wrong: that is what *pandoc emits*, not what
+the corpus holds. The corpus assigns **6,601** handles outside code fences, and
+the gap between the two numbers was the defect below rather than a counting
+error. Corrected to 6,601 in all three documents.
 
-**47% of the corpus's surviving citations point outside it**: 96 occurrences
-across 74 handles name blocks that are not in the 23 files. Ordinary prose
-references, not parser errors. Without the placeholder types added in v0.2.4
-they would vanish silently on import, which is that design's justification
-stated in numbers rather than in principle.
+Then a second pass found the first pass had been wrong about *why* 96 of those
+citations failed to resolve. They do not point outside the corpus. **`pandoc
+-f djot` silently drops a block attribute at the start of a list item when a
+blank line separates it from the content** — which is how the v0.1 canonizer
+wrote every handled list item:
+
+```
+- {#1221ba74}
+
+  Volume. One session in that directory is 2.8 MB, because …
+```
+
+The text survives and only the identity is lost, so nothing looks wrong. It
+costs **767 of 6,601 handles, 11.6%**, and 74 of the 159 distinct cited handles
+were among them.
+
+`tools/dj_prepare.py` deletes that one blank line on a **copy** — sources are
+never opened for writing — and the handle becomes a `Div` wrapping the item's
+content, which is what every other handled block in the corpus already is. This
+repairs pandoc's *input*; `CLAUDE.md` forbids repairing its output, and the
+round-trip property is untouched because whatever pandoc emits is still
+reproduced exactly.
+
+| | before | after |
+|---|---|---|
+| handles surviving | 5,834 | **6,601** |
+| citations resolving | 110 / 206 — 53% | **197 / 206 — 96%** |
+
+**The remaining 9 are genuinely unresolvable and the ceiling is 96%**: six
+handles are cited up to 17 times each and assigned nowhere in the 23 files, and
+one appears only inside quoted JSON in a code fence.
+
+`commonmark_x` was measured against this, since it reads `{#id}` too and would
+need no repair. It resolves 207/207 — and the number is inflated. It mints ids
+for handles that are assigned nowhere, as **empty inline `Span`s**, so those
+citations resolve to nothing real. It also leaves **4,251 `:::` fences as
+literal text** and loses 170 turn divs. The djot reader's 96%, honestly earned,
+beats a 100% that includes false matches and destroys turn structure.
 
 #### `--by` now has a written-down default
 

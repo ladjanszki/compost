@@ -78,7 +78,8 @@ test_lookup              12/12 lookup guarantees hold
 test_serve               9/9 serve guarantees hold
 test_manpage             6/6 man-page guarantees hold
 test_grammar             7/7 grammar guarantees hold  |  35 node types, 10 edge pairs, 377 nodes
-test_layer               8/8 layer guarantees hold
+test_layer               16/16 layer guarantees hold
+test_dj_prepare          8/8 dj_prepare guarantees hold
 corpus                   present, 520 documents
 ```
 
