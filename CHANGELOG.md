@@ -3,6 +3,26 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.5 — unreleased — the legacy handle scheme
+
+### `tools/` — what is not the tool stops shipping with it
+
+`pyproject.toml` declares `packages = ["src"]`, so every module in `src/` was
+installed into the environment of anyone running `pip install -e .`. Three had
+no business being there: `bleach.py` and `bleach_session.py` lorem-ise
+fixtures, and `roundtrip.py` is the pandoc fixed-point harness. None is
+reachable from `cli.py`, which dispatches only to `store`, `views`, `layers`
+and `serve` — yet all three shipped.
+
+They now live in `tools/`, importable from a checkout and installed nowhere.
+`python3 -m src.roundtrip` becomes `python3 -m tools.roundtrip`; nothing else
+a user runs changes.
+
+The rule behind it is written into `DEVELOPMENT.md` rather than left implicit:
+**every module in `src/` is reachable from `cli.py`.** The migration's
+dictionary script is a one-off that must never become a subcommand, so it
+needed a home that is not `src/` before it was written.
+
 ## v0.2.4 — 2026-08-24 — the citation layer, and the naming machinery it needs
 
 `records.citation_edges()` was written, tested, and never called by anything
