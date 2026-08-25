@@ -195,18 +195,23 @@ What it enforces:
 
 Derive new records from the base **itself**, rather than from bytes nobody
 has seen before — `digest`'s job. Bare `compost layer` lists what can be
-built; today that is one thing:
+built, and by which schemes:
 
 ```
-compost layer citation [--by uuid-link]
+compost layer citation [--by uuid-link]   the current syntax  (the default)
+compost layer citation --by kg-8hex       v0.1 legacy handles (opt-in)
 ```
 
-Reads every `[-](#guid)` link in the base and mints a `cites` edge for every
-one that resolves. A target not yet in the base cannot become an edge — a
-dangling endpoint would fail `check` — so instead it mints one `alias` node
-(naming the missing value) and one `unresolved_citation` node it points at,
-per *distinct* unresolved value in the run, and a `cites` edge from the
-citing block to that placeholder.
+**`--by` names how a citation is recognised, and it defaults to `uuid-link`.**
+The default is written down rather than being "the only scheme there is", so
+adding the second one did not turn a bare `compost layer citation` into an
+error.
+
+Either scheme mints a `cites` edge for every citation that resolves. A target
+not in the base cannot become an edge — a dangling endpoint would fail
+`check` — so instead it mints one `alias` node (naming the missing value) and
+one `unresolved_citation` node it points at, per *distinct* unresolved value
+in the run, and a `cites` edge from the citing block to that placeholder.
 
 Prints a line like:
 
@@ -215,6 +220,56 @@ Prints a line like:
     deadbeef-0000-0000-0000-000000000000
     …
 ```
+
+#### --by uuid-link
+
+Reads every `[-](#guid)` link in the base. A citation is a `Link` node, so
+reading the parsed content — never the raw text — is what makes "handles
+inside code blocks are not citations" true by construction.
+
+#### --by kg-8hex
+
+Reads the v0.1 syntax, `{#a3f2b1c4}`, in the three forms the old corpus
+writes: bare, with the expansion marker `{#a3f2b1c4+++}`, and with a version
+pin `{#a3f2b1c4@ver}`. All three name the same handle; the suffix is not part
+of the name.
+
+**Nothing is rewritten.** The old syntax stays exactly as authored, on disk
+and at render time. This adds a way to look it up and nothing else.
+
+The match runs *within* each `Str` of the parsed content, not against whole
+tokens, because real prose puts punctuation after a citation — `{#aa813aa9}.`,
+`({#b1c2d3e4}),`. Exclusions are structural rather than rules: a `Code` node's
+text is a bare string and a code block's lives in `params["text"]`, neither of
+which is ever a `Str`, so handles quoted inside code contribute nothing.
+`{#xxxxxxxx}`, `{#handle}`, `{#uuid:hash}` and `{#...}` are excluded because
+they are not eight hexadecimal characters.
+
+An 8-hex handle is not a guid, so it resolves through an **alias dictionary**
+— `alias` nodes with `scheme: kg-8hex` and a `names` edge to the real block —
+which arrives from outside the tool. That makes a `kg-8hex` placeholder
+genuinely resolvable, unlike a `uuid-link` one: build before the dictionary
+lands and every handle gets a placeholder; add it, rebuild, and the same
+handles mint real edges. The earlier placeholder is kept, as the record of a
+moment when it did not resolve.
+
+A `names` edge pointing at an `unresolved_citation` is never followed, so a
+build's own placeholders can never become the next build's answer.
+
+If two aliases name two *different* real blocks for one handle, the handle is
+**ambiguous**: it mints nothing and is reported.
+
+```
+  4 cites edges  |  1 unresolved -> 1 placeholder
+    e5f6a7b8
+  1 ambiguous, minted nothing:
+    a1b2c3d4 -> 2 distinct targets
+```
+
+**This scheme is opt-in and is never the default.** It recognises eight hex
+characters in prose, so a conversation that says in words "handles look like
+`{#a3f2b1c4}`" mints a real edge when that string is also a real handle.
+Nothing structural excludes it, which is why choosing it has to be deliberate.
 
 **Running it twice writes two complete sets of records.** `layer` does not
 read what a previous run wrote, so nothing is deduplicated and nothing is

@@ -135,7 +135,14 @@ shaped the way it is, never as a description of the current tool.
   until v0.2.2, where the fallback was not "markdown" but "anything at all".
   `src/routes.py` is the only place that knows how to read anything.
 - **Do not hand-edit `.compost/graph/`.** Write through `compost digest`, so the
-  invariants hold and the records stay canonical.
+  invariants hold and the records stay canonical. **Two narrow exceptions**,
+  reasoned in `docs/decisions.md`: a *generated* file of valid JSONL may be
+  written under `graph/` — the alias dictionary is one, and a script producing
+  records with ordinary Python is not different in kind from `digest` doing it —
+  and a *whole* file that one `compost layer` run wrote may be deleted, which is
+  the only inverse the design offers for accumulation it never removes. `check`
+  is the enforcement, not the identity of the writer. Editing a line inside an
+  existing file is still banned, and there is no `compost layer alias`.
 - **Add a test with a property, not a snapshot.** Every suite in `tests/` states
   something that must be true and has been made to fail on purpose.
   `tests/test_sabotage.py` is the pattern.

@@ -704,9 +704,28 @@ how a reader treats material is only verified against that material.**
 
 ## Citation matching is `finditer` within a `Str`, not whole-`Str` equality
 
-Measured over the 18 documents in this repo carrying real v0.1 handles: **135 are
-a whole `Str` exactly, 98 are embedded** in a larger token — `{#aa813aa9}.`,
-`{#93360c21},`, `{#330f8531}:`. Whole-token matching has **57.9% recall**.
+Measured at design time over the 18 documents in this repo carrying real v0.1
+handles: **135 a whole `Str` exactly, 98 embedded** in a larger token —
+`{#aa813aa9}.`, `{#93360c21},`, `{#330f8531}:`. Whole-token matching had
+**57.9% recall**.
+
+**Re-measured after implementing it, through `records.legacy_handle_refs`
+rather than the pattern alone**, over `tests/fixtures/notes/` plus the fetched
+corpus:
+
+| | |
+|---|---|
+| occurrences the reader finds | **242** |
+| occurrences whole-`Str` equality would find | 144 |
+| **lost by equality** | **98, or 40%** |
+
+Same finding, larger material — the corpus has grown since the first number was
+taken, so the totals differ and the conclusion does not. `tests/test_layer.py`
+asserts `found > whole > 0` by **calling the reader**, not by running the regex:
+a first draft measured the pattern directly and went on passing with the reader
+switched back to equality, which is the exact failure this entry exists to
+prevent. It states its tier, so a bare clone's smaller count is never mistaken
+for the corpus figure.
 
 A draft specified whole-token equality on the strength of one hand-written example
 with spaces on both sides. Real prose puts punctuation after a citation, and in
@@ -717,4 +736,11 @@ walked — are unaffected.
 
 It must also cover all four legacy forms, not just the bare one: `{#8hex}`,
 `{#8hex+++}`, `{#8hex@ver}`, and the metasyntactic `{#handle}` / `{#uuid:hash}` /
-`{#xxxxxxxx}` / `{#...}`, which must **not** become citations.
+`{#xxxxxxxx}` / `{#...}`, which must **not** become citations. Shipped in
+v0.2.5, and the exclusions cost no code: the three real forms differ only by a
+suffix that is not part of the name, and every decoy fails `[0-9a-f]{8}`.
+
+**Exactly eight, never more.** `{#a1b2c3d4e5}` must not match, so the pattern
+closes on `}` immediately after the eight characters or after one known suffix.
+Nothing in the corpus depends on this; it is cheap to state and expensive to
+discover missing.

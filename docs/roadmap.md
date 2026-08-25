@@ -12,7 +12,7 @@ disagree, the changelog is right and this file is stale.
 | release | what it is |
 |---|---|
 | **v0.2.4** | `schema_version`, edge provenance, and the citation layer with its naming machinery |
-| **v0.2.5** | the legacy handle scheme — then the v0.1 migration runs, as a procedure |
+| **v0.2.5** | `tools/`, the legacy handle scheme — then the v0.1 migration runs, as a procedure |
 | **v0.2.6** | the conversation loop |
 | **v0.2.7** | a graph view: DOT always, SVG when graphviz is installed |
 | **v0.2.8** | a query layer over the records |
@@ -383,7 +383,19 @@ heads.
 **The dictionary is a direct read of the AST** — 6,741 `(id, block)` pairs, no
 text matching, no positional alignment, no folding rule, nothing fuzzy.
 
-### `--by kg-8hex`
+### `--by kg-8hex` — shipped in v0.2.5
+
+**Built, and re-measured through the reader rather than the pattern.** Over
+`tests/fixtures/notes/` plus the fetched corpus, `records.legacy_handle_refs`
+finds **242 occurrences where whole-`Str` equality finds 144** — 98 of them,
+40%, lost in silence. The design-time figures below were taken over a smaller
+set and reached the same conclusion; both are kept, since the point of the
+entry is that the first draft got it wrong by not measuring at all.
+
+`tests/test_layer.py` grew from 8 properties to 16. Two of the new ones passed
+their first sabotage and had to be rewritten: one measured the regex instead of
+calling the reader, the other ran on a base carrying no legacy handles.
+
 
 **Match `\{#[0-9a-f]{8}\}` *within* each `Str`, never as whole-`Str` equality.**
 Measured over the 18 documents in this repo that carry real v0.1 handles:
@@ -553,19 +565,13 @@ Nothing structural excludes it. It is why the legacy scheme stays opt-in and
 never the default. Count the cases once when the dictionary is built: a handful
 is a footnote, forty is a finding.
 
-### HTML backlinks
+### HTML backlinks — moved out, to after v0.2.8
 
-Deferred here from v0.2.4. v0.1 had *Referenced by* and v0.2 lost it.
-**Open design question:** per block, or once per document. Per block is what the
-citation means; per document is what fits the page. The view must distinguish an
-exact citation from a recovered one — which is why `Graph.linked` keeping `by` is
-a v0.2.4 item.
-
-**Backlinks dedup in the view**, by `(source, destination, by)`. Two builds of the
-citation layer put every citer in the base twice, and a page listing the same
-citer twice is noise rather than information. Deduping in a view breaks no rule —
-views are derived, disposable and never re-ingested — and it touches no records,
-so the accumulation the dedup design needs to study stays intact underneath.
+Deferred into this release from v0.2.4, and deferred out of it again: **nothing
+depends on them.** They are a view feature in a release otherwise about naming,
+and `Graph.linked` already keeps `by`, so every fact a backlink needs is being
+recorded whether or not anything draws it yet. The entry now lives under
+*Beyond this window* with its open question intact.
 
 ---
 
@@ -991,7 +997,8 @@ nothing is coordinated either.
 
 ## Open questions carried forward
 
-- **Backlink placement in the HTML view** — per block or per document (v0.2.5).
+- **Backlink placement in the HTML view** — per block or per document. Moved
+  out of v0.2.5 to after v0.2.8; the question is unchanged, only unscheduled.
 - **The route name for the envelope.** `claude-code-response` is a placeholder.
 - **The conversation edge type name.** `includes` was proposed; not settled.
 - **How `represents` and `duplicates` relate to `alias`** — three ways of saying
@@ -1016,6 +1023,20 @@ schema needed, `MAP` not `STRUCT`, and `columns=` unnecessary; and the SQL-versu
 
 ## Beyond this window
 
+- **HTML backlinks.** v0.1 had *Referenced by* and v0.2 lost it. Scheduled into
+  v0.2.5 and moved out again, because nothing depends on them and they are a
+  view feature in a naming release. Three things are already settled and can be
+  picked straight back up:
+  - **Open design question:** per block, or once per document. Per block is what
+    the citation means; per document is what fits the page.
+  - The view must distinguish an exact citation from a recovered one, which is
+    why `Graph.linked` keeps `by` — shipped in v0.2.4 and now carrying a second
+    scheme's edges as of v0.2.5.
+  - **Dedup in the view**, by `(source, destination, by)`. Two builds of the
+    citation layer put every citer in the base twice, and a page listing one
+    citer twice is noise. Deduping in a view breaks no rule — views are derived,
+    disposable and never re-ingested — and it touches no records, so the
+    accumulation the dedup design needs to study stays intact underneath.
 - **A dedup design**, written from the accumulation patterns v0.2.8 makes visible.
   Aliases are one mechanism it can use: collapse two nodes by giving the survivor
   the loser's name, so no citing text ever has to change.

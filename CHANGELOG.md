@@ -5,6 +5,70 @@ LadybugDB-centric architecture that `v0` closes out.
 
 ## v0.2.5 — unreleased — the legacy handle scheme
 
+### `compost layer citation --by kg-8hex` — the v0.1 handle scheme
+
+The second customer of v0.2.4's naming machinery, and **no new record types**:
+`alias`, `names` and `unresolved_citation` are reused with `by: kg-8hex`.
+
+**Nothing is rewritten.** The v0.1 syntax `{#a3f2b1c4}` stays exactly as
+authored, on disk and at render time. An earlier plan rewrote every occurrence
+to `[-](#<new-guid>)` and was rejected: it deletes its own evidence, it is the
+textual pass this project forbids, and conversations in that corpus are *about*
+eight-character handles — rewrite them and they discuss a format that appears
+nowhere in the base they live in. This adds a way to look the old syntax up,
+and nothing else.
+
+Three forms, all naming one handle: bare, the expansion marker `{#a3f2b1c4+++}`,
+and the version pin `{#a3f2b1c4@ver}`. The suffix is not part of the name.
+
+**The match runs within each `Str` of the parsed content, never against whole
+tokens.** Measured through the reader over the fixtures and the fetched corpus:
+242 occurrences found, against 144 for whole-`Str` equality — **98 of them, 40%,
+sit mid-sentence with punctuation attached** (`{#aa813aa9}.`, `{#330f8531}:`)
+and an earlier draft specifying equality would have dropped every one without
+saying so.
+
+**Handles inside code are excluded structurally, not by a rule.** A `Code`
+node's text is a bare string and a code block's lives in `params["text"]`;
+neither is ever a `Str`, and the walk never opens either. That is the whole fix
+for the `{@x}` era, which scanned flattened text and mistook fenced examples for
+citations three times. `{#xxxxxxxx}`, `{#handle}`, `{#uuid:hash}` and `{#...}`
+fail on `[0-9a-f]{8}` rather than on a clause someone has to maintain.
+
+There is **no assignment rule**, and none is needed: read as djot a v0.1 block
+carries its own handle as an AST `id`, which never reaches a `Str`. Only
+citations are text.
+
+#### A placeholder that can actually resolve
+
+An 8-hex handle is not a guid, so it resolves through an **alias dictionary**
+that arrives from outside the tool. Unlike a `uuid-link` placeholder, a
+`kg-8hex` one is therefore resolvable: build before the dictionary lands and
+every handle gets a placeholder; add it, rebuild, and the same handles mint real
+edges. The earlier placeholder is kept — the record of a moment when it did not
+resolve is not retracted.
+
+A `names` edge pointing at an `unresolved_citation` is **never followed**, so a
+build's own placeholders can never become the next build's answer. Without that
+rule each pre-dictionary build adds a candidate, growth is quadratic in build
+count, and every handle is permanently ambiguous.
+
+Two aliases naming two *different* real blocks is **ambiguous**: the handle
+mints nothing and the run says so, because a handle that mints no record looks
+exactly like one nobody cited.
+
+#### `--by` now has a written-down default
+
+`DEFAULT_BY` names `uuid-link` per layer. Until now `citation` had a single
+scheme and a bare `compost layer citation` fell through to it; adding a second
+would have turned that into `--by is required` and broken every documented
+invocation. **`kg-8hex` is opt-in and is never the default** — it recognises
+eight hex characters in prose, so a conversation that says in words "handles
+look like `{#a3f2b1c4}`" mints a real edge when that string is also a real
+handle. Nothing structural excludes that, which is why choosing it is deliberate.
+
+`tests/test_layer.py` goes from 8 properties to 16.
+
 ### `tools/` — what is not the tool stops shipping with it
 
 `pyproject.toml` declares `packages = ["src"]`, so every module in `src/` was
