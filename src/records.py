@@ -616,6 +616,14 @@ def blob_of(records, root: str) -> dict | None:
 CITATION_TARGET = re.compile(r"^#(%s)$" % HANDLE_RE)
 CITATION_LAYER = "citation"
 
+# The v0.1 handle, in the four forms the corpus actually writes: bare, with the
+# expansion marker `+++`, with a version pin `@ver`, and — not matched here —
+# the metasyntactic ones the notes use when talking *about* handles. Those are
+# excluded by the character class rather than by a rule: `{#xxxxxxxx}` is eight
+# characters and none of them hex, `{#handle}` and `{#uuid:hash}` are neither.
+# Exactly eight, never more: `{#a1b2c3d4e5}` is not a handle and must not match.
+LEGACY_HANDLE = re.compile(r"\{#([0-9a-f]{8})(?:\+\+\+|@[^\s{}]+)?\}")
+
 
 def plain_text(node: dict) -> str:
     """The node's own text, inlines flattened. Derived, never stored."""
@@ -695,3 +703,56 @@ def citation_edges(records: list, mint=None) -> tuple[list, list[tuple[str, str]
                           "layer": CITATION_LAYER, "type": "cites",
                           "source": n["guid"], "destination": handle})
     return edges, unresolved
+
+
+def _strs(node: dict) -> list[str]:
+    """Every `Str` in a node's own inline content, unflattened.
+
+    The twin of `_links`, and written this way for the same reason.
+    `plain_text()` folds `params["text"]` in, so scanning *it* would read a
+    fenced example as prose — which is how the `{@x}` era mistook code for
+    citations three times. Walking `content` for `Str` nodes cannot make that
+    mistake: a `Code` node keeps its text as a bare string at `c[1]`, and a
+    `CodeBlock`'s lives in `params["text"]`, which this never opens. Neither
+    is ever a `Str`, so "handles inside code are not citations" is a property
+    of the walk rather than an exclusion someone has to remember.
+    """
+    out: list[str] = []
+
+    def go(x):
+        if isinstance(x, dict):
+            if x.get("t") == "Str":
+                out.append(x.get("c") or "")
+            go(x.get("c"))
+        elif isinstance(x, list):
+            for v in x:
+                go(v)
+
+    go(node.get("content") or [])
+    return out
+
+
+def legacy_handle_refs(records: list) -> list[tuple[str, str]]:
+    """Every `{#8hex}` occurrence in prose, as (handle, citing node guid).
+
+    `re.finditer` **within** each `Str`, never whole-`Str` equality. Measured
+    over the v0.1-derived material in this repo, 135 handles are a whole `Str`
+    and 98 are embedded in a larger one: whole-token recall is 57.9%, so an
+    earlier draft specifying equality would have dropped 42% of occurrences
+    without saying so. Real prose puts punctuation after a citation —
+    `{#aa813aa9}.`, `({#b1c2d3e4}),` — and the pattern is self-delimiting, so
+    there is nothing to reassemble.
+
+    **There is no assignment rule and there does not need to be one.** Read as
+    djot, a v0.1 block carries its own handle as an AST `id`, which never
+    reaches a `Str`; only citations are text. Earlier drafts carried a rule to
+    stop ~6,700 block labels becoming self-citations, and the reader retires it.
+    """
+    out = []
+    for n in records:
+        if n["record"] != "node":
+            continue
+        for s in _strs(n):
+            for m in LEGACY_HANDLE.finditer(s):
+                out.append((m.group(1), n["guid"]))
+    return out
