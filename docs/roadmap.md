@@ -918,6 +918,10 @@ sweep names three view directories explicitly (`src/views.py:420`) and so does
 `main()`'s summary loop (`:461`), so a fourth directory would accumulate orphans
 and go uncounted until both are edited.
 
+**`.compost/graphviz/` is ignored whole**, the same as `views/`: `draw`
+regenerates it from the records, each run rewrites it wholesale, and one base
+is 12–17 MB of SVG. Generated output, not knowledge.
+
 `ROOT` optional resolves the contradiction an earlier draft carried, which
 described both a per-document `default-dot/NAME.dot` and "a walk over every node
 in the base" three lines apart. Whole base by default; one root when named.
@@ -925,7 +929,51 @@ in the base" three lines apart. Whole base by default; one root when named.
 ### v1 draws everything
 
 No collapsing policy, no filters. A walk over `g.nodes` and every edge, one DOT
-line each, `subgraph cluster_` per root for legibility.
+line each.
+
+**Not `subgraph cluster_` per root.** An earlier draft said that "for
+legibility"; measured, **`twopi` ignores clusters entirely** — 0 cluster
+elements in its SVG against 4 from `dot` on the same file. Clusters are a
+`dot`/`fdp` feature, and `twopi` is the default engine, so they would be
+invisible work. Group with colour or a `class` attribute instead.
+
+**Three things v1 must get right so the two-phase layout stays possible.**
+The planned improvement is: lay out the structural graph with `twopi`, take
+its coordinates, and draw the citation layer over them with `neato -n`, which
+renders from given positions without re-laying-out. Verified to work —
+`twopi -Tdot` emits `pos` on every node and `neato -n` preserved all of them
+exactly while drawing an added edge. It suits the data: this base is 17,350
+structural edges to 365 citation ones.
+
+- **Every DOT edge carries its record `layer` as a `class` attribute.** Phase
+  one needs the structural graph *without* `cites`, and a flat DOT mixing all
+  layers has to be filtered by hand. `class` is also emitted into the SVG, so
+  the HTML view can style or toggle the citation layer in CSS — which is the
+  reason `graphviz/` output sits outside `views/` in the first place.
+- **The synthetic root is a DOT-local name, never a record.** It exists only
+  in the generated file, like a handle in a prose view, so nothing about it
+  reaches `check`. Give it a fixed sentinel — `__root__` — rather than a
+  minted guid, so phase two can find it again in phase one's output.
+
+**No layout optimisation, in v1 or in the two-phase version.** An earlier draft
+of this section proposed optimising `twopi`'s angular ordering to minimise
+total citation-edge length. Dropped deliberately: it is a beauty metric on a
+picture nobody has looked at yet.
+
+**Measured — and the two-phase split pays for itself in time, not only in
+legibility.** The same 12,632-node base, with and without the citation layer:
+
+| | `twopi` | `sfdp` | SVG |
+|---|---|---|---|
+| structural only — 17,350 edges | **0.73 s** | 3.81 s | 11.7 MB |
+| plus `cites`/`names` — 17,715 edges | 4.52 s | 10.46 s | 16.9 MB |
+
+**365 citation edges — 2% of the total — cost `twopi` 84% of its runtime**,
+because they are exactly the edges a radial placement cannot satisfy. Laying
+out the forest alone and overlaying the citations with `neato -n` therefore
+runs ~6× faster than drawing everything at once, and the earlier 7×
+`twopi`-over-`sfdp` figure from synthetic trees is closer to right for phase
+one (**5.2×**) than the 2.3× measured on the combined graph.
 
 This makes the release **smaller**, not larger — the whole design difficulty was
 the collapsing policy, and "draw everything" has none. It is also the honest

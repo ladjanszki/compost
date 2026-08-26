@@ -3,12 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## Unreleased
-
-Landed on `main`, not shipped. It gets a version number when one
-is tagged, and not before — a heading naming a version with no tag
-behind it is a planning bucket wearing a release number, which
-`tests/clean-room.sh` refuses.
+## v0.2.6 — 2026-08-26 — the conversation loop
 
 ### `tools/v01_dictionary.py`, and this repo gets a base
 
