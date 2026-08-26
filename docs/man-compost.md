@@ -77,6 +77,7 @@ Ingest one or more files, all read by the same named route.
 | `notes` | prose, as `commonmark_x` with the three extensions off |
 | `claude-code-transcript` | a Claude Code session log, the whole `*.jsonl` |
 | `pandoc-ast` | a pandoc JSON document somebody else already produced |
+| `claude-code-response` | a `{responds_to, envelope}` wrapper around `claude --print --output-format json` |
 
 **`claude-code-transcript` is lossless.** Every line of the file becomes a node
 carrying its own original JSON in `params["log"]`, and the guarantee is a
@@ -118,6 +119,38 @@ stops naming a reader the moment a second kind of JSONL exists.
 step in it to be wrong, because `ast_to_records` takes exactly that shape.
 Whatever pandoc invocation produced the file stays outside the tool, where the
 person who wrote it can inspect and tune it.
+
+**`claude-code-response` digests one round of the conversation loop** —
+`docs/roadmap.md`, "the conversation loop". Its input is not the bare envelope
+`claude --print --output-format json` prints, but a one-key wrapper naming
+what it answers:
+
+```json
+{"responds_to": "<a document or session root's guid>",
+ "envelope": { ...all 21 keys claude printed, verbatim... }}
+```
+
+Every envelope key lands in `params` on the new `document` root, unrenamed —
+including `params["uuid"]`, the envelope's *own* identifier, which is not the
+same thing as the record's `guid` even though the two sit one key apart.
+`result` is kept there whole **and** read through the same markdown dialect as
+`notes`, so the answer's paragraphs become citable blocks like any other
+document's — without that second step you could read a response but never cite
+a sentence of it. The route also mints two edges: `responds_to`, from this
+root to the guid named in the wrapper, and `next`, from that guid to this root,
+for reading order. Neither is a `contains` edge and neither node contains the
+other — see EDGE LAYERS below — so a note and its response stay two documents,
+each with its own page.
+
+**A guid the wrapper names must already be resolvable, or the whole file is
+refused.** Unlike a citation, which may legitimately point at something not
+yet in the base and gets a placeholder from `compost layer citation`,
+`responds_to` is structural: a value that resolves to nothing is a bug in
+whatever wrote the wrapper, not a fact worth recording, and `digest` refuses
+the file rather than writing a dangling edge. This extends the same
+all-or-nothing promise every route already gets — see below — to check that
+every edge a route mints resolves against this batch or the base already on
+disk, not only that the route itself could parse its input.
 
 **Nothing is written until every file has been read and parsed.** A batch that
 died halfway could not simply be re-run: storage names are minted, so the
@@ -391,6 +424,13 @@ From transcripts: `session`, `turn`, `toolcall`, `tooloutput`, `thinking`,
 `file`, `logline`, `contentblock`. Also `document` for an ingested text file,
 and `blob` for the bytes one was derived from.
 
+`document` is also what `--as=claude-code-response` mints, reusing the type
+rather than inventing one: a root needs zero `contains` parents to pass
+`check`, and only `document` and `session` qualify. Its `params` hold every
+key the `claude --print --output-format json` envelope carried, verbatim,
+beside the usual `meta`/`pandoc_api_version`/`source`/`route` — see
+`docs/record-grammar.md` §3.3.
+
 `logline` is a line the importer keeps but has no reading for — *kept* and
 *understood* are different claims, and only the first is the importer's to
 make. `contentblock` is the same for a message block. Both carry the original
@@ -422,6 +462,7 @@ neither carries a `content_hash`.
 | `citation` | `cites` — derived from links in the text; `names` — an `alias` to what it names |
 | `ingestion` | `derived_from` — which bytes a document was read from |
 | `agent` | `launched` — the tool call a subagent transcript ran under |
+| `conversation` | `responds_to` — response root → the root it answers; `next` — that root → the response, reading order |
 
 ## EXIT STATUS
 

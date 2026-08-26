@@ -106,8 +106,9 @@ edge     ::= { "record": "edge"
              , "by":     STRING        ; optional — which scheme wrote this
                                         ; edge; absent on structural edges
                                         ; (contains, next, derived_from,
-                                        ; launched, touches, replies_to),
-                                        ; present on citation-layer edges
+                                        ; launched, touches, replies_to,
+                                        ; responds_to), present on
+                                        ; citation-layer edges
              , "created_at": TIMESTAMP ; present, ISO 8601 UTC
              , "tool_version": STRING  ; present, the writer's own version
              , "content_hash": SHA256  ; present — see §5, the edge form
@@ -216,11 +217,34 @@ Four things this table is load-bearing about:
 |---|---|
 | `document` | `meta`, `pandoc_api_version`, `source`, `route` |
 | `session` | see §3.2 |
+| `document` | `is_error`, `duration_api_ms`, `num_turns`, `stop_reason`, `session_id`, `total_cost_usd`, `usage`, `modelUsage`, `permission_denials`, `terminal_reason`, `fast_mode_state`, `fast_mode_disabled_reason`, `subtype`, `api_error_status`, `result`, `ttft_ms`, `ttft_stream_ms`, `time_to_request_ms`, `type`, `duration_ms`, `uuid` |
 
 `ROOT_TYPES = {"document", "session"}` (`src/records.py:38`). A root has **no**
 `contains` parent. `route` is recorded here because it is the only node that
 knows: every block below looks identical whether it arrived via `notes` or
 `pandoc-ast`.
+
+**The third row is `--as=claude-code-response` (`src/routes._response`),
+merged rather than replacing the first.** A `document` minted from a
+`claude --print --output-format json` envelope carries every one of the
+envelope's own keys in `params`, verbatim and unrenamed, *beside* the usual
+`meta`/`pandoc_api_version`/`source`/`route` — CLAUDE.md's digest-everything
+rule, applied to a source that happens to be JSON instead of a JSON-in-Markdown
+file. `result` is kept twice on purpose: verbatim here as the source of truth,
+and separately parsed into the document's own `contains` children exactly the
+way a `notes` document's blocks are, so the answer is addressable the same way
+any other paragraph is. Nothing is removed to make room for the second row —
+open `params` (§2) is exactly what lets one node type answer to two shapes of
+input.
+
+**`params["uuid"]` is the envelope's own uuid, not this record's `guid`.**
+Verbatim copying means one word names two different things on the same
+record — looks like a bug, is not one. Renaming it on the way in would stop
+this route being a faithful copy of what claude printed; leaving it means a
+reader has to know which of the two it is asking for. `params["session_id"]`
+is promoted the same way, verbatim, and is the join to a `claude-code-transcript`
+digest of the same conversation, should a `duplicates` layer ever join them
+(`docs/roadmap.md`, *Beyond this window*) — not built here.
 
 ### 3.4 Entities
 
@@ -285,7 +309,7 @@ name.
 
 ## 4. Edge types, by layer
 
-`layer` says which *kind of statement* an edge is making. Seven exist, five of
+`layer` says which *kind of statement* an edge is making. Nine exist, six of
 them written by `digest`; `citation` is written by `compost layer citation`
 (`src/layers.py`). Those two are the writers *this tool* ships — **not the only
 things that may write records.** Any script or agent emitting valid JSONL under
@@ -304,6 +328,35 @@ things that may write records.** Any script or agent emitting valid JSONL under
 | `agent` | `launched` | `toolcall` → `session` | `store._link_agents` |
 | `citation` | `cites` | any node → any node, or → `unresolved_citation` | `layers._citation` |
 | `citation` | `names` | `alias` → the node it names | `layers._citation` |
+| `conversation` | `responds_to` | response `document` → the `document`/`session` it answers | `routes._response` |
+| `conversation` | `next` | answered root → response `document`, **reading order** | `routes._response` |
+
+**`conversation` is its own layer, not `citation`.** "This response answered
+that note" is a different kind of fact from a link found in parsed text, and
+keeping it apart is what lets either be reasoned about without the other. Both
+edges are minted **structural**, at digest time, by the one route that knows
+both guids — never by `layer`, and never carrying `by` (see §2): a citation may
+legitimately dangle and gets a placeholder, but a `responds_to`/`next` endpoint
+that resolves to nothing is a bug in whatever wrote the wrapper file, and
+`store._digest` refuses the whole batch rather than writing it (§5, and
+`docs/roadmap.md`, "the conversation loop").
+
+**Neither edge is `contains`, and there is no container node joining the two
+roots.** `check`'s parent count (§5.3) is counted from `contains` alone, so a
+note and its response are two independent roots, each keeping its own page —
+joining them with any other edge type needed no new machinery. A container
+would have failed outright: `ROOT_TYPES` roots must have zero `contains`
+parents, so a node holding both would be rejected by the very rule that makes
+a root a root.
+
+**`next` here reuses the type-name `next` from `pandoc-ast` and `session`,
+deliberately, and is safe for the same reason both other uses already are:
+`Graph._next` (`src/records.py:302`) keys the chain by *source* alone, with no
+layer discriminator, and a root is never the source of a block-level or
+line-level `next` edge — roots have no siblings in either of those chains. See
+`docs/roadmap.md`'s *Risks accepted without mitigation*, "`Graph._next` is
+layer-blind", which named `conversation` as the third user of this edge type
+before it existed.**
 
 **`next` and `replies_to` are both stored, deliberately.** `next` is log order
 and is what regenerates the file; `replies_to` is the conversational truth. The
@@ -387,12 +440,12 @@ anything acts on.
 Four lists are closed in schema 1. Everything else is open.
 
 **Layers** (§4): `pandoc-ast`, `session`, `claude-code`, `ingestion`, `agent`,
-`citation`.
+`citation`, `conversation`.
 
 **Routes** — the named ways material enters a base: `notes`,
-`claude-code-transcript`, `pandoc-ast`. **Nothing is inferred from a file
-extension.** The suffix survives into `storage/` as a decoration for whoever
-pulls the bytes back out, and nothing reads it.
+`claude-code-transcript`, `pandoc-ast`, `claude-code-response`. **Nothing is
+inferred from a file extension.** The suffix survives into `storage/` as a
+decoration for whoever pulls the bytes back out, and nothing reads it.
 
 **Authors** on a `turn`: `human`, `assistant`, `envelope`.
 
@@ -439,7 +492,7 @@ Seven guarantees, each sabotage-verified:
    updated to say so.
 7. The assembled base passes `records.check()`.
 
-Current coverage: **35 node types, 10 edge pairs, 377 nodes.** `citation` /
+Current coverage: **35 node types, 12 edge pairs, 380 nodes.** `citation` /
 `cites` and `citation` / `names` are exercised by a document written *inside
 the test itself* — `tests/test_grammar.py`'s `build()` digests the fixtures,
 reads a real block guid out of the base, writes a temporary document citing
@@ -447,7 +500,14 @@ that guid and a fabricated one, digests it, and runs `compost layer citation`
 over the whole thing, so both branches of the layer (a resolved edge, and an
 `alias`/`unresolved_citation` pair for the one that does not resolve) are
 exercised without a committed fixture that would have to hard-code a guid
-that could never actually resolve in a fresh base. The *not yet minted* list
+that could never actually resolve in a fresh base. `conversation` / `responds_to`
+and `conversation` / `next` are exercised the same way, one `claude-code-response`
+wrapper answering a *root* already in the base — not a block, since a block is
+already the source of its own pandoc-ast `next` edge and `Graph._next` keys the
+whole chain by source alone (`src/records.py:302`); pointing the wrapper at one
+was tried while writing this fixture and broke `check` immediately, which is
+exactly the accepted risk `docs/roadmap.md` names as *"`Graph._next` is
+layer-blind"*, confirmed rather than merely asserted. The *not yet minted* list
 (§8, item 6) is empty as of v0.2.4 — it held `("citation", "cites")` while
 `citation_edges()` was defined and tested but called by nothing in `src/`.
 

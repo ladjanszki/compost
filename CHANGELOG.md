@@ -51,7 +51,76 @@ purged from its history once.
 as a blob rather than a directory, so `.compost/` would not match it and the
 link itself would have been tracked.
 
-## v0.2.5 — 2026-08-25 — tools/, and the legacy handle scheme
+### `compost digest --as=claude-code-response` — the conversation loop
+
+A second source describing the same conversation the transcript importer
+already reads, arriving a different way: instead of `claude`'s own session
+log, a `claude --print --output-format json` envelope, wrapped with the guid
+of the note it answers. `docs/roadmap.md`, "the conversation loop", has the
+design; this is what shipped from it.
+
+The input is a one-key wrapper the loop writes, because the wrapper already
+knows the note's root guid at the moment it calls claude:
+
+```json
+{"responds_to": "<the note's root guid>", "envelope": {...21 keys, verbatim...}}
+```
+
+**Every one of the envelope's 21 keys lands in `params`, unrenamed** —
+`is_error`, `total_cost_usd`, `permission_denials`, `usage`, all of it —
+CLAUDE.md's digest-everything rule applied to a source that happens to be JSON
+rather than markdown. `params["uuid"]` is deliberately left as the envelope's
+own identifier rather than renamed, even though it sits one key away from the
+record's own `guid` and looks like a bug: renaming it on the way in would stop
+the route being a faithful copy of what claude printed.
+
+**`result` goes through the same markdown reader `notes` uses**, so a
+response's paragraphs become citable blocks like any other document's —
+without that step you could read an answer but never cite a sentence of it,
+which would have defeated the reason this route exists.
+
+Two new edges join a response to what it answers, in a new `conversation`
+layer: `responds_to`, from the response root back to the note; `next`, from
+the note to the response, for reading order. **Neither is `contains`, and there
+is no container node.** `check` counts parents from `contains` alone
+(`src/records.py:493-496`), so a note and its response stay two independent
+roots — each keeps its own page — and joining them needed no new machinery. A
+container was considered and rejected: `ROOT_TYPES` roots must carry zero
+`contains` parents, so a node holding both would fail the very rule that makes
+a root a root.
+
+**`_digest` now refuses a structural guid that is not in the base.** Extending
+its existing two-phase promise — nothing is written until every input has been
+read and parsed — by one more check: every edge endpoint a route mints must
+resolve against the batch being written or the base already on disk, or the
+whole file is refused before anything is written. This is deliberately
+different from a citation, which may legitimately point at something not yet
+in the base and gets an `unresolved_citation` placeholder from `compost layer
+citation` — a `responds_to` naming a guid nobody minted is not a fact about the
+world, it is a bug in whatever wrote the wrapper, and letting it through would
+have written a dangling edge straight into the graph. The property is
+sabotage-verified: disabling the new guard and re-digesting a wrapper with a
+fabricated `responds_to` does write the bad edge, and `compost check` then
+catches it — proof the guard was doing real work, not decoration.
+
+**`tools/loop.py`**, not a subcommand and never will be one, turns
+`docs/roadmap.md`'s "the loop, end to end" shell pipeline into one function.
+It exists because two of that pipeline's steps are traps rather than plumbing:
+the round's filename has to be unique every time, because reusing one makes
+`view_names()` (`src/views.py:372-375`) silently rename the *previous* round's
+view out from under an open browser tab; and `digest`'s printed `root <8 hex>`
+is a display prefix, not a citable guid, so the wrapper reads the whole thing
+back out of the graph file `digest` just wrote rather than growing the CLI a
+new surface for one caller.
+
+Both traps are reproduced directly in `tests/test_loop.py`, not just quoted
+from the roadmap: one case digests two documents under one shared stem and
+shows `view_names()` renaming both, and another swaps in a `root_of` that
+answers the wrong guid and shows the next digest refuses rather than
+mis-wiring the conversation.
+
+`tests/test_response.py` (13 properties) and `tests/test_loop.py` (7)
+join the suite, eighteen in total.
 
 ### `compost layer citation --by kg-8hex` — the v0.1 handle scheme
 
