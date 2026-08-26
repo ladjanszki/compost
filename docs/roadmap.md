@@ -731,6 +731,34 @@ having to be the largest available.
 **So re-import identity leaves the critical path.** It remains a real gap for the
 transcript route (`TODO.md`) and blocks nothing.
 
+### The envelope, measured
+
+Written from a remembered shape until 2026-08-26, when one was finally
+captured: `echo … | claude --print --output-format json`. **21 top-level keys,
+not the six this section named.** All six named are real — nothing here was
+wrong — but the design was working against a third of the surface.
+
+```
+is_error  duration_api_ms  num_turns  stop_reason  session_id  total_cost_usd
+usage  modelUsage  permission_denials  terminal_reason  fast_mode_state
+fast_mode_disabled_reason  subtype  api_error_status  result  ttft_ms
+ttft_stream_ms  time_to_request_ms  type  duration_ms  uuid
+```
+
+Verified against `params` directly: **nested dicts survive** (`usage`,
+`modelUsage`), **JSON `null` survives** (`api_error_status`), and all 21 keys
+round-trip. So "keep every envelope key" needs no new machinery.
+
+**Two things to decide before writing the route:**
+
+- **The envelope has its own `uuid`**, unrelated to the node's guid. Putting
+  every key in `params` verbatim means `params["uuid"]` is the *envelope's*
+  identifier while `guid` is the record's — one word, two meanings, in the
+  same record. Rename on the way in and the route stops being a faithful copy;
+  leave it and something will eventually read the wrong one.
+- `result` here was the bare string `pong`. In a real round it is markdown, and
+  it is the half that has to go through the reader.
+
 ### What has to be built
 
 1. **A route for the envelope.** Keeps every envelope key in params on the root,
@@ -744,6 +772,25 @@ transcript route (`TODO.md`) and blocks nothing.
    inventing parallel ones, and "a fact arrived from outside" is what `digest`
    means. It is a route whose input names guids from *other* documents — a shape
    no route has today.
+
+   **Not designed yet, and it is the one item here that is a design task rather
+   than an implementation task.** Two things are unanswered:
+
+   - **What the file contains.** No format is specified. It needs at minimum
+     the round roots in order, and to say whether the conversation node is
+     minted by the route or named by the wrapper.
+   - **What happens when a named guid is not in the base.** `_digest` does not
+     run `check` on a batch — it validates that the route can *read* the file
+     and then writes — so a bad guid is not caught at import. It becomes a
+     dangling endpoint, and `check` then fails for the **whole base**, which is
+     the exact failure `unresolved_citation` was invented to avoid for
+     citations. This route needs the same answer or a reason it does not.
+
+   Note that the earlier claim here — that `_digest` "validates a batch in
+   isolation" and that this is why `layer` had to be its own command — is loose.
+   Nothing rejects a cross-batch edge. The real reason `layer` exists is that
+   `citation_edges` has to *resolve* against the whole base, and a wrapper that
+   already knows the guids does not need resolution at all.
 3. **The conversation edge cannot be `contains`.** `check` requires a root to have
    zero parents (`src/records.py:472`). It needs its own edge type, and
    `render_all` must consult it to decide those roots get no page of their own.
