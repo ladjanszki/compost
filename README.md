@@ -54,7 +54,7 @@ a missing edge is a visibly broken page the same day.
 | | |
 |---|---|
 | **nodes** | pandoc's own constructor names — `Para`, `Header`, `CodeBlock`, `Table` — plus `ListItem` and two others where pandoc's grammar is anonymous, plus `session`, `turn`, `toolcall`, `tooloutput`, `thinking`, `file`, `document`, `blob`, `alias`, `unresolved_citation` |
-| **edges** | `contains` and `next` per layer, `touches`, `replies_to`, `cites`, `names` |
+| **edges** | `contains` and `next` per layer, `touches`, `replies_to`, `cites`, `names`, `responds_to` |
 | **identity** | a UUIDv4 per node, and a SHA256 `content_hash` where a node has content of its own; every edge also carries `content_hash`, `created_at` and `tool_version` |
 | **citations** | `[-](#<guid>)` — a link, so a handle quoted inside a code block cannot become an edge. `compost layer citation` turns each into a `cites` edge, or an `alias`/`unresolved_citation` placeholder when the target is not in the base yet |
 
@@ -77,10 +77,12 @@ test_session_views       13/13 session-view guarantees hold
 test_lookup              12/12 lookup guarantees hold
 test_serve               9/9 serve guarantees hold
 test_manpage             6/6 man-page guarantees hold
-test_grammar             7/7 grammar guarantees hold  |  35 node types, 10 edge pairs, 377 nodes
+test_grammar             7/7 grammar guarantees hold  |  35 node types, 12 edge pairs, 380 nodes
 test_layer               16/16 layer guarantees hold
+test_response            13/13 response guarantees hold
+test_loop                7/7 loop guarantees hold
 test_dj_prepare          8/8 dj_prepare guarantees hold
-test_v01_dictionary      7/7 dictionary guarantees hold
+test_v01_dictionary      9/9 dictionary guarantees hold
 corpus                   present, 520 documents
 ```
 

@@ -21,6 +21,8 @@ tools/          committed scripts that are not the tool, and never installed
   roundtrip.py  the pandoc-only fixed-point harness
   dj_prepare.py      repair a v0.1 .dj so pandoc keeps its list-item handles
   v01_dictionary.py  the legacy handle -> guid dictionary, as alias records
+  loop.py       one round of the conversation loop: note in, response out,
+                already cited — docs/roadmap.md, "the conversation loop"
 tests/          one suite per property; ./tests/run.sh runs them all
   fixtures/     the smoke set, ~80 KB: the documents suites name directly
     grammar/    one instance of every constructor, so docs/record-grammar.md
