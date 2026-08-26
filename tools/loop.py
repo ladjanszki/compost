@@ -46,9 +46,15 @@ from src import store as S       # noqa: E402
 from src import views as V       # noqa: E402
 
 
-def round_name(prefix: str = "round") -> str:
-    """A filename no round can collide with, unlike `date +%s`."""
-    return f"{prefix}-{uuid.uuid4().hex}.md"
+def round_name(prefix: str = "round", ext: str = "md") -> str:
+    """A filename no round can collide with, unlike `date +%s`.
+
+    `ext` is not cosmetic: `storage/` keeps every source under `GUID.EXT`
+    (`store._digest`), so the wrapper's suffix is what the archived bytes are
+    named with. A JSON wrapper stored as `.md` would make the one directory
+    that is meant to be the honest record of what arrived lie about it.
+    """
+    return f"{prefix}-{uuid.uuid4().hex}.{ext}"
 
 
 def root_of(graph_file: Path, source_name: str) -> str:
@@ -99,12 +105,18 @@ def _ask_claude(djot_text: str) -> dict:
 
 
 def run_round(st: S.Store, note_text: str, ask=_ask_claude,
-              scratch: Path | None = None) -> tuple[str, str]:
+              scratch: Path | None = None,
+              follows: str | None = None) -> tuple[str, str]:
     """One full round: a note in, a response out, both already cited.
 
     Mirrors `docs/roadmap.md`'s "the loop, end to end" one shell line at a
     time: write, digest, layer, render, ask, wrap, digest, layer, render.
     Returns `(note_root_guid, response_root_guid)`.
+
+    `follows` is the previous round's response root, and passing it is what
+    makes the conversation a chain instead of unconnected pairs — feed the
+    second element of one call's result into the next call's `follows`. `None`
+    for the first round of a conversation, which follows nothing.
     """
     scratch = scratch or st.root
     note_path = scratch / round_name()
@@ -117,10 +129,11 @@ def run_round(st: S.Store, note_text: str, ask=_ask_claude,
     view = st.views / "default-djot" / f"{note_path.stem}.dj"
     envelope = ask(view.read_text(encoding="utf-8"))
 
-    wrapper_path = scratch / round_name("response")
-    wrapper_path.write_text(
-        json.dumps({"responds_to": note_root, "envelope": envelope}),
-        encoding="utf-8")
+    wrapper_path = scratch / round_name("response", "json")
+    wrapper = {"responds_to": note_root, "envelope": envelope}
+    if follows is not None:
+        wrapper["follows"] = follows
+    wrapper_path.write_text(json.dumps(wrapper), encoding="utf-8")
 
     response_root = digest_one(st, wrapper_path, "claude-code-response")
     L.build(st, "citation", "uuid-link")

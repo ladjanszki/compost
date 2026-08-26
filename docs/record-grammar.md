@@ -329,6 +329,7 @@ things that may write records.** Any script or agent emitting valid JSONL under
 | `citation` | `cites` | any node → any node, or → `unresolved_citation` | `layers._citation` |
 | `citation` | `names` | `alias` → the node it names | `layers._citation` |
 | `conversation` | `responds_to` | response `document` → the `document`/`session` it answers | `routes._response` |
+| `conversation` | `next` | a round → what follows it, note before its response and response before the next note | " |
 | `conversation` | `next` | answered root → response `document`, **reading order** | `routes._response` |
 
 **`conversation` is its own layer, not `citation`.** "This response answered

@@ -778,7 +778,8 @@ because both looked necessary until the constraint was read precisely.
 
    ```json
    {"responds_to": "<the note's root guid>",
-    "envelope": { ...all 21 keys, verbatim... }}
+    "follows":     "<the previous round's response root>",   // optional
+    "envelope":    { ...all 21 keys, verbatim... }}
    ```
 
    **This is what removes the old item 2.** The wrapper already knows the note's

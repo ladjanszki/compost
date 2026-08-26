@@ -126,7 +126,25 @@ def _response(path: Path, mint, route: str):
     calls claude and putting it in the file being written anyway avoids a
     second file and a second route just to state one fact:
 
-        {"responds_to": "<the note's root guid>", "envelope": {...}}
+        {"responds_to": "<the note's root guid>",
+         "follows":     "<the previous round's response root>",   # optional
+         "envelope":    {...}}
+
+    `follows` is what makes a conversation a *chain* rather than a pile of
+    unconnected pairs, and it was missing from the first implementation. The
+    route mints `next` from the note to its own response, but nothing could
+    join one round to the next: this file is the only one that carries
+    structural guids, and it did not name the round before it. Two rounds gave
+    `note1 -> resp1` and `note2 -> resp2` with nothing between them, so "walk
+    the conversation" — the whole reason no container node was needed — did not
+    work. With `follows` the chain closes:
+
+        note1 --next--> resp1 --next--> note2 --next--> resp2
+
+    Optional, because the first round of a conversation follows nothing. It is
+    *asserted* rather than derived: the loop knows the order exactly, and
+    recovering it from `created_at` would be guesswork the moment two rounds
+    interleave.
 
     Every key `claude --print` produced lands in `params`, verbatim and
     unrenamed — CLAUDE.md's digest-everything rule, and the reason this route
@@ -158,6 +176,10 @@ def _response(path: Path, mint, route: str):
         raise RuntimeError(
             f"envelope is not an object: {type(envelope).__name__}")
     responds_to = wrapper["responds_to"]
+    follows = wrapper.get("follows")
+    if follows is not None and not isinstance(follows, str):
+        raise RuntimeError(
+            f"follows is not a guid: {type(follows).__name__}")
     result = envelope.get("result", "")
     if not isinstance(result, str):
         raise RuntimeError(
@@ -188,6 +210,14 @@ def _response(path: Path, mint, route: str):
     # walk a conversation without a container node existing anywhere.
     b.edge("responds_to", root, responds_to, CONVERSATION_LAYER)
     b.edge("next", responds_to, root, CONVERSATION_LAYER)
+    if follows is not None:
+        # The link across rounds: the previous response is followed by this
+        # round's note. Minted here rather than when the note was digested,
+        # because `notes` reads a markdown file and cannot be told about a
+        # guid — this wrapper is the only file in the loop that carries
+        # structural guids at all. `_digest` refuses the batch if `follows`
+        # names nothing, the same as `responds_to`.
+        b.edge("next", follows, responds_to, CONVERSATION_LAYER)
     return recs + b.records, root
 
 

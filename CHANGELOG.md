@@ -63,7 +63,23 @@ The input is a one-key wrapper the loop writes, because the wrapper already
 knows the note's root guid at the moment it calls claude:
 
 ```json
-{"responds_to": "<the note's root guid>", "envelope": {...21 keys, verbatim...}}
+{"responds_to": "<the note's root guid>",
+ "follows":     "<the previous round's response root>",   // optional
+ "envelope":    {...21 keys, verbatim...}}
+```
+
+**`follows` is what makes a conversation a chain.** The route mints `next`
+from a note to its own response, but nothing joins one round to the next —
+this wrapper is the only file in the loop carrying structural guids, and the
+first implementation did not have it name the round before. Two rounds gave
+`note1 → resp1` and `note2 → resp2` with nothing between them, so *walking a
+conversation* — the whole reason no container node is needed — silently did
+not work. It is optional, because a first round follows nothing, and asserted
+rather than derived from `created_at`, which would be guesswork the moment two
+rounds interleave.
+
+```
+note1 --next--> resp1 --next--> note2 --next--> resp2
 ```
 
 **Every one of the envelope's 21 keys lands in `params`, unrenamed** —

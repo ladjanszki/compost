@@ -186,6 +186,54 @@ def main():
                     f"{len(R.check(recs))} check problems")
         case("consecutive rounds never collide", two_rounds_do_not_collide)
 
+        def rounds_form_one_walkable_chain():
+            """The property the first implementation did not have.
+
+            `follows` is what joins one round to the next. Without it the
+            route still mints `note -> response` per round and everything
+            passes — two rounds simply sit as unconnected pairs, and "walk
+            the conversation", which is the whole reason v0.2.6 needs no
+            container node, silently does not work. Walking is therefore the
+            assertion: follow `next` from the first note and every later
+            round must be reachable.
+            """
+            with tempfile.TemporaryDirectory() as d:
+                st = S.Store.init(Path(d) / "chain")
+                with contextlib.redirect_stdout(io.StringIO()):
+                    n1, r1 = L.run_round(st, "One.\n", ask=_ask)
+                    n2, r2 = L.run_round(st, "Two.\n", ask=_ask, follows=r1)
+                    n3, r3 = L.run_round(st, "Three.\n", ask=_ask, follows=r2)
+                recs, _ = st.load()
+                nxt = {e["source"]: e["destination"] for e in recs
+                       if e["record"] == "edge" and e["type"] == "next"
+                       and e.get("layer") == "conversation"}
+                walk, cur = [n1], n1
+                while cur in nxt:
+                    cur = nxt[cur]
+                    if cur in walk:
+                        return False, "cycle in the conversation chain"
+                    walk.append(cur)
+                want = [n1, r1, n2, r2, n3, r3]
+                return (walk == want,
+                        f"{len(walk)} of 6 rounds reachable from the first note")
+        case("consecutive rounds form one walkable chain",
+             rounds_form_one_walkable_chain)
+
+        def wrapper_is_stored_as_json():
+            """`storage/` keeps a source as `GUID.EXT`, so the wrapper's
+            suffix names the archived bytes. A JSON file stored as `.md`
+            makes the one directory meant to be an honest record of what
+            arrived lie about it."""
+            with tempfile.TemporaryDirectory() as d:
+                st = S.Store.init(Path(d) / "ext")
+                with contextlib.redirect_stdout(io.StringIO()):
+                    L.run_round(st, "A note.\n", ask=_ask)
+                suffixes = sorted(f.suffix for f in st.storage.iterdir())
+                return (suffixes == [".json", ".md"],
+                        f"storage holds {suffixes}")
+        case("the response wrapper is stored as .json, the note as .md",
+             wrapper_is_stored_as_json)
+
     for ok, name, detail in results:
         print(f"  {'pass' if ok else 'FAIL'}  {name:<58} {detail}")
     bad = sum(1 for ok, _, _ in results if not ok)

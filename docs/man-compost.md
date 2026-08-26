@@ -77,7 +77,7 @@ Ingest one or more files, all read by the same named route.
 | `notes` | prose, as `commonmark_x` with the three extensions off |
 | `claude-code-transcript` | a Claude Code session log, the whole `*.jsonl` |
 | `pandoc-ast` | a pandoc JSON document somebody else already produced |
-| `claude-code-response` | a `{responds_to, envelope}` wrapper around `claude --print --output-format json` |
+| `claude-code-response` | a `{responds_to, follows?, envelope}` wrapper around `claude --print --output-format json` |
 
 **`claude-code-transcript` is lossless.** Every line of the file becomes a node
 carrying its own original JSON in `params["log"]`, and the guarantee is a
@@ -127,7 +127,8 @@ what it answers:
 
 ```json
 {"responds_to": "<a document or session root's guid>",
- "envelope": { ...all 21 keys claude printed, verbatim... }}
+ "follows":     "<the previous round's response root>",   // optional
+ "envelope":    { ...all 21 keys claude printed, verbatim... }}
 ```
 
 Every envelope key lands in `params` on the new `document` root, unrenamed —
@@ -138,14 +139,30 @@ same thing as the record's `guid` even though the two sit one key apart.
 document's — without that second step you could read a response but never cite
 a sentence of it. The route also mints two edges: `responds_to`, from this
 root to the guid named in the wrapper, and `next`, from that guid to this root,
-for reading order. Neither is a `contains` edge and neither node contains the
-other — see EDGE LAYERS below — so a note and its response stay two documents,
-each with its own page.
+for reading order. Given `follows` it mints a third, `next` from the previous
+round's response to this round's note, which is what turns a pile of pairs
+into one walkable chain. None is a `contains` edge and no node contains
+another — see EDGE LAYERS below — so a note and its response stay two
+documents, each with its own page.
+
+**`follows` is what makes a conversation a chain.** The route mints `next`
+from a note to its own response, but nothing joins one round to the next —
+this wrapper is the only file in the loop carrying structural guids, and the
+first implementation did not have it name the round before. Two rounds gave
+`note1 → resp1` and `note2 → resp2` with nothing between them, so *walking a
+conversation* — the whole reason no container node is needed — silently did
+not work. It is optional, because a first round follows nothing, and asserted
+rather than derived from `created_at`, which would be guesswork the moment two
+rounds interleave.
+
+```
+note1 --next--> resp1 --next--> note2 --next--> resp2
+```
 
 **A guid the wrapper names must already be resolvable, or the whole file is
 refused.** Unlike a citation, which may legitimately point at something not
 yet in the base and gets a placeholder from `compost layer citation`,
-`responds_to` is structural: a value that resolves to nothing is a bug in
+`responds_to` and `follows` are structural: a value that resolves to nothing is a bug in
 whatever wrote the wrapper, not a fact worth recording, and `digest` refuses
 the file rather than writing a dangling edge. This extends the same
 all-or-nothing promise every route already gets — see below — to check that
