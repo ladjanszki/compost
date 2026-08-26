@@ -3,6 +3,67 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## Unreleased
+
+Landed on `main`, not shipped. It gets a version number when one
+is tagged, and not before — a heading naming a version with no tag
+behind it is a planning bucket wearing a release number, which
+`tests/clean-room.sh` refuses.
+
+### `compost draw`, and graphviz becomes the second system dependency
+
+A tenth subcommand: `compost draw [ROOT]` writes a Graphviz picture of the
+base — every node, every edge, no collapsing policy — to `.compost/graphviz/`,
+a peer of `graph/`, `storage/` and `views/` rather than a subdirectory of the
+last one. The direction of the dependency runs the other way: a future HTML
+view will *embed* this SVG, so graphviz output is an input to `render`, not
+one of its products.
+
+**DOT is always written; SVG only when the layout engine is on PATH.** That is
+the property that earns the new dependency at all — the DOT is a complete,
+readable deliverable on its own, so the graphviz binary stays optional rather
+than required, and nothing makes the SVG a precondition for writing the DOT.
+
+Defaults to `twopi`, not `dot` or `sfdp`. Measured against a real base:
+`dot` — the everyone-reaches-for-it default — was killed at a 180-second
+ceiling on a single 500-node graph shaped like compost's `contains` tree plus
+`next` chain, and again on a single 2,773-node document. `twopi` lays that
+same shape out radially, correctly matching what it is, and was 7x faster
+than `sfdp` at 20,000 nodes. `sfdp` and `dot` stay selectable with `--engine`
+for a citation-heavy graph or a small scoped subgraph respectively.
+
+A whole-base picture gets a synthetic `__root__` node, joined to every
+`document`/`session` root so the radial layout has one centre for the whole
+forest. It is DOT-local — never a record, never written to `graph/`, never
+reaching `check` — the same relationship a view's handle has to the graph it
+decorates.
+
+Every edge carries `class="<layer>"`, its record layer rather than its type,
+so a citation overlay can be isolated from the structural graph later without
+re-deriving it from a flat file. Every node carries `id="<guid>"`, which
+survives into the SVG as `<g id="…">` — graphviz escapes a guid's hyphens on
+the way out (`&#45;`), so a test that greps the raw SVG for a plain guid gets
+a false negative; asserting this needed an XML parser, not a substring match.
+No `subgraph cluster_`: measured, `twopi` ignores clusters entirely.
+
+Past roughly 5,000 nodes the SVG gets large — one real base measured 16.9 MB
+at 12,632 nodes — so past that threshold `draw` **warns and still writes it**.
+Output size, not layout time, is the ceiling, and there is no node count at
+which withholding the SVG outright beats saying so.
+
+**Graphviz 14.1.2 is now pinned in `environment.yml`**, conda-forge, 231 MB
+and 51 packages — measured, not the 50–100 MB estimated going in. A second
+tool whose version silently changes its output is a trap this project already
+knows from pandoc; graphviz gets the same treatment from day one rather than
+after an audit finds it.
+
+Nineteen suites. `test_draw.py` sabotage-verifies the load-bearing properties
+directly: a `draw` that only writes the DOT once the SVG has succeeded (the
+bug the whole design forbids), a `class` carrying an edge's type instead of
+its layer, a node missing its `id=`, a `subgraph cluster_` sneaking back in,
+`check` disabled, and a stale-sweep that leaves a planted file behind — each
+one caught, each one restored.
+
 ## v0.2.6 — 2026-08-26 — the conversation loop
 
 ### `tools/v01_dictionary.py`, and this repo gets a base

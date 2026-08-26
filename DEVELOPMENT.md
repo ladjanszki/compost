@@ -14,6 +14,9 @@ src/            the implementation
                 (citations today). One of the tool's two writers — anything
                 emitting valid JSONL under graph/ is an equal writer
   views.py      the three views, and the per-node-type view dispatch
+  draw.py       compost draw: a Graphviz picture of the base under
+                graphviz/, a peer of views/ rather than part of it — always
+                DOT, SVG only when the layout engine is on PATH
   serve.py      a static server over the HTML view; renders nothing
 tools/          committed scripts that are not the tool, and never installed
   bleach.py     lorem-ise a markdown file, keep the formatting

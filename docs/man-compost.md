@@ -15,13 +15,14 @@ compost check
 compost layer NAME [--by SCHEME]
 compost lookup HANDLE
 compost render
+compost draw [ROOT] [--engine ENGINE]
 compost serve [-p PORT]
 compost version
 ```
 
 ## STATUS
 
-Version 0.2.6. The nine subcommands below are the whole program.
+Version 0.2.6. The ten subcommands below are the whole program.
 
 `compost` is on PATH inside the `compost` conda env, which `DEVELOPMENT.md`
 describes; from a checkout `python3 -m src.cli` is equivalent.
@@ -385,6 +386,56 @@ output is clean enough to commit.
 In the HTML view every citable block is an anchor; clicking a handle copies
 `[-](#guid)` to the clipboard. `default-html/index.html` lists the documents.
 
+### draw [ROOT] [--engine ENGINE]
+
+Generate a Graphviz picture of the base into `.compost/graphviz/` — the whole
+base by default, or the subgraph under `ROOT` (a whole guid) when named. Like
+`render`, refuses on a graph that fails `check` and prints
+`refusing to draw: …`, exiting 1 without writing anything.
+
+**Always writes `graph.dot`. Writes `graph.svg` too only when the chosen
+engine is on PATH.** The DOT is the deliverable that keeps the graphviz
+binary optional at all: readable by an agent, pasteable, and renderable later
+on any machine that has graphviz, so the command never makes the SVG a
+precondition for writing it. With no engine found, says so and still exits 0.
+
+`--engine` picks the layout engine, one of `twopi` (default), `sfdp` or
+`dot`. **`dot` is not the default and is not safe for a whole base** — it was
+killed at a 180-second ceiling on a single 500-node graph shaped like
+compost's `contains` tree plus `next` chain, and again on a single
+2,773-node document. `twopi` lays that shape out radially in a fraction of a
+second and is the measured fastest engine at scale; `sfdp` is available for a
+citation-heavy graph that has stopped being tree-shaped, and `dot` for a
+small scoped subgraph where hierarchy is worth the wait. See
+`docs/roadmap.md`, "v0.2.7 — a graph view", for the measurements.
+
+v1 draws everything: every node, every edge, no collapsing policy. A whole
+base is thousands of nodes, so the first picture is unreadable *as a
+picture* and useful *as evidence* — the DOT is a full listing regardless of
+whether anyone can read the SVG as an image.
+
+Every node carries `id="<guid>"`, which survives into the SVG as `<g
+id="…">` — graphviz escapes a guid's hyphens on the way out (`&#45;`), so
+anything checking for one must parse the SVG rather than search its raw
+text. Every edge carries `class="<layer>"`, its record layer rather than its
+type, so a citation-heavy overlay can be pulled out of an otherwise
+structural picture later without re-deriving it. Neither is `subgraph
+cluster_`: measured, `twopi` ignores clusters entirely.
+
+A whole-base picture adds one node graphviz never sees as a record: a
+DOT-local `__root__`, joined to every root (`document` or `session`) so a
+radial engine has one centre for the whole forest. It never reaches `check`
+and is never written to `graph/`.
+
+Past roughly 5,000 nodes, prints a warning that the SVG is getting large —
+one real base measured 16.9 MB at 12,632 nodes — and **still writes it**;
+output size, not layout time, is the ceiling, and there is no node count at
+which withholding the SVG is more useful than saying so.
+
+`draw` owns `.compost/graphviz/` the way `render` owns `views/`: what is on
+disk after a run is exactly that run's output, so switching from one root to
+another, or to the whole base, cannot leave a stale picture behind.
+
 ### serve [-p PORT]
 
 Serve `.compost/views/default-html/` on `http://127.0.0.1:7373`. Runs in the
@@ -425,6 +476,10 @@ Print the version. Also `--version` and `-V`. With no arguments at all, or with
               rename, so a partial write never holds the extension.
   storage/    sources exactly as ingested, immutable
   views/      generated, disposable
+  graphviz/   generated, disposable — `compost draw`'s graph.dot/graph.svg.
+              A peer of graph/, storage/ and views/, not inside views/: a
+              future HTML view will *embed* this SVG, so it is an input to
+              `render`, not one of its outputs.
 ```
 
 ## NODE TYPES

@@ -15,6 +15,7 @@ compost digest --as=claude-code-transcript ~/.claude/projects/<slug>/*.jsonl
 compost check
 compost layer citation         # mint `cites` edges from the links already there
 compost render
+compost draw                   # a Graphviz picture of the whole base
 compost lookup d826c4dd-eb36-4da9-acab-f6f424a90803   # the block, and what cites it
 compost serve                  # read it at http://127.0.0.1:7373
 ```
@@ -49,6 +50,11 @@ The middle is the waist. Everything downstream reads two record types and never
 an AST, which is what keeps the graph from drifting away from what is displayed:
 a missing edge is a visibly broken page the same day.
 
+`compost draw` turns the same records into a Graphviz picture under
+`.compost/graphviz/` — every node, every edge, no collapsing policy yet. It
+always writes the DOT; it writes the SVG too if `graphviz` is on PATH, which
+keeps the binary optional rather than required.
+
 ## What it holds
 
 | | |
@@ -79,8 +85,9 @@ test_serve               9/9 serve guarantees hold
 test_manpage             6/6 man-page guarantees hold
 test_grammar             7/7 grammar guarantees hold  |  35 node types, 12 edge pairs, 380 nodes
 test_layer               16/16 layer guarantees hold
+test_draw                10/10 draw guarantees hold
 test_response            13/13 response guarantees hold
-test_loop                7/7 loop guarantees hold
+test_loop                9/9 loop guarantees hold
 test_dj_prepare          8/8 dj_prepare guarantees hold
 test_v01_dictionary      9/9 dictionary guarantees hold
 corpus                   present, 520 documents
@@ -98,6 +105,10 @@ and says so.
 Python 3.12 and **pandoc 3.10 or newer**, which does every read and every
 write. Nothing from PyPI. Node is no longer needed: djot goes through pandoc
 like everything else.
+
+**Graphviz 14.1.2** is pinned in `environment.yml` for `compost draw`'s SVG
+output, but is not a hard requirement of the tool: without it on PATH, `draw`
+still writes the complete DOT and only skips the SVG.
 
 Markdown is read as `commonmark_x` with three extensions **off**, each for a
 measured reason — `attributes` would eat citations, `smart` would merge `—`,
