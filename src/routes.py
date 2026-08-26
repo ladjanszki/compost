@@ -55,6 +55,23 @@ def _ast_of(path: Path) -> dict:
     return json.loads(r.stdout)
 
 
+def _ast_of_text(text: str) -> dict:
+    """The same markdown reader, on a string that has no file of its own.
+
+    `_ast_of` hands pandoc a path; `envelope["result"]` is a string already
+    sitting inside a wrapper document, so there is no file to name and the
+    text goes to pandoc on stdin instead. Same reader, same three extensions
+    disabled — the dialect must not depend on how the bytes arrived, or a
+    citation link in a claude response would parse differently from the
+    identical text in a note.
+    """
+    r = subprocess.run(["pandoc", "-f", READER, "-t", "json"],
+                       input=text, capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip())
+    return json.loads(r.stdout)
+
+
 # -- the routes -------------------------------------------------------------
 
 def _notes(path: Path, mint, route: str):
@@ -89,6 +106,89 @@ def _pandoc_ast(path: Path, mint, route: str):
             "not a pandoc JSON document: no 'blocks' key. "
             "Produce one with `pandoc -t json`.")
     return R.ast_to_records(doc, mint=mint, source=path.name, route=route)
+
+
+# The layer for the two edges a response digest mints between document
+# roots. Its own layer, the way `ingestion` and `agent` are their own layers:
+# "this response answered that note" is a different kind of fact from either
+# a document's structure or its bytes, and keeping it apart is what lets any
+# one of the three be reasoned about alone.
+CONVERSATION_LAYER = "conversation"
+
+
+def _response(path: Path, mint, route: str):
+    """
+    A `claude --print --output-format json` envelope, answering an earlier
+    document — docs/roadmap.md, "the conversation loop".
+
+    The file is not the bare envelope but a one-key wrapper the loop writes,
+    because the wrapper already knows the note's root guid at the moment it
+    calls claude and putting it in the file being written anyway avoids a
+    second file and a second route just to state one fact:
+
+        {"responds_to": "<the note's root guid>", "envelope": {...}}
+
+    Every key `claude --print` produced lands in `params`, verbatim and
+    unrenamed — CLAUDE.md's digest-everything rule, and the reason this route
+    exists at all rather than a route that keeps only `result`. Filtering
+    would be keeping the half anyone predicted would matter; this keeps
+    `total_cost_usd`, `permission_denials` and the rest of the eighteen keys
+    nobody has a use for yet, because deciding they are noise while reading
+    them is a decision made once, silently, and unrecoverably.
+
+    `result` is the other half, and it is markdown: it goes through the same
+    reader `notes` uses, so the answer's paragraphs become addressable blocks
+    like any other document's. Keeping it only in `params` — the way every
+    other key is kept — would make the response readable but never citable,
+    which defeats the point of the route existing at all.
+    """
+    try:
+        wrapper = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"not JSON ({e}). Expected "
+            '{"responds_to": "<guid>", "envelope": {...}}.') from None
+    if not isinstance(wrapper, dict) or "envelope" not in wrapper \
+            or "responds_to" not in wrapper:
+        raise RuntimeError(
+            'not a response wrapper: need "responds_to" and "envelope" '
+            'keys. See docs/roadmap.md, "the conversation loop".')
+    envelope = wrapper["envelope"]
+    if not isinstance(envelope, dict):
+        raise RuntimeError(
+            f"envelope is not an object: {type(envelope).__name__}")
+    responds_to = wrapper["responds_to"]
+    result = envelope.get("result", "")
+    if not isinstance(result, str):
+        raise RuntimeError(
+            f"envelope['result'] is not a string: {type(result).__name__}")
+
+    recs, root = R.ast_to_records(_ast_of_text(result), mint=mint,
+                                  source=path.name, route=route)
+    root_rec = next(r for r in recs if r["guid"] == root)
+    # `params` already holds meta/pandoc_api_version/source/route from
+    # ast_to_records and is never empty (source is always given above), so
+    # this is always a real dict to update in place, never a fresh one.
+    params = root_rec["params"]
+    params.update(envelope)
+    # `params["uuid"]` is now the ENVELOPE's own uuid, not this record's own
+    # `guid` — one word naming two different things in the same record. This
+    # looks like a bug and is not one: renaming it on the way in would stop
+    # this route being a faithful, verbatim copy of what claude printed, and
+    # leaving it alone means whoever reads params["uuid"] later has to know
+    # which of the two they are asking for. Decided in docs/roadmap.md,
+    # "the conversation loop" — recorded here because the record itself gives
+    # no other sign that this was deliberate.
+
+    b = R.Builder(mint)
+    # Both structural, so neither carries `by` — see docs/record-grammar.md
+    # §2 on when that field is present. `responds_to` is the fact a citation
+    # never states on its own (this document answers that one); `next` is
+    # reading order, note before its response, and is what lets a reader
+    # walk a conversation without a container node existing anywhere.
+    b.edge("responds_to", root, responds_to, CONVERSATION_LAYER)
+    b.edge("next", responds_to, root, CONVERSATION_LAYER)
+    return recs + b.records, root
 
 
 # -- referrals: files a source says exist ------------------------------------
@@ -148,6 +248,9 @@ ROUTES = {
     "claude-code-transcript": (_transcript, "a Claude Code session *.jsonl",
                                _transcript_referrals),
     "pandoc-ast": (_pandoc_ast, "a pandoc JSON document, already parsed", None),
+    "claude-code-response": (_response,
+                             "a {responds_to, envelope} wrapper around "
+                             "`claude --print --output-format json`", None),
 }
 
 

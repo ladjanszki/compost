@@ -252,6 +252,28 @@ def _link_agents(plans) -> int:
     return n
 
 
+def _structural_gaps(plans, known_guids: set) -> list[tuple[str, str, str, str]]:
+    """`(filename, edge type, end, missing guid)` for every edge endpoint
+    this batch mints that resolves to nothing.
+
+    Pulled out of `_digest` as its own function so the guarantee it gives —
+    every structural edge a batch mints has to resolve, or nothing is
+    written — can be sabotaged in isolation in the test suite: patch this to
+    always return `[]` and a batch with a broken `responds_to` writes a
+    dangling edge straight into the graph, which is exactly the failure this
+    exists to prevent (`docs/roadmap.md`, "the conversation loop").
+    """
+    out = []
+    for src, _, recs, _, _, _, _ in plans:
+        for r in recs:
+            if r["record"] != "edge":
+                continue
+            for end in ("source", "destination"):
+                if r[end] not in known_guids:
+                    out.append((src.name, r["type"], end, r[end]))
+    return out
+
+
 def _digest(s: Store, route: str, args: list[str], prog: str,
             follow: bool = True) -> int:
     """
@@ -270,9 +292,20 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
     not handed; `--no-follow` turns it off. Every discovery is printed, because
     a side effect nobody can see is the kind that gets discovered by accident
     two months later.
+
+    A **third** promise, added for the route that names a guid from outside
+    its own file (`claude-code-response`'s `responds_to`): every edge endpoint
+    a route mints must resolve, either within this batch or already in the
+    base, or nothing is written — see the guid check below, after every file
+    has been read.
     """
     plans, seen = [], {}
-    known = s.blobs()
+    base_recs, _ = s.load()
+    base_guids = {r["guid"] for r in base_recs if r["record"] == "node"}
+    known: dict[str, list[str]] = {}
+    for r in base_recs:
+        if r["record"] == "node" and r["type"] == "blob":
+            known.setdefault(r["params"]["bytes_sha256"], []).append(r["guid"])
     queue = [(Path(a), None) for a in args]
     done: set[Path] = set()
     while queue:
@@ -336,6 +369,27 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
                 queue.append((ref, src))
 
     _link_agents(plans)
+
+    # Every edge endpoint any route or `_link_agents` minted must be a guid
+    # this batch is *about to write* or one that is *already committed* —
+    # never an absence pretending to be a fact. This is deliberately not the
+    # citation path: a citation whose target is missing is real information
+    # (something was cited that is not here yet) and `compost layer citation`
+    # records it as a placeholder. A structural field like `responds_to`
+    # naming a guid nobody minted is not a fact about the world, it is a typo
+    # in whatever produced the file, and minting an `unresolved_citation` for
+    # it would write that typo into the graph as if it meant something.
+    # Checked here, once, rather than per-route, so every future route that
+    # names a guid from outside its own file is covered for free.
+    batch_guids = {r["guid"] for _, _, recs, _, _, _, _ in plans
+                   for r in recs if r["record"] == "node"}
+    gaps = _structural_gaps(plans, base_guids | batch_guids)
+    if gaps:
+        name, etype, end, missing = gaps[0]
+        print(f"  {name}: a {etype} edge's {end} names {missing}, which is "
+              f"not in this batch or the base")
+        print("  nothing was written")
+        return 1
 
     total_n = total_e = 0
     for src, stored, recs, root, guid, dup, referrer in plans:
