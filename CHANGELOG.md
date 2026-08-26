@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.7-rc — a graph view
+## v0.2.7 — 2026-08-26 — a graph view
 
 Landed on `main`, not shipped. It gets a version number when one
 is tagged, and not before — a heading naming a version with no tag
