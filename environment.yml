@@ -13,7 +13,16 @@ dependencies:
   - python=3.12
   - pip
 
-# No pip dependencies and no system dependencies beyond pandoc.
+  # `compost draw`'s layout engine. Pinned exactly, not floored like pandoc:
+  # `docs/roadmap.md` ("v0.2.7 — a graph view") measures engine choice and
+  # SVG size against 14.1.2 specifically, and a second tool whose version
+  # silently changes its output is a trap this project already knows from
+  # pandoc. Optional at the command level — `draw` always writes the DOT and
+  # only skips the SVG when `dot`/`twopi` is not on PATH — but required here
+  # so the env that builds a release actually has it.
+  - graphviz=14.1.2
+
+# No pip dependencies beyond pandoc and graphviz.
 #
 # Node and npx were required through v0.1.6, for the djot.js reference parser
 # (@djot/djot). v0.2 removed them: pandoc reads and writes djot natively, so
