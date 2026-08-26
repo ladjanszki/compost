@@ -26,5 +26,11 @@ vendor/
 #   ./tests/fetch-corpus.sh
 tests/corpus/
 
-# The generated graph and views of this repo's own base
-.compost/views/
+# This repo's own base. Ignored WHOLE, and deliberately: it holds the human's
+# working notes and conversations, and this repository has already had personal
+# material purged from its history once. Better never in than removed twice.
+#
+# No trailing slash. `.compost` here is a symlink into a local-only repo that
+# version-controls the base, and git stores a symlink as a blob rather than a
+# directory — so `.compost/` would NOT match it and the link would be tracked.
+.compost

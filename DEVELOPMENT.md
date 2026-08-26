@@ -18,6 +18,8 @@ tools/          committed scripts that are not the tool, and never installed
   bleach.py     lorem-ise a markdown file, keep the formatting
   bleach_session.py   the same for a transcript
   roundtrip.py  the pandoc-only fixed-point harness
+  dj_prepare.py      repair a v0.1 .dj so pandoc keeps its list-item handles
+  v01_dictionary.py  the legacy handle -> guid dictionary, as alias records
 tests/          one suite per property; ./tests/run.sh runs them all
   fixtures/     the smoke set, ~80 KB: the documents suites name directly
     grammar/    one instance of every constructor, so docs/record-grammar.md

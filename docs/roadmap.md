@@ -536,12 +536,16 @@ Steps:
 1. `python3 -m tools.dj_prepare CORPUS OUTDIR` — without it 767 handles are
    lost silently — then `pandoc -f djot -t json` and `compost digest
    --as=pandoc-ast`. `--verify` asserts every assigned handle survived.
-2. A one-off external script builds the dictionary from the **digested graph** —
-   every block whose `attr` id is 8 hex characters maps that handle to the block's
-   guid — and emits `alias` nodes and `names` edges as JSONL. Copy the file under
-   `graph/`. It never becomes part of the CLI.
-3. `compost layer citation --by kg-8hex`.
-4. Commit the dictionary script and its output as ordinary files.
+2. `python3 -m tools.v01_dictionary BASE` builds the dictionary from the
+   **digested graph** — every block whose `attr` id is 8 hex characters maps
+   that handle to the block's guid — and writes `alias` nodes and `names` edges
+   straight into `graph/`. `--dry-run` reports the count without writing, which
+   is how a dictionary short by 767 is caught before anything is minted. It is
+   not a subcommand and will not become one.
+3. `compost check`. This is the gate for a generated graph file, and it is not
+   optional — see `docs/decisions.md`, "Hand-written graph files are allowed".
+4. `compost layer citation --by kg-8hex`.
+5. Commit the dictionary's output; the script is already in `tools/`.
 
 **The collision check is already done.** 6,601 ids, 6,601 distinct — zero
 duplicates across the whole corpus. That was listed as a thing to confirm before

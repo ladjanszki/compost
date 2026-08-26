@@ -3,6 +3,39 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## Unreleased
+
+Landed on `main`, not shipped. It gets a version number when one
+is tagged, and not before — a heading naming a version with no tag
+behind it is a planning bucket wearing a release number, which
+`tests/clean-room.sh` refuses.
+
+### `tools/v01_dictionary.py`, and this repo gets a base
+
+The migration's two remaining pieces, promoted from one-off scripts to tools
+with suites. `v01_dictionary.py` reads a digested base and writes the legacy
+handle to guid mapping as `alias` nodes and `names` edges — a direct read of
+the records, no text matching. `--dry-run` reports the count without writing,
+which is what catches a dictionary short by 767 before anything is minted.
+
+A handle appearing on two blocks is **reported, never picked**. The v0.1 corpus
+has none — 6,601 ids, 6,601 distinct — and the check exists so a corpus that
+does say so rather than silently choosing.
+
+Running it twice is redundant but not harmful: two aliases for one handle name
+the same block, and destinations are collected into a set, so nothing becomes
+ambiguous. Asserted, because the opposite would make a re-run corrupt a base.
+
+**This repository now has a `.compost/` of its own**, which it has never had.
+It is a symlink into a local-only git repository, so the base gets full version
+history while never entering this one — the notes and conversations in it are
+the human's working knowledge, and this repo has already had personal material
+purged from its history once.
+
+`.gitignore` matches `.compost` with **no trailing slash**. Git stores a symlink
+as a blob rather than a directory, so `.compost/` would not match it and the
+link itself would have been tracked.
+
 ## v0.2.5 — 2026-08-25 — tools/, and the legacy handle scheme
 
 ### `compost layer citation --by kg-8hex` — the v0.1 handle scheme
