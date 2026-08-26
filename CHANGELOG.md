@@ -135,8 +135,10 @@ shows `view_names()` renaming both, and another swaps in a `root_of` that
 answers the wrong guid and shows the next digest refuses rather than
 mis-wiring the conversation.
 
-`tests/test_response.py` (13 properties) and `tests/test_loop.py` (7)
+`tests/test_response.py` (13 properties) and `tests/test_loop.py` (9)
 join the suite, eighteen in total.
+
+## v0.2.5 — 2026-08-25 — tools/, and the legacy handle scheme
 
 ### `compost layer citation --by kg-8hex` — the v0.1 handle scheme
 
