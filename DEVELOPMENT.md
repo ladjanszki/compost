@@ -47,6 +47,52 @@ Those live in `tools/`, which is importable from a checkout and installed
 nowhere. Until v0.2.5 the bleachers and the round-trip harness sat in `src/`
 and shipped with the package for no reason at all.
 
+## Closing a version: tag the candidate first
+
+`tests/clean-room.sh` asserts that a version named in `CHANGELOG.md` has a tag
+behind it — a heading with no tag is a planning bucket wearing a release
+number. But the gate is the last thing you run *before* tagging, so the check
+fails on every release by construction and every reader trips on it.
+
+**The fix is a release candidate tag, and it changes nothing else.** Three
+states, one hedge convention:
+
+| CHANGELOG heading | tag | means |
+|---|---|---|
+| `## Unreleased` | — | landed on `main`, no version chosen yet |
+| `## v0.2.7-rc — the graph view` | `v0.2.7-rc` | version named, gate runnable, not released |
+| `## v0.2.7 — 2026-08-27 — the graph view` | `v0.2.7` | released |
+
+The `-rc` suffix replaces the word "unreleased" once a version has a number,
+so there is one convention rather than two.
+
+**There is exactly one `-rc` tag and it has no number.** A second candidate
+moves it: `git tag -f v0.2.7-rc`. It is a pointer at *what is being tested*,
+not a record of history — the release is the last candidate, so keeping old
+ones stores nothing.
+
+The order:
+
+1. name it: rename the heading to `## vX.Y.Z-rc — …` **and** `git tag vX.Y.Z-rc`.
+   Both together — tagging while the heading still says `## Unreleased` makes
+   the gate pick the rc as newest, find no matching heading, and fail.
+2. `./tests/run.sh`, then `./tests/clean-room.sh --with-agent`. Both now pass.
+3. fix what they find; `git tag -f vX.Y.Z-rc`; repeat 2.
+4. bump `src/__init__.py` and the man page's `Version` line; rename the heading
+   to `## vX.Y.Z — DATE — …`; commit as `chore:`.
+5. `git tag -a vX.Y.Z`, **delete the rc in the same breath**, push branch and
+   tags. Forgetting the delete leaves the rc sorting above the release — git
+   orders `v0.2.7-rc` *above* `v0.2.7` by default — so the gate looks for the
+   rc's heading, which no longer exists, and fails. That is the failure telling
+   you to finish the cleanup, and it is why the delete is part of step 5 rather
+   than a step of its own.
+
+**Known hole, unenforced:** abandon a version and its `-rc` tag stays behind
+with nothing to notice, because the gate only inspects the newest tag. A
+leftover rc is a true statement — testing began here and never finished — so
+this is a signal rather than a defect. Enforcing "at most one `-rc` tag exists"
+is one line if that stops being good enough.
+
 The test material is in two tiers. The **smoke set** under `tests/fixtures/`
 is committed, ~80 KB, and holds the documents the suites name directly — the
 one markdown file that reaches every sabotage, a hand-built AST no reader can

@@ -100,7 +100,12 @@ shaped the way it is, never as a description of the current tool.
 ## The rules that bite
 
 - **Work on `main`, tag each version.** No feature branches; see
-  `DEVELOPMENT.md` for why this was learned the hard way.
+  `DEVELOPMENT.md` for why this was learned the hard way. **Tag the
+  candidate before running the gate** — `vX.Y.Z-rc`, one tag, no number,
+  force-moved for each new candidate and deleted when the release is
+  tagged. `clean-room.sh` demands a tag for the version the CHANGELOG
+  names, and it runs before you tag; the rc is what breaks that circle.
+  The full order is in `DEVELOPMENT.md`, "Closing a version".
 - **Digest everything the file holds; filter at query time, never at import.**
   Deciding a field is noise while reading it is a decision made once, silently,
   and unrecoverably — the bytes are still in `storage/`, but every base built
