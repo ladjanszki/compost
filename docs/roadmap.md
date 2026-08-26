@@ -762,56 +762,103 @@ round-trip. So "keep every envelope key" needs no new machinery.
 
 ### What has to be built
 
-1. **A route for the envelope.** Keeps every envelope key in params on the root,
-   **and** runs `result` through the markdown reader so the answer is made of
-   addressable blocks. Without the second half you cannot cite claude's
-   paragraphs, which is the whole point. **Promote `session_id` to a top-level
-   param** — it is the join to the transcript and it is free at import.
-2. **Conversation edges arrive by a digest route.** The wrapper knows every guid
-   involved; it writes a small file naming them, and `compost digest` ingests it.
-   This reuses `digest`'s immutability and blob-store guarantees instead of
-   inventing parallel ones, and "a fact arrived from outside" is what `digest`
-   means. It is a route whose input names guids from *other* documents — a shape
-   no route has today.
+**Simplified 2026-08-26.** Two of the five items below were solved by choosing
+a different shape rather than by building anything, and the reasoning is kept
+because both looked necessary until the constraint was read precisely.
 
-   **Not designed yet, and it is the one item here that is a design task rather
-   than an implementation task.** Two things are unanswered:
+1. **A route for the envelope, `--as=claude-code-response`.** Keeps every one of
+   the 21 envelope keys in `params` on the root — verified to survive, nested
+   dicts and `null` included — **and** runs `result` through the markdown reader
+   so the answer is made of addressable blocks. Without the second half you
+   cannot cite claude's paragraphs, which is the whole point. **Promote
+   `session_id` to a top-level param**: it is the join to the transcript and it
+   is free at import.
 
-   - **What the file contains.** No format is specified. It needs at minimum
-     the round roots in order, and to say whether the conversation node is
-     minted by the route or named by the wrapper.
-   - **What happens when a named guid is not in the base.** `_digest` does not
-     run `check` on a batch — it validates that the route can *read* the file
-     and then writes — so a bad guid is not caught at import. It becomes a
-     dangling endpoint, and `check` then fails for the **whole base**, which is
-     the exact failure `unresolved_citation` was invented to avoid for
-     citations. This route needs the same answer or a reason it does not.
+   Its input is not the bare envelope but a one-key wrapper the loop writes:
 
-   Note that the earlier claim here — that `_digest` "validates a batch in
-   isolation" and that this is why `layer` had to be its own command — is loose.
-   Nothing rejects a cross-batch edge. The real reason `layer` exists is that
-   `citation_edges` has to *resolve* against the whole base, and a wrapper that
-   already knows the guids does not need resolution at all.
-3. **The conversation edge cannot be `contains`.** `check` requires a root to have
-   zero parents (`src/records.py:472`). It needs its own edge type, and
-   `render_all` must consult it to decide those roots get no page of their own.
-   Precedent is exact: `launched` already does this for subagent transcripts.
+   ```json
+   {"responds_to": "<the note's root guid>",
+    "envelope": { ...all 21 keys, verbatim... }}
+   ```
+
+   **This is what removes the old item 2.** The wrapper already knows the note's
+   guid when it calls claude, so the edge is minted during the response's own
+   digest — one file, one route, one `digest`. The earlier design had the loop
+   write a *third* file naming both guids, plus a route to read it, purely
+   because `digest` only makes records from a file's contents and there is no
+   `compost link A B`. Putting the guid in the file that was being written
+   anyway makes that whole mechanism unnecessary.
+
+   Cost, stated: `storage/` holds the wrapper rather than the bare
+   `claude --print` output. The envelope is nested verbatim, so nothing the
+   source said is lost.
+
+   **Decide `params["uuid"]`.** The envelope carries its own `uuid`, unrelated
+   to the record's guid. Copied verbatim, one word means two things in one
+   record.
+
+2. **Two edge types, and neither can be `contains`.** `responds_to` from the
+   response root to the note root; `next` for reading order.
+
+   **`check` counts parents from `contains` edges only** (`records.py:493-496`).
+   Every other edge type is invisible to it, so joining two roots with `next`
+   and `responds_to` needs no new machinery and no exception anywhere.
+   Verified: two `document` roots joined by both, `check` clean, `render`
+   unaffected, both keep their own page.
+
+   **This removes the old item 3.** That item said the conversation edge needed
+   its own type *and* that `render_all` must consult it so grouped roots get no
+   page of their own — both true only if the conversation is a **container**. A
+   container fails outright: `ROOT_TYPES = {"document", "session"}` and a root
+   must have zero `contains` parents, so a `turn` holding the note and the
+   response is rejected. Chaining sidesteps it completely.
+
+   ```
+   note D₁ ──next──▶ response R₁ ──next──▶ note D₂ ──next──▶ response R₂
+           ◀──responds_to──┘                       ◀──responds_to──┘
+   ```
+
+   **No conversation node in this release.** "This conversation" is *walk the
+   chain*, startable from any block a citation lands on, which is what actually
+   gets done. A conversation node earns its place when something needs a title
+   or metadata, and it will need the suppressed-page handling then.
+
+3. **`digest` must refuse a structural guid that is not in the base.** The
+   wrapper's `responds_to` is not a citation: if that guid is absent it is a
+   bug, not a fact about the world, and minting an `unresolved_citation` for it
+   would record a typo as knowledge.
+
+   Today nothing catches it. `_digest` validates that a route can *read* the
+   file and then writes; the edge dangles, and `check` then fails for the
+   **whole base**. A one-character slip takes down everything.
+
+   The fix is small and general: after a route returns records, verify every
+   edge endpoint is either in this batch or already in the base, and refuse the
+   file otherwise. That extends `_digest`'s existing promise — *"nothing is
+   written until every input has been read and parsed"* — by one step, and it
+   protects every future route that names guids from outside its own file.
+
+   The distinction to hold on to: **a citation may legitimately dangle and gets
+   a placeholder; a structural field may not and gets a refusal.**
+
 4. **Append-only comes free.** Nothing is ever rewritten; each round is a new
-   immutable document. v0.1 needed explicit append verification; this shape makes
-   it a property.
-5. **The wrapper**, outside the CLI. `nvim` on a nameless file, digest, layer,
-   render, pipe, digest the response, layer, render.
+   immutable document. v0.1 needed explicit append verification; this shape
+   makes it a property.
+
+5. **The wrapper, in `tools/`.** Not a subcommand. `nvim` on a fresh name,
+   digest, layer, render, pipe, wrap the envelope, digest, layer, render.
 
 ### The loop, end to end
 
 ```
 f=/tmp/round-$(date +%s).md          # a fresh name every round — see below
 nvim "$f"
-compost digest --as=notes "$f"       # read the view path back from this output
+compost digest --as=notes "$f"       # read the view path AND the root guid back
 compost layer citation
 compost render
-cat .compost/views/default-djot/<stem>.dj | claude --print --output-format json > r.json
-compost digest --as=claude-code-response r.json
+cat .compost/views/default-djot/<stem>.dj | claude --print --output-format json \
+  | jq --arg g "<root guid>" '{responds_to: $g, envelope: .}' > round.json
+compost digest --as=claude-code-response round.json
 compost layer citation
 compost render
 ```
@@ -823,6 +870,12 @@ root's handle **to both documents**, so `xxx.dj` stops existing and each round's
 view is named `xxx-<36-char guid>.dj`. A loop that `cat`s a guessed stem reads a
 file that is no longer there — and the failure is a missing file, not a wrong
 answer, so at least it is loud.
+
+**The wrapper needs the note's root guid too**, not just the view path. `digest`
+already prints it (`root <8 hex>` in its per-file line) but that is a *display*
+prefix, not the guid — the loop needs the whole thing, so either `digest` gains a
+machine-readable output or the wrapper reads it back out of the written file.
+Decide which; the second needs no new surface.
 
 ---
 
@@ -1171,8 +1224,17 @@ nothing is coordinated either.
 
 - **Backlink placement in the HTML view** — per block or per document. Moved
   out of v0.2.5 to after v0.2.8; the question is unchanged, only unscheduled.
-- **The route name for the envelope.** `claude-code-response` is a placeholder.
-- **The conversation edge type name.** `includes` was proposed; not settled.
+- ~~**The route name for the envelope.**~~ Settled 2026-08-26:
+  **`claude-code-response`**, parallel to `claude-code-transcript` — same
+  producer, different output mode.
+- ~~**The conversation edge type name.**~~ Settled 2026-08-26. `includes` is
+  **not** used: it implied a container, and a container of roots fails `check`.
+  Two edges instead, **`responds_to`** and **`next`**, neither of which `check`
+  counts as parenthood.
+- **`params["uuid"]` on the response envelope** — the envelope's own identifier
+  sits beside the record's `guid`, one word for two things. Rename on import and
+  the route stops being a faithful copy; leave it and something reads the wrong
+  one eventually.
 - **How `represents` and `duplicates` relate to `alias`** — three ways of saying
   two records are about one thing.
 
