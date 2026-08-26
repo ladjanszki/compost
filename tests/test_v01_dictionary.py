@@ -60,18 +60,56 @@ def main():
         tmp = Path(d)
         st, citer = base_with_handles(tmp)
         recs, _ = st.load()
-        built, dupes = D.build(recs)
+        built, dupes, counts = D.build(recs)
         aliases = [r for r in built if r["record"] == "node"]
         names = [r for r in built if r["record"] == "edge"]
 
-        def one_each():
-            return (len(aliases) == 3 and len(names) == 3 and not dupes,
-                    f"{len(aliases)} aliases, {len(names)} names edges")
-        case("one alias and one names edge per 8-hex id", one_each)
+        def only_cited():
+            # Three handles are assigned; one is cited. The default mints one.
+            vals = {a["params"]["value"] for a in aliases}
+            # counts.get, not counts[]: a default that reverts to minting
+            # everything must fail this as an assertion, not as a KeyError.
+            return (len(aliases) == 1 and len(names) == 1 and not dupes
+                    and vals == {"a1b2c3d4"} and "cited" in counts,
+                    f"{len(aliases)} alias for {counts.get('cited', 'no')} cited "
+                    f"of {counts['assigned']} assigned")
+        case("by default only a handle something cites gets an alias",
+             only_cited)
+
+        def all_mints_everything():
+            full, _, c = D.build(recs, cited_only=False)
+            vals = {r["params"]["value"] for r in full if r["record"] == "node"}
+            return (vals == {"a1b2c3d4", "e5f6a7b8", "c0ffee11"}
+                    and c["minted"] == 3,
+                    f"--all values {sorted(vals)}")
+        case("--all mints one per assigned id, cited or not",
+             all_mints_everything)
+
+        def filter_changes_no_outcome():
+            # The property the filter rests on: a dictionary holding only the
+            # cited handles resolves exactly what the full one resolves. If
+            # this ever fails, the filter is dropping something load-bearing.
+            out = {}
+            for label, only in (("filtered", True), ("full", False)):
+                st2 = S.Store.init(tmp / f"cmp-{label}")
+                b2 = R.Builder()
+                for r in recs:
+                    b2.records.append(dict(r))
+                st2.write("base.jsonl", b2.records)
+                d2, _, _ = D.build(recs, cited_only=only)
+                st2.write("dict.jsonl", d2)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    r2 = L.build(st2, "citation", "kg-8hex")
+                out[label] = (r2["cites"], r2["placeholders"], r2["ambiguous"])
+            return (out["filtered"] == out["full"],
+                    f"filtered {out['filtered']} vs full {out['full']}")
+        case("the filtered dictionary resolves what the full one resolves",
+             filter_changes_no_outcome)
 
         def only_8hex():
-            vals = {a["params"]["value"] for a in aliases}
-            return (vals == {"a1b2c3d4", "e5f6a7b8", "c0ffee11"},
+            full, _, _ = D.build(recs, cited_only=False)
+            vals = {r["params"]["value"] for r in full if r["record"] == "node"}
+            return (all(len(v) == 8 for v in vals),
                     f"values {sorted(vals)}")
         case("nothing but 8-hex ids becomes an alias", only_8hex)
 
@@ -107,7 +145,7 @@ def main():
             # _alias_targets collects destinations into a set — so a second
             # dictionary is redundant, never ambiguous. Asserted because the
             # opposite would make a re-run corrupt the base.
-            again, _ = D.build(recs)
+            again, _, _ = D.build(recs)
             st.write("dict-2.jsonl", again)
             with contextlib.redirect_stdout(io.StringIO()):
                 r = L.build(st, "citation", "kg-8hex")
@@ -122,7 +160,8 @@ def main():
             b = R.Builder()
             for _ in range(2):
                 b.node("Div", {"attr": ["deadbeef", [], []]})
-            _, dup = D.build(b.records)
+            b.node("Para", None, [{"t": "Str", "c": "{#deadbeef}"}])
+            _, dup, _ = D.build(b.records)
             return dup == ["deadbeef"], f"reported {dup}"
         case("a handle on two blocks is reported, never picked",
              duplicates_are_reported)

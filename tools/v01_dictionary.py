@@ -10,7 +10,7 @@ into — **a direct read of the records**. Every node whose pandoc `attr` id is
 eight hexadecimal characters maps that handle to the node's guid. No text
 matching, no positional alignment, no folding rule, nothing fuzzy.
 
-    python3 -m tools.v01_dictionary [BASE] [--out NAME] [--dry-run]
+    python3 -m tools.v01_dictionary [BASE] [--all] [--out NAME] [--dry-run]
 
 **This is not a subcommand and will not become one.** `docs/decisions.md`,
 "Hand-written graph files are allowed; `check` is the gate": the records
@@ -23,6 +23,14 @@ is the gate, and it is not optional.
 `pandoc -f djot` drops a block attribute opening a list item, which costs 767
 of the corpus's 6,601 handles, and this script cannot see what never arrived.
 It reports the count so a short dictionary is visible rather than silent.
+
+**Only cited handles by default.** The corpus assigns 6,601 and cites 159, so
+the full dictionary is 13,202 records answering about two hundred questions.
+Nothing is lost: the handle is on the block, in `params["attr"][0]`, so this is
+an index over data that stays in the base and `--all` rebuilds it whole. What
+it costs is that the filter is a snapshot — a document imported later, citing a
+handle nobody had cited before, will not resolve until the dictionary is built
+again, and nothing will tell you.
 
 **Running it twice is harmless but pointless.** Two aliases for one handle both
 name the same block, and `_alias_targets` collects destinations into a set, so
@@ -59,18 +67,42 @@ def handles(records: list) -> list[tuple[str, str]]:
     return out
 
 
-def build(records: list) -> tuple[list, list]:
-    """Alias nodes and `names` edges. Returns (records, duplicate handles).
+def build(records: list, cited_only: bool = True) -> tuple[list, list, dict]:
+    """Alias nodes and `names` edges. Returns (records, duplicates, counts).
 
-    A handle appearing twice would make the dictionary ambiguous by
-    construction, so it is returned rather than resolved. The v0.1 corpus has
-    none — 6,601 ids, 6,601 distinct — and this exists so that a corpus which
-    does say so instead of quietly picking one.
+    **Only handles something actually cites, by default.** The corpus assigns
+    6,601 handles and cites 159 of them, so a full dictionary is 13,202 records
+    to answer about two hundred questions. The other 6,442 aliases would name
+    blocks nobody refers to.
+
+    Nothing is lost by leaving them out, and that is why this is the default
+    rather than an option: **the handle itself is on the block**, in
+    `params["attr"][0]`, put there by `digest` and never removed. This function
+    is an index over data that stays in the base, so a filtered dictionary is
+    regenerable in full at any time — `--all` does it. The cost is that the
+    filter is a snapshot of what was cited *when it ran*: import a document
+    later that cites a handle nobody had cited before and it will not resolve
+    until the dictionary is rebuilt. Nothing detects that, in keeping with
+    everything else here — the tool does not hold your hand.
+
+    Which handles are cited is read from the records with
+    `records.legacy_handle_refs`, the same reader `layer citation --by kg-8hex`
+    uses, so the two cannot drift apart or disagree about what a citation is.
+
+    A handle on two blocks would make the dictionary ambiguous by construction,
+    so it is reported rather than resolved.
     """
+    found = handles(records)
+    wanted = None
+    if cited_only:
+        wanted = {h for h, _ in R.legacy_handle_refs(records)}
+
     b = R.Builder()
     seen: dict[str, str] = {}
     dupes = []
-    for handle, guid in handles(records):
+    for handle, guid in found:
+        if wanted is not None and handle not in wanted:
+            continue
         if handle in seen:
             dupes.append(handle)
             continue
@@ -81,7 +113,15 @@ def build(records: list) -> tuple[list, list]:
         n = b.records[-1]
         n["created_at"], n["tool_version"] = R._now(), __version__
         b.edge("names", al, guid, R.CITATION_LAYER, by=SCHEME)
-    return b.records, dupes
+
+    counts = {"assigned": len({h for h, _ in found}), "minted": len(seen)}
+    if wanted is not None:
+        counts["cited"] = len(wanted)
+        # Cited but assigned nowhere in this base. These get no alias and no
+        # `names` edge, so `layer` mints a placeholder for each — which is the
+        # correct record of a reference whose target is not here.
+        counts["dangling"] = len(wanted - set(seen))
+    return b.records, dupes, counts
 
 
 def main(argv) -> int:
@@ -99,9 +139,17 @@ def main(argv) -> int:
         return 1
 
     records, _ = st.load()
-    recs, dupes = build(records)
+    recs, dupes, c = build(records, cited_only="--all" not in argv)
     n = sum(1 for r in recs if r["record"] == "node")
     print(f"  {n:,} aliases, {len(recs):,} records")
+    if "cited" in c:
+        print(f"  {c['assigned']:,} handles assigned in the base, "
+              f"{c['cited']:,} of them cited")
+        if c["dangling"]:
+            print(f"  {c['dangling']} cited but assigned nowhere here — "
+                  f"`layer` will mint a placeholder for each")
+    else:
+        print(f"  --all: every assigned handle, cited or not")
     if dupes:
         print(f"  {len(dupes)} handle(s) appear more than once and were skipped:")
         for h in sorted(set(dupes))[:10]:

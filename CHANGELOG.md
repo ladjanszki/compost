@@ -18,6 +18,21 @@ handle to guid mapping as `alias` nodes and `names` edges — a direct read of
 the records, no text matching. `--dry-run` reports the count without writing,
 which is what catches a dictionary short by 767 before anything is minted.
 
+**Only handles something cites, by default — 152 rather than 6,601.** The
+corpus assigns 6,601 and cites 159, so a full dictionary is 13,202 records
+answering about two hundred questions. Measured both ways against the real
+corpus, resolution is identical — 206 cites, 7 placeholders either way — and
+the base is 6,449 nodes and 4 MB smaller. A suite property asserts that
+equivalence, because if the filter ever drops something load-bearing that is
+where it must surface.
+
+Nothing is lost, which is why it is the default and not a flag: the handle is
+on the block, in `params["attr"][0]`, and the dictionary is an index over data
+that stays in the base. `--all` rebuilds it whole. The cost is that the filter
+is a snapshot of what was cited when it ran — a document imported later, citing
+a handle nobody had cited before, will not resolve until it is rebuilt, and
+nothing detects that.
+
 A handle appearing on two blocks is **reported, never picked**. The v0.1 corpus
 has none — 6,601 ids, 6,601 distinct — and the check exists so a corpus that
 does say so rather than silently choosing.

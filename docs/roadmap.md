@@ -540,8 +540,26 @@ Steps:
    **digested graph** — every block whose `attr` id is 8 hex characters maps
    that handle to the block's guid — and writes `alias` nodes and `names` edges
    straight into `graph/`. `--dry-run` reports the count without writing, which
-   is how a dictionary short by 767 is caught before anything is minted. It is
-   not a subcommand and will not become one.
+   is how a dictionary short by 767 is caught before anything is minted. Run it
+   from the checkout: `tools/` is importable there and installed nowhere, so
+   pass the base as an argument rather than running from inside it. It is not a
+   subcommand and will not become one.
+
+   **Only cited handles, by default — 152 rather than 6,601.** The corpus
+   assigns 6,601 handles and cites 159 of them, so a full dictionary is 13,202
+   records answering about two hundred questions. Measured both ways against
+   the real corpus, resolution is *identical* — 206 cites, 7 placeholders — and
+   the base is 6,449 nodes and 4 MB smaller.
+
+   Nothing is lost by leaving the rest out, which is why this is the default
+   rather than a flag: **the handle is on the block itself**, in
+   `params["attr"][0]`, put there by `digest` and never removed. The dictionary
+   is an index over data that stays in the base, so `--all` rebuilds it whole
+   at any time. What it costs is that the filter is a snapshot of what was
+   cited when it ran — import a document later citing a handle nobody had cited
+   before and it will not resolve until the dictionary is rebuilt, and nothing
+   will tell you. Consistent with everything else here: the tool does not hold
+   your hand.
 3. `compost check`. This is the gate for a generated graph file, and it is not
    optional — see `docs/decisions.md`, "Hand-written graph files are allowed".
 4. `compost layer citation --by kg-8hex`.
