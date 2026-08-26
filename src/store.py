@@ -6,6 +6,7 @@ store.py — the on-disk graph.
       storage/    immutable sources, exactly as ingested
       graph/      *.jsonl records, committed
       views/      generated, disposable
+      graphviz/   generated, disposable — `compost draw`'s DOT and SVG
 
 `.compost/` is also the marker: the root is found by walking up until a
 directory of that name appears. Nothing else identifies a base, so a base
@@ -67,7 +68,7 @@ class Store:
     @classmethod
     def init(cls, root: Path) -> "Store":
         s = cls(root)
-        for d in (s.graph, s.storage, s.views):
+        for d in (s.graph, s.storage, s.views, s.graphviz):
             d.mkdir(parents=True, exist_ok=True)
         return s
 
@@ -86,6 +87,15 @@ class Store:
     @property
     def views(self) -> Path:
         return self.base / "views"
+
+    @property
+    def graphviz(self) -> Path:
+        # A peer of graph/, storage/ and views/, not a subdirectory of
+        # views/: an HTML view will eventually *embed* this output, so it is
+        # an input to `render` rather than one of its products — the same
+        # direction storage/ feeds graph/. See docs/roadmap.md,
+        # "v0.2.7 — a graph view".
+        return self.base / "graphviz"
 
     # -- writing -----------------------------------------------------------
     def write(self, relpath: str, recs: list) -> Path:

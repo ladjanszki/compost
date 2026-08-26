@@ -14,6 +14,7 @@ behaviour here.
     compost layer NAME      derive records from the base itself, e.g. citations
     compost lookup HANDLE   print the node a handle names, and what cites it
     compost render          generate the three views
+    compost draw [ROOT]     generate a Graphviz picture of the base, or ROOT
     compost serve [-p N]    hand the HTML view to a browser
     compost version         print the version
 
@@ -34,6 +35,8 @@ USAGE = """usage: compost <command> [args]
                   bare `layer` lists what can be built
   lookup HANDLE   print the node a handle names, and what cites it
   render          generate views/default-{djot,html,md}
+  draw [ROOT]     generate graphviz/graph.{dot,svg} for the whole base, or
+                  the subgraph under ROOT; --engine picks dot|twopi|sfdp
   serve [-p N]    serve the HTML view on 127.0.0.1:7373
   version         print the version
 
@@ -61,6 +64,10 @@ def main(argv=None) -> int:
     if cmd == "layer":
         from . import layers
         return layers.main(argv[1:])
+
+    if cmd == "draw":
+        from . import draw
+        return draw.main(argv[1:])
 
     if cmd == "serve":
         from . import serve
