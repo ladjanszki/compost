@@ -2,9 +2,12 @@
 """
 layers.py — compost layer.
 
-The second writer to graph/. Unlike `digest`, which reads bytes nobody has
-seen before, a layer reads the base itself and derives new records from what
-is already there — a citation resolved against every earlier import, not just
+The tool's second writer to graph/ — not the base's. Anything emitting valid
+JSONL under graph/ writes records on the same terms; `check` is the gate, not
+authorship (docs/decisions.md, "Anything may write records").
+
+Unlike `digest`, which reads bytes nobody has seen before, a layer reads the
+base itself and derives new records from what is already there — a citation resolved against every earlier import, not just
 the batch it arrived in.
 
     compost layer                        list what can be built

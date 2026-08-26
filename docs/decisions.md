@@ -637,22 +637,44 @@ honest: `compost layer NAME` builds and stops. The costs are listed in the
 roadmap's *Risks accepted without mitigation*, which exists so that meeting one is
 a known price rather than a discovery.
 
-## Hand-written graph files are allowed; `check` is the gate
+## Anything may write records; `check` is the gate
 
-`CLAUDE.md` said *"Do not hand-edit `.compost/graph/`."* Relaxed, because the
-records `digest` writes are produced by ordinary Python and a migration script
-producing valid JSONL is not different in kind. `Store.load()` does not care who
-wrote a file, and **`check` is what enforces every invariant** — not the identity
-of the writer.
+**Not a relaxation of a rule — the model.** An earlier `CLAUDE.md` said *"Do not
+hand-edit `.compost/graph/`. Write through `compost digest`."* That was always a
+description of habit rather than of mechanism, and it was wrong in a way that
+mattered: it implied the tool has a privileged position it does not have.
 
-The relaxation covers **deleting a whole file that one `layer` run wrote**, and
-must: `layer` only ever adds, so without whole-file deletion the sole remedy for
-the tool's intended accumulation would be an operation the project forbids.
-Editing a line inside a file is still banned.
+The records `digest` writes are produced by ordinary Python. So are `layer`'s.
+So are a migration script's, and so are an agent's. **`Store.load()` does not
+care who wrote a file**, and `check` is what enforces every invariant — not the
+identity of the writer. A generated file that passes `check` is
+indistinguishable from one `digest` wrote, because there is nothing to
+distinguish. The requirement is the *format and the location*: valid JSONL,
+one record per line, under `graph/`.
 
-Known cost: `check` does not validate that a node's `type` is a known one, so a
-typo'd type passes if its parent count is right. Not fixed here; a central
-contract mechanism is planned well after this window.
+`digest` and `layer` are therefore two writers among however many there are,
+and calling `layer` "the second writer" counts subcommands, not writers.
+
+**This is a trust model, and the trust is currently unearned.** `check`
+verifies structure — parent counts, dangling endpoints, cycles, guid
+collisions. It does **not** validate that a node's `type` is a known one, so a
+typo'd `"alais"` passes if its parent count is right. Today's guarantee is
+therefore "the agents and scripts writing here are trusted, and `check` catches
+the structural mistakes", which is weaker than the earlier prohibition sounded
+and is the honest statement of where things stand.
+
+**A grammar validation layer is planned** for when this has to run somewhere
+the writers are not trusted — validating each record against the grammar in
+`docs/record-grammar.md` rather than only against structural invariants. It is
+not scheduled inside the current window, and until it exists the trust
+assumption should be stated wherever it is being relied on rather than left
+implicit.
+
+**Two things remain wrong regardless of who writes.** Editing a line inside an
+existing file: records are immutable, and rewriting a whole file is the only
+honest form of change. And deleting anything finer than a whole file — deleting
+a *whole* file that one `layer` run wrote is fine, and is the only inverse the
+design offers for accumulation it never removes.
 
 ## Reading a v0.1 `.dj`: djot, and what two wrong answers cost
 

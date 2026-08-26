@@ -403,8 +403,9 @@ faced this splits it the same way (PROV-O, NFO, FRBR, DCAT): a path is a
 locator, not a thing. When the same path is both, a `represents` edge joins
 them; nothing mints one yet.
 
-`alias` and `unresolved_citation` are minted by `compost layer citation`, not
-by `digest` — the base's second writer. An `alias` names a value
+`alias` and `unresolved_citation` are minted by `compost layer citation` rather
+than by `digest` — and by anything else that writes valid records, such as the
+migration's dictionary script. An `alias` names a value
 (`params["value"]`, `params["scheme"]`) that leads to another node by a
 `names` edge; today that node is always an `unresolved_citation`, a
 placeholder for a citation target not yet in the base. Both carry

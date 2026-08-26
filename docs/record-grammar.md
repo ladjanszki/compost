@@ -287,7 +287,10 @@ name.
 
 `layer` says which *kind of statement* an edge is making. Seven exist, five of
 them written by `digest`; `citation` is written by `compost layer citation`
-(`src/layers.py`), the base's second writer.
+(`src/layers.py`). Those two are the writers *this tool* ships — **not the only
+things that may write records.** Any script or agent emitting valid JSONL under
+`graph/` is an equal writer; `check` is the gate, not authorship. See
+`docs/decisions.md`, "Anything may write records".
 
 | layer | type | source → destination | written by |
 |---|---|---|---|

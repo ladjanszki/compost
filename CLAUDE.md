@@ -134,15 +134,27 @@ shaped the way it is, never as a description of the current tool.
   named with `--as` or the command refuses. This was dispatch on the suffix
   until v0.2.2, where the fallback was not "markdown" but "anything at all".
   `src/routes.py` is the only place that knows how to read anything.
-- **Do not hand-edit `.compost/graph/`.** Write through `compost digest`, so the
-  invariants hold and the records stay canonical. **Two narrow exceptions**,
-  reasoned in `docs/decisions.md`: a *generated* file of valid JSONL may be
-  written under `graph/` — the alias dictionary is one, and a script producing
-  records with ordinary Python is not different in kind from `digest` doing it —
-  and a *whole* file that one `compost layer` run wrote may be deleted, which is
-  the only inverse the design offers for accumulation it never removes. `check`
-  is the enforcement, not the identity of the writer. Editing a line inside an
-  existing file is still banned, and there is no `compost layer alias`.
+- **Anything may write records; they must be valid JSONL under `graph/`.**
+  `digest` and `layer` are two writers, not the only two. A script, an agent or
+  a migration tool that emits well-formed records is doing the same thing they
+  do — `Store.load()` does not care who wrote a file, and **`check` is what
+  enforces every invariant, not the identity of the writer.** A generated file
+  that passes `check` is indistinguishable from one `digest` wrote.
+
+  **This is a trust model, and right now the trust is unearned.** `check`
+  verifies structure — parent counts, dangling endpoints, cycles — but it does
+  **not** validate that a node's `type` is a known one, so a typo'd `"alais"`
+  passes. A *grammar validation layer* is planned for when this has to run
+  somewhere the writers are not trusted; until then the guarantee is "the
+  agents writing here are trusted and `check` catches the structural mistakes",
+  which is weaker than it looks and should be said out loud rather than assumed.
+
+  **Two things that are still wrong.** Editing a line inside an existing file —
+  records are immutable, and a whole-file rewrite is the only honest form of
+  change. And inventing a CLI surface for it: there is no `compost layer alias`
+  and there will not be one. Deleting a *whole* file that one `layer` run wrote
+  is fine, and is the only inverse the design offers for accumulation it never
+  removes.
 - **Add a test with a property, not a snapshot.** Every suite in `tests/` states
   something that must be true and has been made to fail on purpose.
   `tests/test_sabotage.py` is the pattern.

@@ -11,7 +11,8 @@ src/            the implementation
   session.py    Claude Code JSONL -> records
   store.py      the .compost/ base: init, digest, ls, check, lookup
   layers.py     compost layer: derives records from the base itself
-                (citations today), the base's second writer after digest
+                (citations today). One of the tool's two writers — anything
+                emitting valid JSONL under graph/ is an equal writer
   views.py      the three views, and the per-node-type view dispatch
   serve.py      a static server over the HTML view; renders nothing
 tools/          committed scripts that are not the tool, and never installed

@@ -224,7 +224,7 @@ bookkeeping.
 
 `compost layer citation` defaults to `--by uuid-link`.
 
-**`layer` is the second writer to `graph/`, and it does not read what it wrote
+**`layer` is the tool's second writer to `graph/`, and it does not read what it wrote
 last time.** Running it twice produces two full sets of citation edges. Neither
 is removed. That is the design.
 
@@ -480,28 +480,29 @@ for legacy handles arrive from **outside**, not from digesting.
 The old placeholder and its edge remain, as a record of a moment when it did not
 resolve. Nothing is retracted.
 
-### Hand-written graph files are allowed — a rule change
+### The dictionary is written by a script, which needs no special permission
 
-`CLAUDE.md` says *"Do not hand-edit `.compost/graph/`. Write through `compost
-digest`."* **That rule is relaxed here, deliberately**, and the reasoning belongs
-in `docs/decisions.md` rather than being quietly broken:
+**Anything may write records** — valid JSONL, one per line, under `graph/`.
+`digest` and `layer` are two writers, not the only two, and `Store.load()` does
+not care who wrote a file. `check` is the enforcement, not the identity of the
+writer. See `docs/decisions.md`, "Anything may write records; `check` is the
+gate", which also states the trust assumption this rests on and names the
+grammar validation layer that will eventually replace it.
 
-The records `digest` writes are produced by ordinary Python. A migration script
-that produces valid JSONL is not different in kind. `Store.load()` does not care
-who wrote a file, and **`check` is the actual enforcement of every invariant** —
-not the identity of the writer. A generated file that passes `check` is
-indistinguishable from one `digest` wrote.
+An earlier version of this section framed that as *relaxing* a rule in
+`CLAUDE.md`. It was not a relaxation; the rule had described a habit as though
+it were a mechanism.
 
 So the alias dictionary is produced by a purpose-built script into its own
 directory and copied under `graph/`. There is no `compost layer alias`
 subcommand, and there will not be one.
 
-**The relaxation covers deletion too, and has to.** `layer` writes exactly one
-file per run and nothing removes it, so a base's records only ever grow — and the
-only remedy the design offers is deleting a graph file, which the unrelaxed rule
-forbids. The safe form is narrow and worth stating: **delete a whole file that one
-`layer` run wrote; never edit a line inside one.** Whole-file deletion is a clean
-inverse of a whole-file write. Anything finer is hand-editing and stays banned.
+**Deletion needs saying explicitly.** `layer` writes exactly one file per run
+and nothing removes it, so a base's records only ever grow, and the only remedy
+the design offers is deleting a graph file. The safe form is narrow: **delete a
+whole file that one `layer` run wrote; never edit a line inside one.**
+Whole-file deletion is a clean inverse of a whole-file write. Anything finer
+edits an immutable record and stays wrong no matter who does it.
 
 **What is lost, and why it does not matter here:** the dictionary's bytes never
 enter `storage/`, so the base does not hold that source. But **the alias records
