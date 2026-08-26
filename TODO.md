@@ -437,6 +437,39 @@ Known cases, in the order they were found:
 The open design question is what a view does with a `duplicates` edge, and what
 `lookup` says when a handle names one of a pair. Answer that before minting any.
 
+**A squash rule for the migrated v0.1 corpus — wanted soon.** Now that the old
+corpus is in a base (v0.2.5), the same material will eventually be re-imported
+in a newer shape, and the collapse should not carry the old form forward.
+
+> **Keep the alias only for handles that were actually cited. Do not keep the
+> old record formats or the old record names.**
+
+152 aliases out of 6,601 assigned handles, because the other 6,449 name blocks
+nothing refers to and a v0.1 name is only worth preserving where something
+still points at it. `tools/v01_dictionary.py` already builds the dictionary
+this way, so the filtered set exists; what does not exist is the rule for what
+happens to the *rest* of an old record when its newer twin arrives.
+
+Two things make this narrower than it sounds, and both should be checked before
+designing it:
+
+- **The set of cited old handles is closed.** New writing cites with
+  `[-](#guid)`; the only source of `{#8hex}` citations was the v0.1 corpus,
+  which is now fully imported and will not grow. So 159 is final, not a moving
+  target, and the 152 aliases will never need extending.
+- **Nothing is lost by dropping the rest.** `digest` keeps every old handle on
+  the block itself, in `params["attr"][0]`. The aliases are an index over data
+  that stays in the base, so a squash that discards uncited aliases discards
+  a lookup shortcut, not a fact.
+
+**Blocked on content matching**, which is the hard half of this whole section:
+there is no way to know which new record is the twin of which old one until
+that is answered, and it is worse than it looks — only 1,054 of the 6,601
+handle-carrying blocks have a `content_hash` at all, because `Builder.node()`
+hashes only nodes with inline content and the handle sits on a contentless
+`Div`. `aliases-and-citation-parsers.md` in the notes repo has the two
+candidate approaches and why both were deferred past v0.2.8.
+
 ### The transcript importer filtered at import ✓ — fixed, and held by property
 
 *Audited and fixed 2026-08-21.* The importer discarded 369 of 796 lines (46.4%)
