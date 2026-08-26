@@ -106,6 +106,11 @@ def build() -> list:
     no such care. Two citations, so both branches of the layer fire at once: a
     resolved `cites` edge, and an `alias`/`unresolved_citation`/`names` triple
     for the one that does not resolve.
+
+    And one `claude-code-response` wrapper, answering the same guid just read
+    out of the base — the only way to exercise `conversation`/`responds_to`
+    and `conversation`/`next` here is against a real record, for the same
+    reason the citation above cannot be a committed fixture.
     """
     with tempfile.TemporaryDirectory() as d:
         st = S.Store.init(Path(d))
@@ -129,6 +134,15 @@ def build() -> list:
         recs, _ = st.load()
         target = next(r for r in recs
                       if r["record"] == "node" and r["type"] == "Para")
+        # `responds_to` names a ROOT, never a block — a block is already the
+        # source of a pandoc-ast `next` edge to its own sibling, and
+        # `Graph._next` keys the whole chain by source alone with no layer
+        # discriminator (`src/records.py:302`), so pointing a conversation
+        # `next` edge at a block's guid would silently overwrite that block's
+        # real sibling link. Roots are nobody's sibling, which is the only
+        # reason reusing `next` here is safe (docs/record-grammar.md §4).
+        answered_root = next(r for r in recs if r["record"] == "node"
+                             and r["type"] in R.ROOT_TYPES)
         citing = Path(d) / "citing.md"
         citing.write_text(
             f"Citing [-](#{target['guid']}) and also "
@@ -138,6 +152,26 @@ def build() -> list:
                 raise RuntimeError("digest failed for citing.md")
             from src import layers as LY
             LY.build(st, "citation", "uuid-link")
+
+        wrapper = Path(d) / "response.json"
+        wrapper.write_text(json.dumps({
+            "responds_to": answered_root["guid"],
+            "envelope": {
+                "is_error": False, "duration_api_ms": 1, "num_turns": 1,
+                "stop_reason": "end_turn", "session_id": "grammar-test",
+                "total_cost_usd": 0.0, "usage": {"input_tokens": 1},
+                "modelUsage": {}, "permission_denials": [],
+                "terminal_reason": "completed", "fast_mode_state": "off",
+                "fast_mode_disabled_reason": "n/a", "subtype": "success",
+                "api_error_status": None, "result": "A response paragraph.\n",
+                "ttft_ms": 1, "ttft_stream_ms": 1, "time_to_request_ms": 1,
+                "type": "result", "duration_ms": 1,
+                "uuid": "00000000-0000-4000-8000-000000000000",
+            },
+        }))
+        with contextlib.redirect_stdout(io.StringIO()):
+            if S._digest(st, "claude-code-response", [str(wrapper)], "compost"):
+                raise RuntimeError("digest failed for response.json")
 
         recs, _ = st.load()
         return recs
