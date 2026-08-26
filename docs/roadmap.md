@@ -902,21 +902,42 @@ write DOT at least as fluently as mermaid; `dot` for hierarchical layout and
 `sfdp` for the thousands-of-nodes case, one flag apart; and it is thirty years
 old and finished.
 
-### It is its own subcommand, not part of `render`
+### `compost draw`, writing to `.compost/graphviz/`
 
 ```
-compost graph [ROOT]        whole base, or one root's subgraph
+compost draw [ROOT]        whole base, or one root's subgraph
 ```
 
-**Not a fourth view.** v0.2.6 puts `compost render` in the inner loop — twice per
-conversational round — and v1 of this draws every node in the base, which for a
-single transcript is thousands. Folding an unbounded graphviz layout into the
-command the daily loop runs most is a cost nobody asked for on every turn.
+**The subcommand is `draw`, not `graph`.** An earlier draft called it
+`compost graph`, which collides with `.compost/graph/` — the directory holding
+the *records*. Two different things under one word in a project that is strict
+about exactly that elsewhere.
 
-It also keeps two hard-coded lists out of trouble: `render_all`'s stale-file
+**Output goes to `.compost/graphviz/`, a peer of `graph/`, `storage/` and
+`views/` — not a subdirectory of `views/`.** The reason is the direction of the
+dependency: **an HTML view will eventually embed these SVGs**, so graphviz
+output is an *input* to `render`, the way `storage/` is an input to `graph/`.
+Putting an input inside the output directory would be backwards, and it becomes
+actively confusing the moment `render` starts reading from it. The pipeline is
+legible from the layout alone: `draw` writes `graphviz/`, `render` writes
+`views/` and may read `graphviz/`.
+
+**Not folded into `render`.** v0.2.6 puts `compost render` in the inner loop —
+twice per conversational round — and v1 of this draws every node in the base.
+An unbounded graphviz layout on every turn is a cost nobody asked for. More
+chart kinds are expected, and they should not all become `render`'s problem.
+
+**`draw` owns its directory, and that includes the stale sweep.** `render_all`'s
 sweep names three view directories explicitly (`src/views.py:420`) and so does
-`main()`'s summary loop (`:461`), so a fourth directory would accumulate orphans
-and go uncounted until both are edited.
+`main()`'s summary loop (`:461`); those lists are correctly scoped to what
+`render` produces and stay as they are. `draw` does the same job for
+`graphviz/`: what is on disk after a run is exactly that run's output, so a
+deleted document does not leave its diagram behind.
+
+**`draw` refuses when `check` fails**, exactly as `render` does. A picture of a
+broken graph is worse than no picture, and the reasoning is unchanged from
+`docs/decisions.md` — a view that renders a graph `check` rejects is asserting
+something the base does not support.
 
 **`.compost/graphviz/` is ignored whole**, the same as `views/`: `draw`
 regenerates it from the records, each run rewrites it wholesale, and one base
@@ -1054,7 +1075,7 @@ And at scale, on the same shape:
 `sfdp` were "one flag apart", to be chosen per scale; that underestimated by an
 order of magnitude.
 
-> **`compost graph` defaults to `twopi`**, not `sfdp`. It is the fastest measured
+> **`compost draw` defaults to `twopi`**, not `sfdp`. It is the fastest measured
 > — 7× `sfdp` at 20,000 nodes — *and* it is the only fast engine whose model
 > matches the data: compost's structure is a forest of `contains` trees, and
 > `twopi` lays out a rooted tree radially. `sfdp` was the first answer only
@@ -1075,6 +1096,23 @@ renders to **58 MB of SVG**, handed to a browser over loopback. That arrives
 *before* any of the collapsing-policy questions this release deferred — so "v1
 draws everything" survives for a document and does not survive for a base, and
 the first filter will be forced by file size rather than by legibility.
+
+### The size threshold: warn, never refuse
+
+Measured on a real 12,632-node base: `twopi` 4.52 s and 16.9 MB of SVG for the
+whole thing, `sfdp` 10.46 s. Neither reaches a time ceiling. **Output size is
+the ceiling**, at roughly 1.4 KB per node.
+
+> **Warn past ~5,000 nodes; do not refuse.** 17 MB is large but genuinely
+> usable, and refusing would break "v1 draws everything" for a base that draws
+> in four and a half seconds. The DOT is always written regardless — it is the
+> deliverable that keeps the graphviz binary optional — so a refusal would only
+> ever withhold the SVG, and there is no size at which that is more useful than
+> a warning.
+
+`dot` and `neato` are small-subgraph tools and must not be offered for a whole
+base: `dot` was killed at 180 s on a **single 2,773-node document**, and `neato`
+took 30 s on that document and was killed on the base.
 
 ### Costs, accepted knowingly
 
