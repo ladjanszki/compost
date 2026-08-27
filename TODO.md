@@ -264,6 +264,50 @@ and the replacement reuses most of them.
 6. Optionally update the archived copies so the readable backup stays internally
    consistent. The pristine bytes stay in `compost-full-history.bundle`.
 
+### `ls` and `lookup` — discuss, then maybe move to `extras/`
+
+Same category as the build-system entry below: not a big refactor, not small
+enough to do without deciding. **Discuss before moving anything.**
+
+The argument for moving them is that once v0.2.8 puts SQL over the records,
+`ls` is a `count(*)` and `lookup` is a select plus a join, so both become thin
+wrappers rather than functionality — and `extras/` is where a convenience
+wrapper belongs.
+
+Two arguments against, both concrete:
+
+- **`lookup` is in the working agreement.** `CLAUDE.md` instructs every agent
+  to run `compost lookup <guid>` before answering a pasted citation. Moving it
+  breaks that line, the man page's subcommand-count sentence (enforced by
+  `tests/test_manpage.py`), and every recorded instruction naming it.
+- **It would make the innermost loop depend on an optional tool.** The roadmap
+  already protects `check` on these grounds — *"the gate must stay
+  dependency-light, since `render` refuses when it fails"* — and resolving a
+  citation is run more often than `check` is. `ls` has the same shape: it is
+  the only thing that answers "what is actually in this base" with nothing
+  optional installed, which is exactly when the question matters.
+
+`ls` is the weaker case and might genuinely go. Decide **after** the query
+layer exists and it is clear what SQL actually replaces, rather than on the
+prediction that it will.
+
+### `extras/`: `compost-cite` and `compost-why`
+
+The additive direction for `extras/` — wrappers that compose the subcommands
+rather than replacing them, so the CLI keeps the primitives.
+
+- **`compost-cite HANDLE`** — resolve a handle and print the citation ready to
+  paste, `[-](#<guid>)`, instead of printing the block and leaving the human to
+  assemble it. The daily loop is: click a block, copy a handle, write a
+  citation; this is the step in the middle that is done by hand today.
+- **`compost-why HANDLE`** — walk the citation chain rather than reporting one
+  hop. `lookup` answers "what cites this"; this answers "how did this get
+  here", following `cites` backwards until it stops. The first thing that
+  treats the citation layer as a graph rather than a lookup table.
+
+Both are strictly additive: no subcommand changes, nothing is removed, and
+neither needs the query layer. Wanted soon.
+
 ### The clean-room installs everything, and that is getting expensive
 
 `tests/clean-room.sh` builds a **fresh conda environment from
