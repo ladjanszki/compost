@@ -3,6 +3,9 @@
 ## v0.2 layout
 
 ```
+extras/         installed, but not the tool — see "What belongs in extras/"
+  compost_new.py     `compost-new`: mint a scratch file, open $EDITOR,
+                digest it on close
 src/            the implementation
   cli.py        the compost command: a dispatcher and nothing else
   records.py    pandoc AST <-> records, the whole-graph checks, citations
@@ -26,6 +29,9 @@ tools/          committed scripts that are not the tool, and never installed
   v01_dictionary.py  the legacy handle -> guid dictionary, as alias records
   loop.py       one round of the conversation loop: note in, response out,
                 already cited — docs/roadmap.md, "the conversation loop"
+  graph_sql.py  the read-only SQL view over graph/*.jsonl, via duckdb —
+                nothing materialised, no file ever written
+  queries/      *.sql files graph_sql.py runs; docs/queries.md is the prose
 tests/          one suite per property; ./tests/run.sh runs them all
   fixtures/     the smoke set, ~80 KB: the documents suites name directly
     grammar/    one instance of every constructor, so docs/record-grammar.md
@@ -46,6 +52,23 @@ which is the wrong home for a fixture bleacher or a one-off migration script.
 Those live in `tools/`, which is importable from a checkout and installed
 nowhere. Until v0.2.5 the bleachers and the round-trip harness sat in `src/`
 and shipped with the package for no reason at all.
+
+**What belongs in `extras/`.** v0.2.5's rule above is a binary — `src/` is
+installed and reachable from `cli.py`, `tools/` is never installed — and a
+user-facing convenience wrapper is neither: it is installed, because someone
+running `pip install -e .` should get the command without a second step, but
+it is not the tool, because `docs/man-compost.md` asserts `compost`'s
+subcommand count in a sentence and `tests/test_manpage.py` enforces it.
+`extras/` is that third bucket. Every module there is exposed through its
+own `[project.scripts]` entry — `compost-new`, never `compost new` — so a
+distinct command reads as adjacent to the tool rather than part of it, and
+adding one never moves the count. The test for whether something belongs
+here, taken from `docs/roadmap.md`'s introduction of `compost-new`: **nothing
+is lost if it does not exist.** It only orchestrates things `src/` already
+does — a route, a mint, a check — plus something outside the tool entirely,
+like spawning an editor. A module that is the only place some piece of logic
+lives does not belong here; that is `src/`, reachable from `cli.py` either
+directly or as a subcommand.
 
 ## Closing a version: tag the candidate first
 

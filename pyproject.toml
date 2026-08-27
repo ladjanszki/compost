@@ -15,9 +15,17 @@ dependencies = []
 
 [project.scripts]
 compost = "src.cli:main"
+# `compost-new`, not `compost new`: a separate command, not a subcommand —
+# DEVELOPMENT.md, "What belongs in extras/". Keeping it out of `compost`'s
+# own dispatch table is what keeps the subcommand count in
+# docs/man-compost.md unmoved.
+compost-new = "extras.compost_new:main"
 
 [tool.setuptools]
-packages = ["src"]
+# extras/ is installed but is not the tool: DEVELOPMENT.md, "What belongs in
+# extras/". tools/ stays out of this list on purpose — it is dev material,
+# reachable from a checkout, and never shipped.
+packages = ["src", "extras"]
 
 [tool.setuptools.dynamic]
 version = {attr = "src.__version__"}
