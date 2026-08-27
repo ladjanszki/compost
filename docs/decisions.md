@@ -645,7 +645,7 @@ been written**, rather than an implementation detail. `TODO.md`'s dedup section
 records it so that design accounts for it instead of rediscovering it.
 
 **What it costs:** a base can contain a duplicated file and nothing will say
-so. It also makes `Store.load()` and raw SQL over `graph/**/*.jsonl` disagree
+so. It also makes `Store.load()` and raw SQL over `graph/*.jsonl` disagree
 about how many records exist — which is why the query layer's mirror is
 `SELECT DISTINCT` over the whole row, reproducing this rule rather than
 `count(DISTINCT guid)`, which would additionally hide the guid conflicts

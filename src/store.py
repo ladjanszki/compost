@@ -12,7 +12,7 @@ store.py — the on-disk graph.
 directory of that name appears. Nothing else identifies a base, so a base
 cannot be half-configured.
 
-Three rules the loader depends on, each of which exists because breaking it
+Four rules the loader depends on, each of which exists because breaking it
 is silent rather than loud:
 
 - **Only `*.jsonl` is loaded.** A `.jsonl~` editor backup, a `.bak`, a
@@ -23,6 +23,12 @@ is silent rather than loud:
 - **Filenames carry no meaning and load order is irrelevant.** Records are
   concatenated from every matching file; grouping is for humans to read, and
   shuffling the file order must produce an identical graph.
+- **`graph/` is flat.** `write()` refuses a relpath naming a subdirectory and
+  `files()` globs rather than walks, so nothing can land somewhere a second
+  reader would not look. v0.2.8 added this ahead of a read-only SQL view
+  beside this one — a directory is meaning, and a subdirectory visible to one
+  reader and not the other is a silent disagreement about the graph
+  (docs/roadmap.md, "graph/ becomes flat by rule").
 
 The loaded file list is returned rather than hidden, because the failure mode
 of "everything in graph/ is the graph" is surprise about what was in there.
@@ -99,10 +105,22 @@ class Store:
 
     # -- writing -----------------------------------------------------------
     def write(self, relpath: str, recs: list) -> Path:
-        """Write records to graph/<relpath>, atomically."""
+        """Write records to graph/<relpath>, atomically.
+
+        `graph/` is flat by rule: a subdirectory is meaning, and
+        `docs/decisions.md` already says filenames carry none — so `relpath`
+        must name a bare file directly under `graph/`, and this refuses
+        rather than creating one, on purpose (docs/roadmap.md, "graph/
+        becomes flat by rule"). Checked by comparing `dest.parent` to
+        `self.graph` rather than scanning for a separator character, so it
+        also catches `..` and anything else that would land outside it.
+        """
         dest = self.graph / relpath
         if dest.suffix != ".jsonl":
             raise ValueError(f"graph files must be .jsonl, got {dest.name}")
+        if dest.parent != self.graph:
+            raise ValueError(
+                f"graph/ is flat: {relpath!r} is not a bare filename")
         dest.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=".tmp-", suffix=".part")
         try:
@@ -158,7 +176,13 @@ class Store:
 
     # -- loading -----------------------------------------------------------
     def files(self) -> list[Path]:
-        return sorted(p for p in self.graph.rglob("*.jsonl") if p.is_file())
+        # `glob`, not `rglob`: graph/ is flat by rule (see `write`, above), so
+        # nothing under a subdirectory is the graph even if one exists — from
+        # an older checkout, a hand-copied file, or anything else that put one
+        # there. Restoring `rglob` here would make such a file visible to
+        # Python again while a SQL glob over the same directory still misses
+        # it, which is the exact divergence this rule exists to close.
+        return sorted(p for p in self.graph.glob("*.jsonl") if p.is_file())
 
     def load(self) -> tuple[list, list[Path]]:
         """

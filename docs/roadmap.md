@@ -1134,11 +1134,11 @@ placeholders and conversation edges — an actual graph to query.
 
 ### First, before any of it: `graph/` becomes flat by rule
 
-**Subdirectories under `graph/` are permitted today, read today, and used by
-nothing.** `Store.files()` globs with `rglob`, `Store.write()` calls
-`dest.parent.mkdir(parents=True)`, and four documents write
+**Subdirectories under `graph/` were permitted, read, and used by
+nothing.** `Store.files()` globbed with `rglob`, `Store.write()` called
+`dest.parent.mkdir(parents=True)`, and four documents wrote
 `graph/**/*.jsonl`. Demonstrated: a graph file moved to
-`graph/nested/deeper/` still loads and `check` still passes.
+`graph/nested/deeper/` still loaded and `check` still passed.
 
 **Forbid it.** The graph is a flat soup of record files, and that flatness is
 what lets a read-only replica be screwed on beside it — duckdb here, something

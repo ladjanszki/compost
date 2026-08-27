@@ -61,9 +61,10 @@ compost lookup HANDLE    # the block a handle names, and what cites it
 compost serve            # the HTML view on 127.0.0.1:7373
 ```
 
-`.compost/graph/**/*.jsonl` holds **the records**: one per line, each saying
-whether it is a `node` or an `edge`. Filenames carry no meaning, and load order
-cannot change the result. Both graph and storage filenames are minted uuids,
+`.compost/graph/*.jsonl` holds **the records**: one per line, each saying
+whether it is a `node` or an `edge`. Filenames carry no meaning, load order
+cannot change the result, and `graph/` is flat by rule — no subdirectory, ever
+(v0.2.8; `Store.write` refuses one). Both graph and storage filenames are minted uuids,
 and the two are unrelated: to get from a document to its bytes, follow its
 `derived_from` edge to the `blob` node and read `params["stored_as"]`. There is
 no rule that turns an original filename into a storage path, and anything that

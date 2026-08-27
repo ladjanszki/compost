@@ -106,6 +106,46 @@ def main():
                 "an edge pointing at nothing is caught"
         case("a dangling edge is caught", dangling)
 
+        def flat_write_refused():
+            # graph/ is flat by rule (docs/roadmap.md, "graph/ becomes flat
+            # by rule"): a relpath naming a subdirectory must raise rather
+            # than create one.
+            try:
+                st.write("nested/x.jsonl", [])
+                return False, "a nested relpath was accepted"
+            except ValueError:
+                return (not (st.graph / "nested").exists(),
+                        "a nested relpath raises, and creates nothing")
+        case("write() refuses a relpath with a subdirectory",
+             flat_write_refused)
+
+        def nested_not_loaded():
+            # A file placed under graph/ by something other than `write` —
+            # an older checkout, a hand copy — must stay invisible to the
+            # loader. This is the half of the property `write()` alone
+            # cannot cover: `files()` must glob, not walk.
+            #
+            # The smuggled record must be genuinely new, not a copy of one
+            # already in the base: `load()` dedupes byte-identical records
+            # (store.py, "Byte-identical duplicates collapse silently"), so a
+            # copy of an existing record would make `rglob` and `glob` agree
+            # on the count by accident and this property would pass either
+            # way — caught by running the sabotage below before writing it
+            # this way the first time.
+            before, _ = st.load()
+            sub = st.graph / "sub"
+            sub.mkdir()
+            novel = {"record": "node", "guid": str(uuid.uuid4()),
+                     "layer": R.LAYER, "type": "smuggled", "params": {}}
+            (sub / "smuggled.jsonl").write_text(R.to_jsonl([novel]))
+            after, _ = st.load()
+            shutil.rmtree(sub)
+            return (len(before) == len(after),
+                    f"{len(before)} records before, {len(after)} after a "
+                    f"novel record placed under graph/sub/")
+        case("a .jsonl file under a subdirectory is not loaded",
+             nested_not_loaded)
+
         def atomic():
             leftovers = list(st.graph.rglob(".tmp-*")) + \
                 list(st.storage.rglob(".tmp-*"))

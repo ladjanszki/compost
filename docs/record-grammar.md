@@ -80,7 +80,7 @@ be readable years later.
 
 ## 2. The record
 
-Every line of every `.compost/graph/**/*.jsonl` file is one JSON object with a
+Every line of every `.compost/graph/*.jsonl` file is one JSON object with a
 `record` key that is either `"node"` or `"edge"`. There is no other form, no
 header line, and no envelope.
 
