@@ -22,7 +22,16 @@ dependencies:
   # so the env that builds a release actually has it.
   - graphviz=14.1.2
 
-# No pip dependencies beyond pandoc and graphviz.
+  # The query layer (docs/roadmap.md, "v0.2.8 — a query layer"): a read-only
+  # SQL view over graph/*.jsonl, nothing materialised. Pinned to the version
+  # every measurement in that section was taken against — same reasoning as
+  # graphviz above, and this project already knows what an unpinned second
+  # tool costs. Optional at test time: tests/tier.py's pattern skips and
+  # says so when duckdb is not importable, so a bare environment still shows
+  # a full board.
+  - duckdb=1.5.5
+
+# No pip dependencies beyond pandoc, graphviz and duckdb.
 #
 # Node and npx were required through v0.1.6, for the djot.js reference parser
 # (@djot/djot). v0.2 removed them: pandoc reads and writes djot natively, so
