@@ -617,6 +617,40 @@ duplicates are meant to finally become legible — grouped by `content_hash`,
 by `created_at`, by `tool_version` — and that grouping is the first use this
 field is expected to have.
 
+## `load()` deduplicates byte-identical records — dedup step zero
+
+`Store.load()` drops a record it has already seen, comparing `R.canonical(rec)`
+— the whole record, not the guid. Two writers asserting the same fact is
+agreement, not conflict. A guid carrying two *different* records is a hard
+error and is left for `check`, because picking a winner is how a corpus starts
+lying.
+
+**This looks like a convenience and is not.** Removing it does not yield the
+"collect everything, collapse later" behaviour the project prefers elsewhere —
+it yields a base that fails `check`. Measured on a base holding one duplicated
+graph file:
+
+| | |
+|---|---|
+| with dedup | 3 nodes, 2 edges, **0 problems** |
+| without | `Para … has 2 parents, expected 1`; `render` refuses |
+
+A duplicated `contains` edge counts twice against the one-parent invariant, so
+an innocent copy of a graph file would take every view down. Getting
+collapse-later would mean teaching `check` to count *distinct* parent edges —
+the same dedup logic relocated, not removed.
+
+So it stays, named honestly: **the first rule of a dedup design that has not
+been written**, rather than an implementation detail. `TODO.md`'s dedup section
+records it so that design accounts for it instead of rediscovering it.
+
+**What it costs:** a base can contain a duplicated file and nothing will say
+so. It also makes `Store.load()` and raw SQL over `graph/**/*.jsonl` disagree
+about how many records exist — which is why the query layer's mirror is
+`SELECT DISTINCT` over the whole row, reproducing this rule rather than
+`count(DISTINCT guid)`, which would additionally hide the guid conflicts
+`check` exists to catch.
+
 ## The tool handles no dependencies, and guarantees no consistency
 
 An architecture review of a larger design found four states a base could enter and
