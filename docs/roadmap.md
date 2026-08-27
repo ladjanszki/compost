@@ -1290,14 +1290,26 @@ if it does not exist, which is the test for belonging here.
 `DEVELOPMENT.md` gets the rule stating what belongs in `extras/`, or it becomes
 the drawer everything ambiguous is put in.
 
-### This release does not close the version
+### Closing the version — reversed, 2026-08-27
 
-v0.2.8's content — a query layer with no subcommand, plus a convenience
-wrapper — does not clear the bar `TODO.md` sets for a tag: *a version marks a
-change in what the tool can do*. So the work lands on `main` under
-`## Unreleased` and the version stays open until something closes it.
+This section said the release should stay open, on the grounds that a query
+layer with no subcommand does not clear the bar `TODO.md` sets for a tag: *a
+version marks a change in what the tool can do*.
 
-That is the ordering the cadence rule already implies, applied to itself.
+**Reversed once `extras/` was decided.** That judgment was made when the
+release was going to be duckdb and `docs/queries.md` alone. What shipped is
+larger and does change what the tool can do:
+
+- `graph/` is **flat by rule** — an invariant change, enforced in `write()`
+- **`compost-new`** is a new user-facing command, installed via
+  `[project.scripts]`
+- `extras/` names a category the project did not have: **installed, but not the
+  tool**
+- the query layer, with the twin-assertion test that expresses `check`'s
+  assertions twice and requires them to agree
+
+The original reasoning stands as written — it was right about the release it
+was describing. It stopped applying when the release grew.
 
 **Explicitly not in scope:** revamping `check` (the gate must stay
 dependency-light, since `render` refuses when it fails), a `query` subcommand

@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## Unreleased
+## v0.2.8-rc — a query layer, and a flat graph
 
 Landed on `main`, no version chosen yet — `DEVELOPMENT.md`, "Closing a
 version". v0.2.8's content, a query layer with no subcommand plus a
