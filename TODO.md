@@ -264,6 +264,45 @@ and the replacement reuses most of them.
 6. Optionally update the archived copies so the readable backup stays internally
    consistent. The pristine bytes stay in `compost-full-history.bundle`.
 
+### The clean-room installs everything, and that is getting expensive
+
+`tests/clean-room.sh` builds a **fresh conda environment from
+`environment.yml`** on every run — that is the point of it, since the thing it
+tests is whether somebody else could start. As of v0.2.7 that file pins
+`graphviz=14.1.2`, which is **231 MB and 51 packages**, and v0.2.8 adds duckdb
+on top (a pip wheel, roughly an order of magnitude smaller, but not free).
+
+**The gate is now paying a large download to test features most runs do not
+touch**, and it will grow with every optional tool the project adopts.
+
+**The shape of the fix is a tiered install, mirroring the tiered *tests* that
+already exist.** `tests/tier.py` distinguishes the smoke set from the fetched
+corpus and reports which guarantees were skipped; the environment wants the
+same split:
+
+- a **quick clean room** — pandoc and python only, exercising everything that
+  does not need an optional binary, and *saying* which checks it skipped
+- a **full clean room** — everything installed, run before a release
+
+Two ways to get there, and the choice is not made:
+
+1. **Two conda files.** `environment.yml` minimal, `environment-full.yml`
+   adding the heavy tools. Smallest change; conda has no notion of optional
+   dependencies, so the split has to be by file.
+2. **Move to pip and venv**, where this is a solved problem:
+   `[project.optional-dependencies]` and `pip install compost[query,draw]` are
+   standard and universally understood. Larger change, and pandoc and graphviz
+   are *system* binaries that pip cannot install — so conda or the OS packager
+   is still needed for those, and the split would be partial.
+
+**Interim, and it is a real cost either way:** either the clean room stays slow,
+or it stops covering `draw` and the query layer. Nothing measures which is
+worse yet — **how long a clean-room run actually takes now, with graphviz, is
+not recorded**, and that number should decide it rather than intuition.
+
+**Not scheduled.** Candidate for v0.2.8, after duckdb lands and the problem is
+concrete rather than anticipated.
+
 ### Sidechains ✓ — followed, joined, and shipped in v0.2.3
 
 The corpus contains **zero** sidechain lines, so log order and reply order are
@@ -436,6 +475,31 @@ Known cases, in the order they were found:
 
 The open design question is what a view does with a `duplicates` edge, and what
 `lookup` says when a handle names one of a pair. Answer that before minting any.
+
+**One dedup rule already ships, and it is load-bearing.** `Store.load()` drops
+byte-identical records (`src/store.py:163-169`) — *"two writers asserting the
+same fact is agreement, not conflict"*. It reads like a convenience and it is
+not; **removing it breaks the base.** Measured on a base holding one duplicated
+graph file:
+
+```
+with dedup     : 3 nodes, 2 edges, 0 problems
+without dedup  : PROBLEM Para … has 2 parents, expected 1
+                 PROBLEM … expected one head, found 2
+                 render refuses; one suite fails
+```
+
+A duplicated `contains` edge counts twice against the one-parent invariant, so
+an innocent copy of a graph file would take every view down. "Load everything
+and collapse later" therefore cannot simply be applied here: getting it would
+mean teaching `check` to count *distinct* parent edges, which is the same dedup
+logic relocated rather than removed.
+
+So this is **rule zero of the dedup design, already implemented**, and the
+design when written should account for it rather than discover it. The
+question it leaves open is whether a byte-identical duplicate is a non-event
+(today's answer) or a reportable condition — today nothing can tell you a base
+contains one.
 
 **A squash rule for the migrated v0.1 corpus — wanted soon.** Now that the old
 corpus is in a base (v0.2.5), the same material will eventually be re-imported
