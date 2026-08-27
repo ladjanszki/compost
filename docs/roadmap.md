@@ -1132,7 +1132,44 @@ took 30 s on that document and was killed on the base.
 Last, and it earns the position: by now there are citations, aliases,
 placeholders and conversation edges — an actual graph to query.
 
-**DuckDB, reading `.compost/graph/**/*.jsonl` in place.** Nothing is
+### First, before any of it: `graph/` becomes flat by rule
+
+**Subdirectories under `graph/` are permitted today, read today, and used by
+nothing.** `Store.files()` globs with `rglob`, `Store.write()` calls
+`dest.parent.mkdir(parents=True)`, and four documents write
+`graph/**/*.jsonl`. Demonstrated: a graph file moved to
+`graph/nested/deeper/` still loads and `check` still passes.
+
+**Forbid it.** The graph is a flat soup of record files, and that flatness is
+what lets a read-only replica be screwed on beside it — duckdb here, something
+else later — without every reader having to agree about directory semantics.
+A directory *is* meaning, and `docs/decisions.md` already says filenames carry
+none; a subdirectory quietly contradicts that.
+
+It also lands directly on this release: if the query layer globs one way and
+`Store.files()` the other, a file in a subdirectory is visible to Python and
+invisible to SQL, and the twin-assertion test fails for a reason that has
+nothing to do with the assertion. Same class of divergence as the dedup one,
+through a different door — and cheaper to close than to explain.
+
+**Do this first, as its own commit, before the duckdb work.** Every site:
+
+| where | change |
+|---|---|
+| `src/store.py:161` | `self.graph.rglob("*.jsonl")` → `glob` |
+| `src/store.py:106` | `write()` must **reject** a relpath containing a path separator, beside its existing `.jsonl` check — refuse rather than create |
+| `CLAUDE.md:64` | `graph/**/*.jsonl` → `graph/*.jsonl` |
+| `docs/record-grammar.md:83` | same |
+| `docs/decisions.md` | same |
+| `docs/roadmap.md` | same, including the line below |
+
+`src/store.py:137` is the **storage** write and is not affected; leave it.
+
+**The property, sabotage-verified:** `Store.write("nested/x.jsonl", …)` raises,
+and a `.jsonl` file placed under `graph/sub/` is not loaded. Restoring `rglob`
+must fail the second half — that is the whole point of the change.
+
+**DuckDB, reading `.compost/graph/*.jsonl` in place.** Nothing is
 materialised, so nothing can go stale and there is no cache to invalidate.
 
 **It is a view in the same sense `views/` is — derived, disposable, rebuilt from
