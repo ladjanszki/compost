@@ -1204,6 +1204,19 @@ bases with no cross-file duplicates" has no mechanism to enforce its own
 precondition. Either read a `load()`-produced snapshot on the SQL side, or state
 the limit and accept that nothing detects when it is violated.
 
+**Answered 2026-08-27: `SELECT DISTINCT` over the whole row.** `Store.load()`
+deduplicates on `R.canonical(rec)` — the *whole record*, not the guid — so the
+SQL mirror is distinctness over every column, which reproduces it exactly,
+leaves a guid conflict as two rows, and materialises nothing.
+
+An earlier note here said this had a wrinkle, that `canonical()` sorts keys
+while raw lines might not. **It does not:** `R.to_jsonl` also writes with
+`sort_keys=True` (`records.py:454`), and every write goes through it
+(`store.py:110`). Identical records are byte-identical lines on disk, always.
+The only gap left is a file written by something that bypasses `to_jsonl`, so
+a writer must sort its keys — worth stating now that anything may write
+records.
+
 > **Reject `count(DISTINCT guid)` as the bridge, in writing, before someone
 > reaches for it.** It reconciles the duplicate case and *hides a guid conflict* —
 > two different records under one guid, which is the first thing `check` exists to
@@ -1240,6 +1253,51 @@ queries get written:
 **This is also where the accumulated duplicates finally become legible** — group
 by `content_hash`, by `created_at`, by `tool_version`, and the pattern that a
 dedup design needs becomes visible instead of theoretical.
+
+### The queries live in `tools/queries/*.sql`, not in the document
+
+`docs/queries.md` says what each query answers and why; the SQL itself sits in
+`tools/queries/*.sql` as **executable files**. Embedding them in the document
+would be literate programming done by hand, and the copy that runs would drift
+from the copy that is read.
+
+The divergence risk that separation creates is accepted, with two cheap guards:
+**the twin-assertion test reads those same `.sql` files**, so a query under
+test cannot rot silently; and a check that every `.sql` file is *mentioned* in
+`queries.md`, so a query cannot exist undocumented. Neither pins the prose to
+the SQL, which is the point.
+
+`tools/` because it is not installed — these are development material, not the
+tool.
+
+### `extras/` — installed, but not the tool
+
+A third category the project does not have yet, and it needs its own name
+because v0.2.5's rule was written as a binary: `src/` is installed and
+reachable from `cli.py`, `tools/` is never installed. A **user-facing
+convenience wrapper is installed but is not the tool**, and neither bucket
+allows it.
+
+`extras/`, exposed through `[project.scripts]` as separate console commands —
+`compost-new`, not `compost new`. A distinct command reads as adjacent to the
+tool rather than part of it, and the subcommand count stays where it is.
+
+**`compost-new` is its first inhabitant, and the directory must not land
+empty.** It mints a filename, opens `$EDITOR`, and digests the file on close —
+orchestration of things the tool already does, plus an editor. Nothing is lost
+if it does not exist, which is the test for belonging here.
+
+`DEVELOPMENT.md` gets the rule stating what belongs in `extras/`, or it becomes
+the drawer everything ambiguous is put in.
+
+### This release does not close the version
+
+v0.2.8's content — a query layer with no subcommand, plus a convenience
+wrapper — does not clear the bar `TODO.md` sets for a tag: *a version marks a
+change in what the tool can do*. So the work lands on `main` under
+`## Unreleased` and the version stays open until something closes it.
+
+That is the ordering the cadence rule already implies, applied to itself.
 
 **Explicitly not in scope:** revamping `check` (the gate must stay
 dependency-light, since `render` refuses when it fails), a `query` subcommand
