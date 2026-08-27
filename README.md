@@ -73,7 +73,7 @@ each has been made to fail on purpose:
 $ ./tests/run.sh
 test_records             526/526 identity round-trip   |   19853 nodes, 35788 edges
 test_sabotage            6/6 sabotages caught
-test_store               10/10 storage guarantees hold
+test_store               12/12 storage guarantees hold
 test_digest              17/17 ingestion guarantees hold
 test_views               6/6 view guarantees hold
 test_citations           8/8 citation guarantees hold
@@ -90,6 +90,8 @@ test_response            13/13 response guarantees hold
 test_loop                9/9 loop guarantees hold
 test_dj_prepare          8/8 dj_prepare guarantees hold
 test_v01_dictionary      9/9 dictionary guarantees hold
+test_query               13/13 query guarantees hold
+test_extras              6/6 extras guarantees hold
 corpus                   present, 520 documents
 ```
 
@@ -122,6 +124,7 @@ task lists. `docs/decisions.md` has the numbers.
 | `docs/man-compost.md` | the command, verified against the program rather than remembered |
 | `docs/decisions.md` | what was decided and why, with the measurements behind it |
 | `docs/record-format.md` | the node and edge design, and the AST translation |
+| `docs/queries.md` | a read-only SQL view over `graph/*.jsonl`, via duckdb — no subcommand, development material only |
 | `DEVELOPMENT.md` | how to work on it |
 | `TODO.md` | what is next, and what is knowingly missing |
 | `CHANGELOG.md` | what happened |

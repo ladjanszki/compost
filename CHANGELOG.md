@@ -3,6 +3,76 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## Unreleased
+
+Landed on `main`, no version chosen yet — `DEVELOPMENT.md`, "Closing a
+version". v0.2.8's content, a query layer with no subcommand plus a
+convenience wrapper, does not clear the bar `TODO.md` sets for a tag: a
+version marks a change in what the tool can do.
+
+### `graph/` becomes flat by rule
+
+Subdirectories under `graph/` were permitted, read, and used by nothing —
+`Store.files()` globbed with `rglob` and `Store.write()` created parent
+directories on demand, so a graph file moved to `graph/nested/deeper/` still
+loaded and `check` still passed. Closed ahead of everything else below it:
+a read-only SQL view over the same directory has to glob it too, and a file
+visible to one reader and not the other would be a silent disagreement about
+what the graph is, for a reason having nothing to do with whatever is being
+checked. `files()` now globs rather than walks; `write()` refuses a relpath
+naming a subdirectory rather than creating one.
+
+### A read-only SQL view over `graph/*.jsonl`, via duckdb
+
+No subcommand, and this document is not asking for one. `tools/graph_sql.py`
+connects duckdb to `.compost/graph/*.jsonl` in place — `read_json` over the
+whole glob, `map_inference_threshold=0` — and nothing is ever materialised:
+no `.duckdb` file is written, and closing the connection leaves nothing
+behind. `layer` writes derived records into the graph; this writes nothing
+at all.
+
+`tools/queries/*.sql` holds executable queries, referenced from
+`docs/queries.md` rather than embedded in it, so the copy that runs cannot
+drift from the copy that is read. Four starting queries — node count, edge
+count, unresolved-citation count, how many nodes have an alias connected —
+and six SQL twins of `check()`'s branches: duplicate guids, dangling edges,
+the three parent-count invariants, a session launched by more than one tool
+call, `content_hash` presence, and `schema_version`. `tests/test_query.py` is
+the twin-assertion test this release is for: each twin is required to name
+the exact guid(s) `check()` names on a sabotaged fixture, not merely agree on
+a count. Three of `check()`'s branches are not mirrored, and
+`docs/queries.md` says why — the handle-collision check cannot fire under the
+current guid format, and the containment-cycle and next-chain-ordering
+checks are graph-path problems a faithful mirror would need a recursive CTE
+to answer correctly, which was not attempted rather than shipped untested.
+
+The dedup bridge is `SELECT DISTINCT` over the whole row, mirroring
+`Store.load()`. `count(DISTINCT guid)` was measured and rejected: a base
+holding a byte-identical duplicate file and a base holding a genuine guid
+conflict report the identical `count(DISTINCT guid)` — it cannot tell them
+apart, where the row-level bridge can.
+
+`duckdb=1.5.5` is now pinned in `environment.yml`, conda-forge — the version
+every measurement above was taken against, same reasoning as graphviz's exact
+pin. Optional at test time: absence skips cleanly and says so, the same
+pattern `test_draw.py` already uses for graphviz.
+
+### `extras/` — installed, but not the tool — and `compost-new`
+
+A third bucket beside `src/` (installed, reachable from `cli.py`) and
+`tools/` (never installed): a user-facing convenience wrapper that should be
+on `PATH` after `pip install -e .` without being a `compost` subcommand, so
+`docs/man-compost.md`'s subcommand count does not move. `compost-new`, its
+first inhabitant and never `compost new`, mints a scratch filename the way
+`graph/` and `storage/` names already are, opens `$EDITOR`, and digests the
+file as `notes` on close. `DEVELOPMENT.md` gets the rule for what belongs
+here: nothing is lost if it does not exist.
+
+### Suites
+
+Twenty-one. `test_query` and `test_extras` are new; `test_store` gains two
+properties for the flatness rule.
+
 ## v0.2.7 — 2026-08-26 — a graph view
 
 Landed on `main`, not shipped. It gets a version number when one

@@ -473,7 +473,9 @@ Print the version. Also `--version` and `-V`. With no arguments at all, or with
               loader concatenates every match, and load order cannot change
               the result. Only *.jsonl is read, so an editor backup is not
               part of the graph. Writes go through a temp file and an atomic
-              rename, so a partial write never holds the extension.
+              rename, so a partial write never holds the extension. Flat by
+              rule as of v0.2.8: a subdirectory is never read, and `digest`
+              and `layer` refuse to write into one.
   storage/    sources exactly as ingested, immutable
   views/      generated, disposable
   graphviz/   generated, disposable — `compost draw`'s graph.dot/graph.svg.
@@ -592,3 +594,19 @@ produced it — are likewise kept and not shown.
 `check` does not verify `storage/`. It reads records, so a blob whose bytes
 were altered on disk is not detected, even though `bytes_sha256` is exactly
 what would detect it.
+
+## SEE ALSO
+
+Two things sit beside `compost` rather than inside it, and neither is a
+subcommand — the count in STATUS does not include them.
+
+**`compost-new`** — a separate console command, installed by the same `pip
+install -e .`. Mints a scratch filename, opens `$EDITOR`, digests the file
+as `notes` on close. `extras/compost_new.py`; `DEVELOPMENT.md`, "What
+belongs in extras/".
+
+**A read-only SQL view over `graph/*.jsonl`**, via duckdb — nothing
+materialised, no subcommand, no `compost query`. `tools/graph_sql.py`
+connects it; `tools/queries/*.sql` holds starting queries and a SQL twin of
+most of `check`'s assertions; `docs/queries.md` says what each one answers.
+Development material, not installed.
