@@ -15,10 +15,18 @@ The djot and html views carry handles; the markdown view deliberately does
 not, because its output is meant to be committed as README.md and a handle in
 there would be noise a reader never asked for.
 
-Handles are the first 8 hex characters of the node guid. `records.check`
-rejects a base where two nodes share one, because a short handle that resolves
-to the wrong block is exactly the silent-citation failure the format exists to
-prevent.
+A handle is the **whole guid**. `records.HANDLE_LEN` is 36, so `handle()`
+below is the identity function, and a prefix is not a shorter handle — it does
+not match the citation syntax and `compost lookup` refuses it. `records.check`
+still rejects a base where two nodes share a handle; that assertion is vacuous
+while the handle is the guid, and it exists so that shortening handles later
+cannot silently introduce the collision this format exists to prevent. See
+`docs/decisions.md`, "Identifiers and citations, as settled".
+
+This paragraph previously said handles were the first 8 hex characters, which
+had been false since the guid became the handle, and the CSS below still
+carries the damage: the `.block::before` gutter is sized `left: -5.6rem`,
+which fit eight characters and does not fit thirty-six.
 """
 import html as _html
 import json

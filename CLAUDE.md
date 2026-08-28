@@ -12,6 +12,7 @@ conda activate compost                # pandoc 3.10 — base has 3.8 and won't s
 pip install -e .                      # puts `compost` on PATH
 ./tests/run.sh                        # twenty-one suites, all should pass
 compost --help
+compost ls                            # what is in the base here, if there is one
 ```
 
 Outside that env there is no `compost`, and the suites pass under the base env's
@@ -72,8 +73,30 @@ invents one will be wrong. To read a base as prose use
 `.compost/views/default-djot/`, which carries a handle on every citable block.
 A handle is the whole guid; a prefix of one resolves to nothing.
 
-This repo has no `.compost/` of its own. The base it would hold is still the
-unmigrated v0.1 corpus below.
+**Whether this repo has a `.compost/` depends on the machine, so check rather
+than assume.** It is gitignored — as `.compost` with no trailing slash, on
+purpose, because on the human's machine it is a *symlink* into a separate
+local-only repository and git stores a symlink as a blob, which a trailing
+slash would not match. The `.gitignore` comment has the detail.
+
+- **On a fresh clone there is no base.** `compost lookup` says so plainly, and
+  the only material in the repo is `tests/corpus/`.
+- **On the human's machine there is one**, holding their **personal** knowledge
+  base — the working notes and conversations this project exists to keep. That
+  is why it is not shared: this repository has had personal material purged
+  from its history once already, and better never in than removed twice.
+
+Two things follow, and both have been got wrong. **When the human pastes a
+citation, run `compost lookup <guid>` before answering.** This file is not
+evidence that there is nothing to resolve; an earlier version of this
+paragraph asserted the base was absent, and an agent believed it over a
+two-second check and guessed at a block it could have read. And **whatever a
+present base holds is private**: read it to answer the question in front of
+you, never copy it into a tracked file, never commit anything under
+`.compost/`.
+
+The **v0.1 corpus** is a different thing again — still unmigrated, still not on
+this disk, and described below.
 
 **Three things get called a corpus here, so this file is strict about it.**
 Bare *corpus* always means the **test corpus** under `tests/corpus/`. The
