@@ -377,14 +377,23 @@ browser.
 | view | for | tool output |
 |---|---|---|
 | `default-djot/*.dj` | agents | shown in full — djot has no collapse |
-| `default-html/*.html` | people | collapsed into `<details>` with a line count |
+| `default-html/*.html` | people | tool calls, their output, subagent transcripts and slash-command output collapsed into `<details>` |
 | `default-md/*.md` | regenerating README, TODO and the like | shown in full, **no handles injected** |
 
 The markdown view carries only the handles its source already had, so its
 output is clean enough to commit.
 
-In the HTML view every citable block is an anchor; clicking a handle copies
-`[-](#guid)` to the clipboard. `default-html/index.html` lists the documents.
+In the HTML view every citable block is an anchor. **Hovering highlights the
+smallest block under the cursor**; holding Shift extends the highlight over its
+subtree — the descendants of a container, or everything under a heading down to
+the next heading of equal or higher level. **Clicking anywhere in a block**
+copies `[-](#guid)` and a toast shows what was copied.
+
+Shift changes the highlight and never the clipboard: the copied string is
+identical with or without it. v0.1's `{#8hex+++}` was a subtree *citation
+syntax*, and v0.2 resolves no such thing.
+
+`default-html/index.html` lists the documents.
 
 ### draw [ROOT] [--engine ENGINE]
 
