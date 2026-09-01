@@ -10,6 +10,7 @@ from a document.
 """
 import contextlib
 import io
+import os
 import re
 import subprocess
 import sys
@@ -17,6 +18,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from src import cli              # noqa: E402
 from src import records as R    # noqa: E402
 from tests import tier as T  # noqa: E402
 from src import session as SESS  # noqa: E402
@@ -88,18 +90,24 @@ def main():
         def shown(n):
             """Nodes a view is expected to render.
 
-            Two types are stored and deliberately not rendered, and both
-            exclusions are decisions recorded in `views.py` rather than
-            accidents: a `thinking` node with no text, and an envelope turn
-            whose only content was a tool result that got folded into the call
-            that produced it. Being in the graph and being on the page are
-            different things.
+            Several things are stored and deliberately not rendered, and every
+            exclusion is a decision recorded in `views.py` rather than an
+            accident: a `thinking` node with no text, and a slash command's
+            `<local-command-caveat>` paragraph (v0.2.9 — an instruction to the
+            model, not something the human said). A `turn` is shown exactly
+            when at least one of its children is (v0.2.9's general rule,
+            `views.py`'s `_render_session`, replacing the older special case
+            for an envelope turn specifically — that case is now just one way
+            for every child to be unshown, not a rule of its own). Being in
+            the graph and being on the page are different things.
             """
             if n["type"] == "thinking" and n["params"].get("empty"):
                 return False
-            if n["type"] == "turn" and n["params"].get("author") == "envelope" \
-                    and not kids.get(n["guid"]):
+            if n["type"] == "Para" and V._lead_tag(n) == V.SLASH_CAVEAT:
                 return False
+            if n["type"] == "turn":
+                kk = kids.get(n["guid"], [])
+                return bool(kk) and any(shown(nodes[k]) for k in kk)
             return True
 
         def turns_appear():
@@ -148,14 +156,27 @@ def main():
 
         def html_collapses():
             # Tool output collapses, and so does a subagent transcript — it is
-            # the output of its `Agent` call, arriving in another file. One
-            # folding mechanism for both, which is why the count is a sum.
+            # the output of its `Agent` call, arriving in another file. A tool
+            # call's own input collapses too (v0.2.9), and so does a slash
+            # command's stdout (same `tooloutput` pattern, v0.2.9) — same
+            # reasoning throughout: a human is scrolling. One folding mechanism
+            # for all four, which is why the count is a sum.
             n_details = sum(t.count("<details>") for t in html.values())
             outs = sum(1 for n in nodes.values() if n["type"] == "tooloutput")
+            calls = sum(1 for n in nodes.values() if n["type"] == "toolcall")
             subs = sum(1 for r in recs if r["record"] == "edge"
                        and r["type"] == "launched")
-            return n_details == outs + subs, \
-                f"{n_details} <details> for {outs} outputs + {subs} subagents"
+
+            def nonempty_stdout(n):
+                if n["type"] != "Para" or V._lead_tag(n) != V.SLASH_STDOUT:
+                    return False
+                return bool(V._ANSI_RE.sub("", R.plain_text(n)).strip())
+            stdouts = sum(1 for n in nodes.values() if nonempty_stdout(n))
+
+            return n_details == outs + calls + subs + stdouts, \
+                f"{n_details} <details> for {outs} outputs + " \
+                f"{calls} tool-call inputs + {subs} subagents + " \
+                f"{stdouts} slash-command stdouts"
         case("html collapses tool output and subagents", html_collapses)
 
         def djot_has_no_raw_html():
@@ -235,6 +256,189 @@ def main():
             return not ghost.exists(), \
                 "a view file no render produced is removed"
         case("render leaves only what it wrote", render_removes_stale_pages)
+
+    # -- v0.2.9: slash commands, recognised structurally --------------------
+    # tests/fixtures/sessions/session-slash.jsonl carries the three measured
+    # originals verbatim (docs/roadmap.md, v0.2.9) plus an ANSI-bearing one,
+    # each its own turn, alongside two ordinary human/assistant turns so the
+    # suppression is shown against real content rather than an all-slash file.
+    with tempfile.TemporaryDirectory() as d2:
+        st2 = S.Store.init(Path(d2))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ST._digest(st2, "claude-code-transcript",
+                       [str(HERE / "fixtures/sessions/session-slash.jsonl")],
+                       "compost")
+        digest_output = buf.getvalue()
+        V.render_all(st2)
+        recs2, _ = st2.load()
+        nodes2 = {r["guid"]: r for r in recs2 if r["record"] == "node"}
+        kids2: dict[str, list[str]] = {}
+        for r in recs2:
+            if r["record"] == "edge" and r["type"] == "contains":
+                kids2.setdefault(r["source"], []).append(r["destination"])
+        djot2 = {f.stem: f.read_text()
+                 for f in (st2.views / "default-djot").glob("*.dj")}
+        html2 = {f.stem: f.read_text()
+                 for f in (st2.views / "default-html").glob("*.html")
+                 if f.name != "index.html"}
+        djot_text = "\n".join(djot2.values())
+        html_text = "\n".join(html2.values())
+
+        def _para_with_tag(tag, contains=None):
+            for n in nodes2.values():
+                if n["type"] == "Para" and V._lead_tag(n) == tag:
+                    if contains is None or contains in R.plain_text(n):
+                        return n
+            raise AssertionError(f"no Para with lead tag {tag!r} found")
+
+        def _turn_of(child_guid):
+            src = next(s for s, ds in kids2.items() if child_guid in ds)
+            return nodes2[src]
+
+        caveat = _para_with_tag(V.SLASH_CAVEAT)
+        caveat_turn = _turn_of(caveat["guid"])
+        command = _para_with_tag(V.SLASH_COMMAND)
+        stdout_plain = _para_with_tag(V.SLASH_STDOUT, "See ya")
+        stdout_ansi = _para_with_tag(V.SLASH_STDOUT, "Opus 5")
+        ansi_turn = _turn_of(stdout_ansi["guid"])
+
+        def caveat_turn_produces_nothing():
+            # Sabotage: making `_render_slash` return a block for the caveat
+            # (treating it like the other two tags) puts both the paragraph
+            # and the empty turn frame around it back on the page.
+            leaked = (caveat["guid"] in djot_text or caveat["guid"] in html_text
+                      or caveat_turn["guid"] in djot_text
+                      or caveat_turn["guid"] in html_text)
+            return not leaked, \
+                "neither the caveat paragraph nor its turn's frame is on the page"
+        case("a turn whose only child is a caveat produces no output at all",
+             caveat_turn_produces_nothing)
+
+        def caveat_still_in_the_graph():
+            # The property this guards: rendering is not where filtering
+            # happens. Sabotage: dropping the line at import time, rather than
+            # suppressing it at render time, would pass every case above too.
+            n = nodes2.get(caveat["guid"])
+            has_text = n is not None and "Caveat" in R.plain_text(n)
+            here = Path.cwd()
+            os.chdir(d2)
+            try:
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    code = cli.main(["compost", "lookup", caveat["guid"]])
+            finally:
+                os.chdir(here)
+            return (has_text and code == 0
+                    and "Caveat" in out.getvalue()), \
+                "the caveat's node is unchanged in the graph, and " \
+                "`compost lookup` still resolves it"
+        case("the caveat's node is still in the graph after rendering",
+             caveat_still_in_the_graph)
+
+        def command_line_has_a_handle():
+            # Sabotage: emitting the command's Para without routing it through
+            # `g.wrap` (e.g. returning it straight from the elif branch)
+            # drops the handle and the block stops being citable.
+            return (command["guid"] in djot_text
+                    and f'id="{command["guid"]}"' in html_text), \
+                "the command paragraph carries its guid as a citable handle, " \
+                "in both views"
+        case("the command paragraph renders with its guid as the block id",
+             command_line_has_a_handle)
+
+        def command_line_has_no_angle_bracket():
+            # Sabotage: building the line from the node's raw djot/markdown
+            # text instead of `R.plain_text` leaves the three tag pairs — or
+            # their escaped form — sitting in the rendered line.
+            m = re.search(re.escape(command["guid"]) + r'\}\n(.*?)\n', djot_text)
+            djot_line = m.group(1) if m else None
+            m = re.search(r'id="' + re.escape(command["guid"])
+                          + r'"[^>]*>\s*<p>(.*?)</p>', html_text, re.S)
+            html_line = m.group(1) if m else None
+            ok = (djot_line is not None and "<" not in djot_line
+                  and html_line is not None and "<" not in html_line)
+            return ok, f"djot: {djot_line!r}, html: {html_line!r}"
+        case("the rendered command line has no < character",
+             command_line_has_no_angle_bracket)
+
+        def stdout_folds_in_html_bare_in_djot():
+            djot_block = re.search(
+                r'\{#' + re.escape(stdout_plain["guid"]) + r'\}\n(.*?)\n\n',
+                djot_text, re.S)
+            html_block = re.search(
+                r'id="' + re.escape(stdout_plain["guid"]) + r'"[^>]*>(.*?)</div>',
+                html_text, re.S)
+            in_djot_ok = (djot_block is not None
+                          and "<details>" not in djot_block.group(1)
+                          and "See ya!" in djot_block.group(1))
+            in_html_ok = (html_block is not None
+                          and "<details>" in html_block.group(1)
+                          and "See ya!" in html_block.group(1))
+            return in_djot_ok and in_html_ok, \
+                "stdout is a bare code block in djot, a <details> in html"
+        case("stdout with text folds in html and stays bare in djot",
+             stdout_folds_in_html_bare_in_djot)
+
+        def empty_stdout_renders_nothing():
+            # Unit-level, not through digest: a synthetic Para whose only
+            # inline is the stdout tag, no text after it.
+            node = {"type": "Para", "guid": str(id(object())),
+                    "content": [{"t": "RawInline",
+                                 "c": ["html", V.SLASH_STDOUT]}]}
+            return (V._render_slash(None, node, "html") is None
+                    and V._render_slash(None, node, "djot") is None), \
+                "an empty stdout renders nothing in either view"
+        case("empty stdout renders nothing in either view",
+             empty_stdout_renders_nothing)
+
+        def ansi_stripped_in_view_present_in_record():
+            # Both halves in one test: the SGR sequence must still be in the
+            # record the view was built from (nothing about rendering may
+            # touch ingestion), and must not be in either rendered view.
+            # The raw log line, not a re-serialisation of it: `json.dumps`
+            # escapes a control character back into readable text, which would
+            # make this pass even if the importer had never kept the byte.
+            log_content = (ansi_turn["params"].get("log", {})
+                           .get("message", {}).get("content", ""))
+            in_record = "\x1b[1m" in log_content
+            in_djot = "\x1b" in djot_text or "[1m" in djot_text
+            in_html = "\x1b" in html_text or "[1m" in html_text
+            return in_record and not in_djot and not in_html, \
+                f"ANSI in record: {in_record}, leaked into djot: {in_djot}, " \
+                f"leaked into html: {in_html}"
+        case("ANSI escapes are stripped in the view, kept in the record",
+             ansi_stripped_in_view_present_in_record)
+
+        def every_turn_says_who_is_speaking():
+            return ('data-author="human"' in html_text
+                    and 'data-author="assistant"' in html_text
+                    and "[data-author]" in V.CSS
+                    and "::before" in V.CSS), \
+                "every turn div carries a data-author attribute, and the " \
+                "CSS keys a rule off it"
+        case("every turn div says who is speaking", every_turn_says_who_is_speaking)
+
+        def digest_prints_whole_guid_lookup_accepts_it():
+            m = re.search(r"root ([0-9a-f-]+), blob ([0-9a-f-]+)",
+                          digest_output)
+            if not m:
+                return False, f"no 'root <guid>, blob <guid>' in: {digest_output!r}"
+            root_guid, blob_guid = m.group(1), m.group(2)
+            here = Path.cwd()
+            os.chdir(d2)
+            try:
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    code = cli.main(["compost", "lookup", root_guid])
+            finally:
+                os.chdir(here)
+            return (len(root_guid) == 36 and len(blob_guid) == 36
+                    and code == 0 and root_guid in out.getvalue()), \
+                f"digest printed a {len(root_guid)}-char root guid, " \
+                f"lookup exit {code}"
+        case("digest prints the whole root guid, and lookup accepts it",
+             digest_prints_whole_guid_lookup_accepts_it)
 
     for ok, name, detail in results:
         print(f"  {'pass' if ok else 'FAIL'}  {name:<52} {detail}")

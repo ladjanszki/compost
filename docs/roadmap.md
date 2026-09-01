@@ -1380,9 +1380,34 @@ reference it had just copied*, for 1.8 s.
 
 v0.2 kept the container and the `author` attribute and shipped only
 `.turn[author="human"] { border-left-color: var(--mark) }`
-(`src/views.py:321`). Human turns get a blue rule, assistant turns get the
-default grey rule, there is no third state and no text anywhere. The fix is
-four lines of CSS over data that is already in the page.
+(`src/views.py:321`).
+
+**Corrected during implementation — the regression was total, not partial.**
+This paragraph originally said human turns got a blue rule and assistant turns
+the default grey. They did not: **pandoc's HTML writer `data-`-prefixes a
+Div's non-standard attributes**, so `author="human"` in the AST reaches the
+page as `data-author="human"` and the `[author="human"]` selector matched
+nothing on any page ever rendered. Every turn got the same grey rule.
+
+The claim was wrong because it was read out of `to_html.py` and `views.py`
+side by side without re-rendering either — and v0.1 wrote its HTML through
+`djot.js`, which does not prefix, so the selector was correct in the file it
+was copied from and dead in the file it was copied to. Verified directly:
+`pandoc -f json -t html` on a Div carrying `author="human"` emits
+`data-author="human"`.
+
+**Two traps, one shape.** The attribute was right and the value was wrong
+too: v0.1's authors were `claude` and `agent`, and this release's closed
+vocabulary is `human`, `assistant`, `envelope` (`docs/record-grammar.md` §6).
+Porting `^="claude"` / `^="agent"` verbatim produced two more selectors
+matching nothing, which is how assistant turns kept the default grey through
+a first implementation that passed every guarantee this section had written.
+**Guarantee 14 exists because of that**: no `[data-author…]` selector may name
+a value outside the closed vocabulary.
+
+So *"port the v0.1 CSS verbatim"* is the wrong instruction wherever the value
+or the attribute crosses a renderer boundary. The fix is still four lines of
+CSS over data already in the page — but not the same four lines.
 
 ### The highlight must be JavaScript, not `:hover`
 
@@ -1731,6 +1756,11 @@ the CSS is not a test.
 13. **`.hl` and `.hl-sub` resolve to the same background value.** The rule
     exists to be read as one highlight, and two colours drifting back in is a
     silent change of meaning.
+14. **Every `[data-author…]` selector names a value in the closed vocabulary**
+    — `human`, `assistant`, `envelope` — and `human` and `assistant` are both
+    named. Added during implementation review, after two ported selectors were
+    found matching nothing. A dead selector is silent; that is what makes it a
+    property rather than a review note.
 
 `./tests/run.sh` must stay green in both tiers, and the round-trip suite must
 be untouched — if `records.py` changed, the change is wrong.

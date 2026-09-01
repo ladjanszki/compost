@@ -24,9 +24,11 @@ cannot silently introduce the collision this format exists to prevent. See
 `docs/decisions.md`, "Identifiers and citations, as settled".
 
 This paragraph previously said handles were the first 8 hex characters, which
-had been false since the guid became the handle, and the CSS below still
-carries the damage: the `.block::before` gutter is sized `left: -5.6rem`,
-which fit eight characters and does not fit thirty-six.
+had been false since the guid became the handle, and the CSS carried the
+damage until v0.2.9: the `.block::before` gutter was sized `left: -5.6rem`
+and printed `attr(id)`, which fit an 8-character handle and spilled a
+36-character one across the text it was meant to annotate. It now shows a
+fixed hint instead of the id — see `docs/roadmap.md`, v0.2.9.
 """
 import html as _html
 import json
@@ -62,6 +64,21 @@ SESSION_TYPES = {"session", "turn", "toolcall", "tooloutput", "thinking",
 #   {#376c3ce7 .turn author="human" turn="019ff17b-..."}
 SELF_LABELLING = {"turn", "toolcall", "tooloutput", "session", "thinking"}
 
+# The harness's own reserved tags, opening a Para. Recognised structurally —
+# the node's first inline is a RawInline of format html whose text is exactly
+# one of these — never by matching prose. That is the same standing as
+# "never scan raw file text for citations": a paragraph that merely *mentions*
+# one of these mid-sentence does not match. docs/roadmap.md, v0.2.9.
+SLASH_CAVEAT = "<local-command-caveat>"
+SLASH_COMMAND = "<command-name>"
+SLASH_STDOUT = "<local-command-stdout>"
+SLASH_TAGS = {SLASH_CAVEAT, SLASH_COMMAND, SLASH_STDOUT}
+
+# A terminal's SGR sequences (colour, bold, ...), stripped from a slash
+# command's stdout at view time only. The record keeps them; `lookup` still
+# prints what the log held.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
 
 # A line that is nothing but a handle, optionally behind a list marker. Matched
 # narrowly on purpose: a paragraph of prose may legitimately *end* with a
@@ -88,6 +105,72 @@ def _details(summary, blocks):
              f"<details><summary>{_html.escape(summary)}</summary>"]},
             *blocks,
             {"t": "RawBlock", "c": ["html", "</details>"]}]
+
+
+def _lead_tag(node) -> str | None:
+    """
+    The text of `node`'s first inline, when that inline is a raw-html tag.
+
+    `node["content"]` is the raw pandoc inline list a `Para`/`Plain` node
+    carries. Returns None for anything else — no text, a different first
+    inline, or a RawInline of a format other than html.
+    """
+    inlines = node.get("content") or []
+    if not inlines:
+        return None
+    first = inlines[0]
+    if (isinstance(first, dict) and first.get("t") == "RawInline"
+            and (first.get("c") or [None])[0] == "html"):
+        return first["c"][1]
+    return None
+
+
+def _command_line(text: str) -> str:
+    """
+    `/exit exit ` -> `/exit`; collapse whitespace, drop a redundant message.
+
+    `text` is `R.plain_text(n)` on a slash-command Para — the RawInline tags
+    around name/message/args are already gone, leaving bare words in order.
+    When the word right after the name repeats it (message equals name, the
+    common case), that word is noise and is dropped; anything after it (a
+    real argument) is kept.
+    """
+    words = text.split()
+    if not words:
+        return ""
+    name = words[0]
+    if len(words) > 1 and words[1] == name.lstrip("/"):
+        words.pop(1)
+    return " ".join(words)
+
+
+def _render_slash(g, n, mode):
+    """
+    A slash-command `Para` (see `_lead_tag`) -> the blocks to emit, or None.
+
+    - the caveat is an instruction to the model; there is no reading of it
+      that belongs inside an `author="human"` frame, so it renders as nothing.
+    - the command becomes one plain line, still a `Para` so it keeps its
+      handle through the ordinary wrap in `_session_children`.
+    - the stdout folds in html (the `tooloutput` pattern), stays a bare code
+      block in djot, and is skipped entirely when empty. ANSI SGR sequences
+      are stripped here, in the view only — the record still holds them.
+    """
+    tag = _lead_tag(n)
+    if tag == SLASH_CAVEAT:
+        return None
+    if tag == SLASH_COMMAND:
+        line = _command_line(R.plain_text(n))
+        if not line:
+            return None
+        return [{"t": "Para", "c": [{"t": "Str", "c": line}]}]
+    if tag == SLASH_STDOUT:
+        text = _ANSI_RE.sub("", R.plain_text(n)).strip()
+        if not text:
+            return None
+        block = _code(text, ["command-output"])
+        return _details("output", [block]) if mode == "html" else [block]
+    return None
 
 
 def _render_session(g, n, mode):
@@ -131,8 +214,22 @@ def _render_session(g, n, mode):
         return body
 
     if t == "toolcall":
-        inp = json.dumps(p.get("input", {}), indent=1, ensure_ascii=False)
-        blocks = [_code(inp, ["tool-input"])]
+        raw_input = p.get("input") or {}
+        inp = json.dumps(raw_input, indent=1, ensure_ascii=False)
+        input_blocks = [_code(inp, ["tool-input"])]
+        if mode == "html":
+            # djot shows everything; html folds what is long. The summary is
+            # the tool's name plus a taste of its first argument — the v0.1
+            # style, ported: 12px monospace, dim.
+            first = next(iter(raw_input.values()), "")
+            first = first if isinstance(first, str) else \
+                json.dumps(first, ensure_ascii=False)
+            summary = p.get("name") or "tool call"
+            if first:
+                summary += f" — {first[:72]}"
+            blocks = _details(summary, input_blocks)
+        else:
+            blocks = input_blocks
         blocks += _session_children(g, guid, mode)
         # A subagent transcript is the output of this call — it just happens to
         # have arrived in another file. Rendering it here is what stops a
@@ -157,17 +254,21 @@ def _render_session(g, n, mode):
                                    blocks]}]
 
     if t == "turn":
-        # An envelope carrying nothing but tool results has no prose of its
-        # own — its `tool_result` was folded into the call that produced it.
-        # The node exists and holds the whole log line; an empty Div on the
-        # page would be 140 blank frames saying nothing.
-        if p.get("author") == "envelope" and not g.children(guid):
+        # A turn whose children all render to nothing has nothing to show.
+        # This subsumes the old check for an envelope turn specifically (its
+        # `tool_result` was folded into the call that produced it) — the
+        # general rule catches that case and any other, present or future,
+        # without one special case per cause. The node exists and holds the
+        # whole log line regardless; an empty Div on the page would be 140
+        # blank frames saying nothing.
+        kids = _session_children(g, guid, mode)
+        if not kids:
             return None
         return [{"t": "Div", "c": [
             _attr(guid, ["turn"], [("author", p.get("author")),
                                    ("time", p.get("timestamp")),
                                    ("turn", p.get("uuid"))]),
-            _session_children(g, guid, mode)]}]
+            kids]}]
 
     if t == "session":
         ag = p.get("agent") or {}
@@ -197,6 +298,15 @@ def _session_children(g, guid, mode):
             blocks = _render_session(g, n, mode)
             if blocks:
                 out.extend(blocks)
+        elif _lead_tag(n) in SLASH_TAGS:
+            # Structural, not a text scan: the node's first inline already
+            # told us this is a harness-reserved tag, so it is routed here
+            # instead of the ordinary R._to_block reconstruction path. That
+            # path must keep returning the node exactly; this one may not
+            # touch it — `_render_slash` reads the node, never rewrites it.
+            blocks = _render_slash(g, n, mode)
+            if blocks:
+                out.extend(g.wrap(n, blocks) if g.wrap else blocks)
         else:
             blocks = [R._to_block(g, k)]
             out.extend(g.wrap(n, blocks) if g.wrap else blocks)
@@ -288,9 +398,20 @@ def _html_wrap(node, blocks):
 
 
 CSS = """
-:root { --bg:#fff; --fg:#1a1a1a; --dim:#6a6a6a; --line:#e3e3e3; --mark:#0b5fff; }
+:root {
+  --bg:#fff; --fg:#1a1a1a; --dim:#6a6a6a; --line:#e3e3e3;
+  /* v0.1's single accent, verbatim — its links and its human-turn border
+     were the same blue. docs/roadmap.md, v0.2.9, "the whole guid is printed". */
+  --mark:#2b5fd9;
+  --hl:#f2f6ff;          /* the one highlight colour: .hl and .hl-sub share it */
+  --author:#9aa7bb;      /* v0.1's turn-label grey, verbatim */
+  --agent:#d99b2b;       /* v0.1's claude/agent border colour, verbatim */
+}
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#16181c; --fg:#e6e6e6; --dim:#8b8b8b; --line:#2b2f36; --mark:#7aa2ff; }
+  :root {
+    --bg:#16181c; --fg:#e6e6e6; --dim:#8b8b8b; --line:#2b2f36; --mark:#7aa2ff;
+    --hl:#1c2740; --author:#8b96ab; --agent:#d9a94b;
+  }
 }
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--fg); margin: 0;
@@ -306,23 +427,52 @@ blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding-left: 1
              color: var(--dim); }
 .block { position: relative; }
 .block > :first-child { margin-top: .35rem; }
+/* A fixed hint, not the guid: the id is 36 characters now, not 8, and a
+   36-character monospace string sized for 8 spills across the text it is
+   meant to annotate. Shown only on `.hl` (JS, see below) rather than on
+   `:hover` — blocks nest, and `:hover` matches every containing block at
+   once. */
 .block::before {
-  content: attr(id); position: absolute; left: -5.6rem; top: .35rem;
+  content: "⧉ click to copy"; position: absolute; left: -9.5rem; top: .35rem;
   font: 500 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--dim); opacity: 0; cursor: pointer; user-select: none;
+  color: var(--dim); opacity: 0; white-space: nowrap; pointer-events: none;
   transition: opacity .12s; letter-spacing: .02em;
 }
-.block:hover::before { opacity: 1; }
-.block.copied::before { content: "copied"; color: var(--mark); opacity: 1; }
+.block.hl::before { opacity: 1; }
+.block.hl[data-subtree-hint]::before { content: "⧉ click · ⇧ subtree"; }
 @media (max-width: 62rem) {
   .block::before { position: static; display: block; opacity: .45; }
 }
+/* One highlight, one meaning: this is what you are pointing at. Opaque, not
+   translucent — `.block` divs nest, and a translucent wash would double-darken
+   the inner ones. v0.1 painted the subtree amber as a warning that the
+   clipboard was about to differ; v0.2 has no subtree citation syntax, so that
+   warning would point at a difference that no longer exists. */
+.hl, .hl-sub { background: var(--hl); border-radius: 3px; }
 .turn { border-left: 3px solid var(--line); padding-left: 1rem; margin: 1.6rem 0; }
-.turn[author="human"] { border-left-color: var(--mark); }
+/* pandoc's html writer data-prefixes a Div's non-standard attributes — "author"
+   is not a global HTML attribute, so the node comes out as data-author, not
+   author. v0.1 rendered through djot.js, which does not do this, so its plain
+   `[author]` selector is not portable verbatim; this is the one v0.1 constant
+   in this release that had to change to work at all, not merely to look right. */
+.turn[data-author]::before {
+  content: attr(data-author); display: block; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--author);
+  margin-bottom: .4rem;
+}
+/* The values are the closed vocabulary in docs/record-grammar.md §6 —
+   `human`, `assistant`, `envelope` — not v0.1's. Porting v0.1's
+   `^="claude"` / `^="agent"` verbatim left both selectors matching nothing,
+   which is the same dead-selector failure the data- prefix caused above, from
+   the other direction: the attribute was right and the value was not.
+   `envelope` is deliberately unstyled — it is machinery, and the few that
+   render carry no prose of their own. */
+.turn[data-author="human"] { border-left-color: var(--mark); }
+.turn[data-author="assistant"] { border-left-color: var(--agent); }
 .tool-call { margin: .8rem 0; }
 .tool-call > pre:first-child { background: color-mix(in srgb, var(--mark) 8%, transparent); }
 details { margin: .4rem 0; }
-summary { cursor: pointer; color: var(--dim); font-size: .85rem; }
+summary { cursor: pointer; color: var(--dim); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .thinking pre { opacity: .7; font-style: italic; }
 /* A citation's link text is a single dash, so the page shows the target. */
 a[href^="#"]::after { content: attr(href); font: 500 11px/1 ui-monospace, Menlo, monospace;
@@ -331,18 +481,83 @@ a[href^="#"] { text-decoration: none; }
 footer { color: var(--dim); font-size: .85rem; border-top: 1px solid var(--line);
          margin-top: 3rem; padding-top: 1rem; }
 a { color: var(--mark); }
+/* v0.1's toast: fixed, bottom centre, dark pill, showing the reference it
+   just copied, for 1.8s. This is the copy confirmation; `.copied` used to
+   replace the gutter text, which is the one place on screen nobody is
+   looking immediately after clicking. */
+#toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+  background: #1a1a1a; color: #fff; padding: .5rem 1rem; border-radius: 6px;
+  font: 13px monospace; opacity: 0; transition: opacity .15s;
+  pointer-events: none; max-width: 90vw; overflow: hidden; }
+#toast.show { opacity: 1; }
 """
 
 JS = """
+// closest() stops at the first match walking up — the smallest containing
+// block. A mousemove handler, not :hover, so a Para inside a ListItem inside
+// a BlockQuote lights up only the one block the cursor is actually over.
+function headerLevel(el) {
+  if (!el || el.dataset.type !== 'Header') return null;
+  var h = el.querySelector('h1,h2,h3,h4,h5,h6');
+  return h ? parseInt(h.tagName.slice(1), 10) : null;
+}
+// The heading subtree, computed here rather than from a pandoc --section-divs
+// wrapper: a header's subtree is every following sibling block up to (not
+// including) the next heading of equal or higher level. Any other container's
+// subtree is simply the .block descendants it already contains — a list item,
+// a blockquote, or anything else nesting, with no special case needed because
+// a leaf block's querySelectorAll('.block') is already empty.
+function subtreeOf(el) {
+  var lvl = headerLevel(el);
+  if (lvl === null) return Array.prototype.slice.call(el.querySelectorAll('.block'));
+  var out = [], sib = el.nextElementSibling;
+  while (sib) {
+    var sLvl = headerLevel(sib);
+    if (sLvl !== null && sLvl <= lvl) break;
+    out.push(sib);
+    sib = sib.nextElementSibling;
+  }
+  return out;
+}
+
+var current = null, shiftDown = false;
+function paint() {
+  document.querySelectorAll('.hl,.hl-sub').forEach(function (n) {
+    n.classList.remove('hl', 'hl-sub');
+    n.removeAttribute('data-subtree-hint');
+  });
+  if (!current) return;
+  current.classList.add('hl');
+  var sub = subtreeOf(current);
+  if (sub.length) current.setAttribute('data-subtree-hint', '1');
+  // Shift highlights the subtree; shift does not change what is copied. v0.1's
+  // {#id+++} was that syntax, and v0.2 has no subtree citation to mint one in.
+  if (shiftDown) sub.forEach(function (b) { b.classList.add('hl-sub'); });
+}
+document.addEventListener('mousemove', function (e) {
+  var el = e.target.closest('.block');
+  if (el !== current) { current = el; paint(); }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Shift' && !shiftDown) { shiftDown = true; paint(); }
+});
+document.addEventListener('keyup', function (e) {
+  if (e.key === 'Shift') { shiftDown = false; paint(); }
+});
+// No geometry test, no width gate: click anywhere in the block. Shift is not
+// read here at all — the clipboard gets '[-](#guid)' whether or not it is
+// down, byte-identical, and it never contains '+'.
 document.addEventListener('click', function (e) {
   var el = e.target.closest('.block');
   if (!el) return;
-  var r = el.getBoundingClientRect();
-  var onHandle = e.clientX < r.left || e.clientY < r.top + 24 && e.clientX < r.left + 90;
-  if (!onHandle && window.innerWidth > 992) return;
-  navigator.clipboard.writeText('[-](#' + el.id + ')');
-  el.classList.add('copied');
-  setTimeout(function () { el.classList.remove('copied'); }, 900);
+  var ref = '[-](#' + el.id + ')';
+  navigator.clipboard.writeText(ref).then(function () {
+    var t = document.getElementById('toast');
+    t.textContent = ref;
+    t.classList.add('show');
+    clearTimeout(window._tt);
+    window._tt = setTimeout(function () { t.classList.remove('show'); }, 1800);
+  });
 });
 """
 
@@ -355,7 +570,8 @@ def render_html(records, root, title: str) -> str:
             f"<title>{_html.escape(title)}</title>\n<style>{CSS}</style>\n"
             f"</head>\n<body>\n<main>\n{body}\n"
             f"<footer>{_html.escape(title)} — click a handle to copy it as a citation"
-            f"</footer>\n</main>\n<script>{JS}</script>\n</body>\n</html>\n")
+            f"</footer>\n<div id=\"toast\"></div>\n</main>\n<script>{JS}</script>\n"
+            f"</body>\n</html>\n")
 
 
 # -- driver -----------------------------------------------------------------

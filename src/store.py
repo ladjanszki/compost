@@ -439,7 +439,10 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
         via = f"  (named by {referrer.name})" if referrer is not None else ""
         print(f"  {src.name} -> {dest.relative_to(s.root)}  "
               f"({n} nodes, {len(recs) - n} edges, "
-              f"root {root[:8]}, blob {guid[:8]}){via}")
+              # The whole guid, not an 8-character prefix: `lookup` refuses a
+              # prefix outright, so printing one here handed back a string you
+              # could not paste back into the tool. docs/roadmap.md, v0.2.9.
+              f"root {root}, blob {guid}){via}")
         if dup:
             # Not an error. Storage is a blob store and the same bytes may
             # legitimately arrive twice; what would be wrong is for the second
