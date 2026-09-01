@@ -3,6 +3,107 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.9-rc — the view a person can actually read
+
+The first release aimed at the page rather than the records. `TODO.md`'s bar is
+*a version marks a change in what the tool can do*, and what the tool could not
+do was **tell you who was speaking**.
+
+### The v0.1 affordances, recovered rather than reinvented
+
+`src/render/to_html.py` was deleted whole in `e9f189c` when the rewrite moved
+in. It is 407 lines at `e9f189c^` and every affordance restored here was read
+out of it: the `mousemove` + `closest()` highlight, the shift subtree, the
+geometry-free click, and the toast that shows what it just copied.
+
+Highlighting stays JavaScript rather than becoming CSS `:hover`, because blocks
+nest — a `Para` in a `ListItem` in a `BlockQuote` is three nested `.block` divs
+and `:hover` matches all three, lighting a whole quotation to point at one
+sentence. `closest()` resolves the smallest containing block, which is why v0.1
+felt precise.
+
+**Shift restores the highlight and not the copy.** `{#8hex+++}` was v0.1's
+subtree *citation syntax*; v0.2 resolves no such thing, so shift-copy would have
+the tool minting dead anchors. The clipboard gets `[-](#guid)` either way. For
+the same reason the subtree highlight now shares one colour with the block
+highlight: v0.1's second colour was a warning that the clipboard was about to
+differ, and it no longer does.
+
+Clicking anywhere in a block copies. The previous handler computed the cursor
+position and returned early on any window wider than 992 px, so block-body
+clicking existed and was switched off for exactly the window size in daily use.
+
+### What the gutter was actually doing
+
+`.block::before { content: attr(id); left: -5.6rem }` was written when
+`HANDLE_LEN` was 8. It is 36. A 36-character monospace string needs about 16 rem
+and had been spilling across the text it annotated. It now shows a fixed hint.
+
+### Slash commands render as slash commands
+
+Measured on a real base: **7 commands, 4 sessions, 21 turns, 21 paragraphs**,
+always three adjacent turns of one `Para` each — caveat, command, stdout — and
+never one with more than one child. That regularity is what licensed acting on
+it.
+
+Recognition is **structural**: the first inline being a `RawInline` of format
+`html` whose text is one of three harness-reserved opening tags. Never a
+substring search over prose — the same standing as *never scan raw file text for
+citations*.
+
+The caveat renders as **nothing**. It is an instruction addressed to the model,
+and an `author="human"` frame around it puts words in the human's mouth. The
+command renders as one line and keeps its handle, so it stays citable. The
+stdout folds in HTML and is bare in djot, with ANSI SGR sequences — real, from a
+live transcript — stripped in the view only.
+
+**All of it is view-time.** Every suppressed paragraph is still a node, still
+carries its guid and its `params["log"]`, and still resolves through `compost
+lookup`. The transcript route stays lossless by property. A turn whose children
+all render to nothing now renders to nothing, which generalises the envelope
+rule and is what stops seven suppressed caveats leaving seven empty frames.
+
+### What it cost: two dead selectors, both silent
+
+**pandoc's HTML writer `data-`-prefixes a Div's non-standard attributes.** So
+`author="human"` in the AST reaches the page as `data-author="human"`, and the
+shipped `.turn[author="human"]` rule matched nothing on any page v0.2 ever
+rendered. The roadmap said human turns got a blue rule and assistant turns grey;
+they all got grey. v0.1 wrote its HTML through `djot.js`, which does not prefix
+— so the selector was correct in the file it was copied from and dead in the
+file it was copied to.
+
+Then the same shape again from the other direction: v0.1's authors were `claude`
+and `agent`, and this vocabulary is `human`, `assistant`, `envelope`
+(`docs/record-grammar.md` §6). Ported verbatim, two more selectors matched
+nothing, and assistant turns kept the default grey through an implementation
+that passed every guarantee the design had written.
+
+**So "port the v0.1 CSS verbatim" is the wrong instruction wherever a value or
+an attribute crosses a renderer boundary.** Guarantee 14 exists because of it:
+no `[data-author…]` selector may name a value outside the closed vocabulary. A
+dead selector is silent, which is what makes it a property rather than a review
+note.
+
+### Also
+
+`digest` prints whole guids. It had been printing an 8-character prefix that
+`lookup` refuses — an identifier the tool would not accept back from you.
+
+`src/views.py`'s module docstring claimed handles were the first 8 hex
+characters, false since the guid became the handle, and `CLAUDE.md` asserted
+this repo has no `.compost/`, which is true on a clone and false where the base
+is symlinked in. Both corrected; an agent had already believed the second one
+over a two-second check.
+
+### Guarantees
+
+Fourteen, across `tests/test_session_views.py` and `tests/test_views.py`, each
+made to fail before it was made to pass. `shown()` became the general recursive
+rule rather than an envelope special case, and `html_collapses` now balances
+outputs + calls + subagents + stdouts. `src/records.py` is untouched, so the
+round-trip property is safe by construction: **526/526 identity**.
+
 ## v0.2.8 — 2026-08-27 — a query layer, and a flat graph
 
 Landed on `main`, no version chosen yet — `DEVELOPMENT.md`, "Closing a
