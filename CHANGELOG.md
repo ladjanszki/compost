@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.10-rc — the index page, and a name you chose
+## v0.2.10 — 2026-09-01 — the index page, and a name you chose
 
 v0.2.9 made a document readable. This makes the front page one you can find
 something on. It was a flat list of filename stems — **nine of twenty-nine rows

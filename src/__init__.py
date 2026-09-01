@@ -6,4 +6,4 @@ it back out with `dynamic = ["version"]`. That way the number is importable at
 runtime and there is exactly one place to change it.
 """
 
-__version__ = "0.2.9"
+__version__ = "0.2.10"
