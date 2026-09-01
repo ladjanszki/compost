@@ -3,6 +3,111 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.10-rc — the index page, and a name you chose
+
+v0.2.9 made a document readable. This makes the front page one you can find
+something on. It was a flat list of filename stems — **nine of twenty-nine rows
+named by a raw uuid**, no dates, no grouping, no counts.
+
+### The sections are generated, never hardcoded
+
+One `<h2>` and one table per member of `records.ROOT_TYPES`, so today
+`Documents` and `Sessions` — **the code's words, chosen deliberately as an
+irritant.**
+
+Three sections were asked for: transcripts, notes, conversations. The graph can
+tell apart two, and measured against a real base the three-way split left **23
+of 29 rows homeless** with one section empty — `responds_to` does not exist
+there, and 23 documents arrived by `pandoc-ast`. A page reading `Documents: 23`
+in a word nobody thinks in is a standing reminder the vocabulary is unfinished.
+The real fix is v0.3.0's declared artifact kinds, at which point the sections
+become the kinds.
+
+**Hardcoding the pair would have defeated the reason for choosing it.** If the
+code gains a third root type and the page still shows two, the page has stopped
+reflecting the internals — the exact failure the labels exist to make visible.
+So a guarantee monkeypatches `ROOT_TYPES` to add a type and asserts the page
+grows a section.
+
+**`render_all`'s own root filter had the same bug**, outside the letter of the
+plan and inside its point: it hardcoded `("document", "session")`, so a third
+type would have got a section on the index and no page behind it. A section list
+and a page list disagreeing is worse than either being wrong alone.
+
+### A display name is a record, not something read out of the file
+
+A heading-derived title would have named **17 of 24** documents for free, and
+was rejected: a name that changes when the prose changes is a reminder
+pretending to be an identifier, and a view reaching into a document to invent
+one is implicitness this project refuses elsewhere.
+
+So a display name is its own `display_name` node, joined to the root by a
+`names` edge in a new `display` layer — not a field on the root, because records
+are immutable and the root is not ours to edit. It is **not** a reuse of
+`alias`: an alias answers *what does this string resolve to*, a display name
+answers *what should be shown for this node*, and overloading would put display
+names into `lookup`'s resolver.
+
+`display_name` joins `records.UNCONTAINED`. **That is the one line of
+`src/records.py` this release touches** — a constant, not the reconstruction
+path, and the round-trip stays at **526/526**.
+
+Several names may point at one root; nothing collapses them in the records. The
+view takes the newest by `created_at`, ties broken by guid, so the page is
+deterministic. Collapsing in a view breaks no rule.
+
+### `compost-name`, in `extras/`
+
+```
+compost-name <root-guid | storage-name> "The display name"
+```
+
+Installed, but not the tool — the same standing as `compost-new`, so the
+subcommand count `docs/man-compost.md` asserts does not move. **Not the CLI
+surface `CLAUDE.md` forbids:** that rules out `compost layer alias`, a
+*subcommand of the tool* editing records; a separate script writing a
+well-formed file into `graph/` is the blessed path.
+
+A storage name resolves through the `blob`'s `stored_as` and its `derived_from`
+edge — **never** by parsing a filename into a guid. It refuses a non-root, an
+unknown identifier and an empty name, and **runs `check` on what it wrote**,
+because a writer outside the tool is exactly the case `check` exists for.
+
+**Each run writes a new file and never edits one.** Renaming is running it
+again; older names stay as the record of what the thing was called, which is
+what makes newest-wins the natural read rather than an arbitrary one.
+
+### What a row carries, and what it cost
+
+Sessions show first and last turn, session id and source. Documents show words
+and **`imported`, with the word on the page** — a `document` root carries no
+timestamp at all, so the only date reachable is the `blob`'s `imported_at`,
+which is when it was fed in rather than when it was written. One column called
+*date* covering both would have been a quiet lie.
+
+**The dates shipped raw and were caught in review:**
+`2003-08-05T16:30:57.370Z` in a table cell. The spec asked for date columns and
+never said what a date looks like. `_when` now trims to minutes **for display
+only** — the record keeps every digit, and a string that is not ISO-shaped
+passes through rather than being guessed at.
+
+### Also
+
+Duplicate roots each keep their own row; collapsing them needs revision chains,
+and these duplicates are the evidence v0.3.0 is being designed from. Filtering
+was cut and the thing actually wanted recorded instead — **full-text search**,
+in `TODO.md` under *Known gaps*. The `prefers-color-scheme: dark` branch is
+deleted and every colour token kept, so the page is the light, Wikipedia-like
+one v0.2.9 restored the palette for.
+
+### Guarantees
+
+Sixteen, in `tests/test_views.py` and `tests/test_extras.py`, each made to fail
+on purpose first. One is deliberately **not** encoded: *"the diff on
+`records.py` is one line"* passes trivially on a clean checkout and can never
+hold again once committed, so it is a review check rather than a suite
+guarantee, and `test_records` covers the half that is durable.
+
 ## v0.2.9 — 2026-09-01 — the view a person can actually read
 
 The first release aimed at the page rather than the records. `TODO.md`'s bar is
