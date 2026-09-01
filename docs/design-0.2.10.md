@@ -199,6 +199,37 @@ become the kinds.
 
 ---
 
+## Two corrections after the answers
+
+**The sections are generated, not hardcoded.** Raised while reviewing the plan,
+and it is a real hole: hardcoding `Sessions` and `Documents` would mean that the
+day `ROOT_TYPES` gains a third member, the page keeps showing two and has
+stopped reflecting the internals — the exact failure the labels were chosen to
+make visible. So the index iterates `sorted(records.ROOT_TYPES)`, and a
+guarantee asserts the section count equals `len(ROOT_TYPES)`. Add a root type in
+v0.3.0, touch nothing in `views.py`, and the page grows a section.
+
+**`extras/compost-name` writes the record.** The read-only position was
+defensible but left a paper cut on every rename: composing the JSONL by hand
+means knowing the node shape, the edge direction, the layer, and which guid the
+edge points at.
+
+```
+compost-name <root-guid | storage-name> "The display name"
+```
+
+Takes a root guid, or the storage name as it appears in `.compost/storage/`
+resolved through the `blob`'s `stored_as` and its `derived_from` edge — never by
+parsing a path. Refuses a non-root, an unknown identifier and an empty name.
+Each run writes a **new** file rather than editing one, so renaming is running
+it again and the older names remain the record of what the thing was called.
+
+This is not the CLI surface `CLAUDE.md` forbids: that rules out
+`compost layer alias`, a *subcommand of the tool* editing records. A separate
+installed script writing a well-formed file into `graph/` is the blessed path.
+
+---
+
 ## After this is answered
 
 The v0.2.10 roadmap section and a Sonnet implementation plan against real line

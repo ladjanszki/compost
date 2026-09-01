@@ -1795,10 +1795,32 @@ daily task the tool still does not help with.
 The full question-and-answer record is `docs/design-0.2.10.md`; this section is
 what was decided and what to build.
 
-### Two sections, named in the code's vocabulary
+### The sections are generated from `ROOT_TYPES`, never hardcoded
 
-`Sessions` and `Documents` — literally the two strings in `records.ROOT_TYPES`,
-capitalised. **Not** `Conversations`, `Transcripts` or `Notes`.
+**One section per member of `records.ROOT_TYPES`, derived at render time.**
+Today that is `Sessions` and `Documents` — **not** `Conversations`,
+`Transcripts` or `Notes`.
+
+**Hardcoding the pair would defeat the whole reason for choosing those words.**
+If the code gains a third root type and the page still shows two, the page has
+stopped reflecting the internals — which is precisely the failure the labels
+exist to make visible. A hardcoded list is a snapshot of the vocabulary that
+goes stale silently, and silence is the failure mode this project keeps paying
+for.
+
+So: `for t in sorted(R.ROOT_TYPES)`, heading from the type string itself, and
+**a guarantee that the number of sections equals `len(R.ROOT_TYPES)`**. Add a
+root type in v0.3.0, touch nothing in `views.py`, and the page grows a section
+on the next render. Forget to, and a test fails rather than a page quietly
+lying.
+
+Sorted, because `ROOT_TYPES` is a set and an unsorted iteration would reorder
+the page between runs. Alphabetical puts `Documents` above `Sessions`.
+
+**Known wart, accepted:** the heading pluralises by appending `s`, so a future
+type ending in `s` or `y` reads badly. It is a one-line fix the day it happens,
+and a pluralisation table today would be inventing vocabulary for types that do
+not exist.
 
 Three sections were asked for. The graph can tell apart two, and the three-way
 split leaves 23 of 29 rows homeless with one section empty:
@@ -1856,11 +1878,32 @@ a property, and that is a stated transitional position rather than drift.
   **This is the one line of `src/records.py` this release touches**, and it is a
   constant, not the reconstruction path — the round-trip property is unaffected.
 
-**Read-only in this release.** The view reads a display name when one exists and
-falls back to the filename stem when none does. **Nothing here writes one.**
-Creation is a hand-written JSONL file under `graph/`, which `CLAUDE.md` already
-blesses — *"anything may write records; `check` is the gate"* — and a CLI
-surface for it stays forbidden exactly as `compost layer alias` is.
+**The view reads them; `extras/` writes them.** The view falls back to the
+filename stem when no display name exists.
+
+Writing one by hand is a JSONL file under `graph/`, which `CLAUDE.md` blesses —
+*"anything may write records; `check` is the gate"* — but composing it by hand
+means knowing the node shape, the edge direction, the layer, and which guid the
+edge must point at. That is a paper cut on every rename.
+
+**`compost-name`, in `extras/`.** Installed, but not the tool — the same
+standing as `compost-new`, and for the same reason: it orchestrates things the
+tool already does rather than adding a capability. It stays out of `compost`'s
+dispatch table, so the subcommand count `docs/man-compost.md` asserts and
+`tests/test_manpage.py` enforces does not move.
+
+```
+compost-name <root-guid | storage-name> "The display name"
+```
+
+**This is not the forbidden CLI surface.** `CLAUDE.md` rules out
+`compost layer alias` — a *subcommand of the tool* that edits records. A
+separate installed script that writes a well-formed file into `graph/` is the
+blessed path, exercised.
+
+**Each run writes a new file**, never edits one. Renaming is running it again;
+the view takes the newest, and the older names stay as the record of what the
+thing was called. The sanctioned inverse is unchanged: delete a whole file.
 
 So the index ships showing filenames and improves for each document named. That
 matches *"the file name is good enough right now"* without closing the door.
@@ -1925,7 +1968,6 @@ token**, so flexible theming later is a change of values rather than a rewrite.
 
 ### Deliberately not in scope
 
-- **Writing display names.** Read-only, as above.
 - **A title layer.** A `layer` builder that *proposes* names from headings, as
   records to keep or delete, is the honest form of the rejected idea and would
   be re-runnable like the citation layer. Not now, and not without asking.
@@ -1962,9 +2004,11 @@ a row needs, so the two section renderers stay presentational:
 rule turns an original filename into a storage path.
 
 **4. `src/views.py` — `render_index(g, recs, docs, names)`.** Extract the
-f-string at `src/views.py:654` into its own function returning HTML. Two
-`<table>`s under `<h2>Sessions</h2>` and `<h2>Documents</h2>`, each row linking
-to `names[root] + ".html"`. **`view_names` is unchanged** — the display name
+f-string at `src/views.py:654` into its own function returning HTML. **One
+`<h2>` and one `<table>` per member of `sorted(R.ROOT_TYPES)`** — never a
+hardcoded pair — each row linking to `names[root] + ".html"`. Group the roots
+by `n["type"]` and render a section for every type in `ROOT_TYPES`, including
+one with no rows. **`view_names` is unchanged** — the display name
 changes shown text only, never a filename or a URL, or every bookmark moves when
 a name is edited. Internal only: `compost render` takes no new argument.
 
@@ -1976,15 +2020,45 @@ vanishing, so the page's shape does not depend on the data.
 reusing the existing `--line` and `--dim` tokens; the tables must scroll inside
 their own container rather than widening the page.
 
-**6. `docs/record-grammar.md`.** Add `display_name` to §3.4 entities and to the
+**6. `extras/compost_name.py`, wired as `compost-name` in
+`[project.scripts]`.** Follow `extras/compost_new.py` for shape: a module-level
+docstring saying what it is and why it is not the tool, a `main(argv)` called
+directly by the suite, and no import of anything under `src/` beyond `records`
+and `store`.
+
+```
+compost-name <root-guid | storage-name> "The display name"
+```
+
+- **Resolve the target, then say what was resolved** before writing. A **root
+  guid** is used directly. A **storage name** (`GUID.EXT`, as it appears in
+  `.compost/storage/`) is resolved by finding the `blob` whose
+  `params["stored_as"]` matches, then the `derived_from` edge whose destination
+  is that blob — its source is the root. **Never** parse a path or strip an
+  extension to guess a guid; `CLAUDE.md` is explicit that nothing turns a
+  filename into a storage path.
+- **Refuse a target that is not in `ROOT_TYPES`**, naming what it is. Display
+  names are read for roots; naming a paragraph would write a record nothing
+  reads.
+- **Refuse an unknown identifier**, and refuse an empty name.
+- Write one new `graph/<uuid>.jsonl` holding the `display_name` node and its
+  `names` edge, through `Store.write` so it is atomic and flat-checked. Print
+  the file written and the name set.
+- **Run `check` on the result and report it.** A writer outside the tool is
+  exactly the case `check` exists for, and the script should demonstrate the
+  habit rather than assume it.
+
+**7. `docs/record-grammar.md`.** Add `display_name` to §3.4 entities and to the
 `UNCONTAINED` list at :252, `display` to the closed layer list in §6, and the
 `display_name → root` row to §4's edge table. `tests/test_grammar.py` asserts
 the document against the code, so this is not optional bookkeeping.
 
-**7. `docs/man-compost.md`.** The `render` section describes what
-`index.html` lists.
+**8. `docs/man-compost.md`.** The `render` section describes what
+`index.html` lists. `compost-name` is **not** added to the subcommand list —
+it is not a subcommand — but `DEVELOPMENT.md`'s *What belongs in `extras/`*
+gains it beside `compost-new`.
 
-**8. `TODO.md`.** Full-text search under *Known gaps*, unscheduled.
+**9. `TODO.md`.** Full-text search under *Known gaps*, unscheduled.
 
 ---
 
@@ -2000,18 +2074,30 @@ purpose first, per `tests/test_sabotage.py`.
    the choice is stable across two renders.
 4. **A `display_name` node passes `check`** — the `UNCONTAINED` line. Sabotage:
    remove it and the node is reported as having 0 parents.
-5. **The index has exactly two `<h2>`s, `Sessions` and `Documents`**, and a base
-   with no sessions still renders both.
+5. **The index has exactly `len(records.ROOT_TYPES)` sections**, one per type,
+   and a base with no sessions still renders all of them. Computed from
+   `ROOT_TYPES` in the test, not written out — so adding a root type and
+   forgetting `views.py` fails here instead of quietly shipping a page that
+   hides a whole category. Sabotage: hardcode the pair and add a third type.
 6. **Every row links to a file that exists** in `default-html/`.
 7. **A session row's first/last columns are the min and max of its turns'
    timestamps** — computed independently in the test, not copied from the view.
 8. **A document row's `imported` comes from the blob reached by
    `derived_from`**, not from any filename.
-9. **Both sections are sorted descending** on their stated key.
+9. **Each section is sorted descending** on its stated key — sessions by
+   last turn, documents by `imported_at`.
 10. **Duplicate roots each get their own row** — a base with the same transcript
     digested twice has two session rows.
 11. **The CSS defines no `prefers-color-scheme` block**, and `--bg` is light.
-12. **`records.py` is otherwise untouched**: the round-trip suite stays at
+12. **`compost-name` writes a file that `check` accepts**, and the view then
+    shows that name — end to end, in `tests/test_extras.py`, calling `main`
+    directly the way the existing suite calls `compost-new`.
+13. **`compost-name` refuses** a target that is not a root, an unknown
+    identifier, and an empty name — three cases, three messages, nothing
+    written in any of them.
+14. **Two runs of `compost-name` on one root leave two files**, and the view
+    shows the newer name. The append-only property, stated where it can fail.
+15. **`records.py` is otherwise untouched**: the round-trip suite stays at
     526/526, and `git diff` on `src/records.py` is one line.
 
 ### Costs accepted knowingly
