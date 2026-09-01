@@ -2008,7 +2008,13 @@ f-string at `src/views.py:654` into its own function returning HTML. **One
 `<h2>` and one `<table>` per member of `sorted(R.ROOT_TYPES)`** — never a
 hardcoded pair — each row linking to `names[root] + ".html"`. Group the roots
 by `n["type"]` and render a section for every type in `ROOT_TYPES`, including
-one with no rows. **`view_names` is unchanged** — the display name
+one with no rows.
+
+**And `render_all`'s own root filter must read `ROOT_TYPES` too.** It hardcodes
+`("document", "session")` at `src/views.py:616`. Left alone, a third root type
+would get a section on the index and no page behind it — the section list and
+the page list disagreeing, which is worse than either being wrong alone. Found
+during implementation, outside the letter of this plan and inside its point. **`view_names` is unchanged** — the display name
 changes shown text only, never a filename or a URL, or every bookmark moves when
 a name is edited. Internal only: `compost render` takes no new argument.
 
@@ -2098,7 +2104,18 @@ purpose first, per `tests/test_sabotage.py`.
 14. **Two runs of `compost-name` on one root leave two files**, and the view
     shows the newer name. The append-only property, stated where it can fail.
 15. **`records.py` is otherwise untouched**: the round-trip suite stays at
-    526/526, and `git diff` on `src/records.py` is one line.
+    526/526, and `git diff` on `src/records.py` is one line. **The second half
+    is a review check, not a suite guarantee** — a test asserting "the diff is
+    one line" passes trivially on a clean checkout and can never hold again
+    once the change is committed, so encoding it would be meaningless or
+    permanently failing. `test_records` covers the half that is durable.
+16. **No table cell holds a raw ISO timestamp.** Added in review, because the
+    spec asked for date columns and never said what a date looks like — so
+    `2003-08-05T16:30:57.370Z` shipped into a column nobody can scan. `_when`
+    trims to minutes **for display only**; the record keeps every digit, and a
+    string that is not ISO-shaped passes through rather than being guessed at.
+    Sabotage: return the argument unchanged and the `T`, the seconds and the
+    `Z` come back.
 
 ### Costs accepted knowingly
 

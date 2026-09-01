@@ -6,6 +6,8 @@
 extras/         installed, but not the tool — see "What belongs in extras/"
   compost_new.py     `compost-new`: mint a scratch file, open $EDITOR,
                 digest it on close
+  compost_name.py    `compost-name`: give a root a display name — a new
+                graph/<uuid>.jsonl each run, never an edit of one
 src/            the implementation
   cli.py        the compost command: a dispatcher and nothing else
   records.py    pandoc AST <-> records, the whole-graph checks, citations
@@ -69,6 +71,14 @@ does — a route, a mint, a check — plus something outside the tool entirely,
 like spawning an editor. A module that is the only place some piece of logic
 lives does not belong here; that is `src/`, reachable from `cli.py` either
 directly or as a subcommand.
+
+`compost-name` (v0.2.10) is the second resident, for the same reason:
+resolving an identifier through `derived_from`, minting a `display_name` node
+and its `names` edge with `records.Builder`, and calling `check` are all
+things `src/` already does. It is not a subcommand for the same reason
+`compost layer alias` was rejected in `CLAUDE.md` — a display name is a
+record, written the way any hand-written graph file is, and a wrapper script
+around that is exactly the third bucket's shape.
 
 ## Closing a version: tag the candidate first
 

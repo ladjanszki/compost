@@ -308,6 +308,18 @@ rather than replacing them, so the CLI keeps the primitives.
 Both are strictly additive: no subcommand changes, nothing is removed, and
 neither needs the query layer. Wanted soon.
 
+### Full-text search across documents
+
+Cut from v0.2.10's index page (`docs/roadmap.md`): a filter box over the
+index's rows was proposed and rejected, because the thing actually wanted —
+type words, the note surfaces — is a different feature that building the
+small one would not have led to. 29 rows do not need filtering; not being
+able to find a sentence inside them does. Unscheduled: no design yet for
+where it runs (`duckdb`'s full-text extension over `graph/*.jsonl`'s node
+content is the obvious first candidate, given v0.2.8's read-only SQL view
+already sits beside the same files) or what it should look like as a
+subcommand versus another `extras/` wrapper.
+
 ### The clean-room installs everything, and that is getting expensive
 
 `tests/clean-room.sh` builds a **fresh conda environment from

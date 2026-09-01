@@ -393,7 +393,18 @@ Shift changes the highlight and never the clipboard: the copied string is
 identical with or without it. v0.1's `{#8hex+++}` was a subtree *citation
 syntax*, and v0.2 resolves no such thing.
 
-`default-html/index.html` lists the documents.
+`default-html/index.html` lists every root, in one section per member of
+`records.ROOT_TYPES` — generated at render time, never a hardcoded pair, so a
+root type v0.3.0 adds grows the page a section without touching `views.py`.
+Today that is `Sessions` and `Documents`, sorted newest first: sessions by
+last turn, documents by when they were imported. A row shows a **display
+name** when one exists — its own record, read here and written nowhere in
+`src/`, see `extras/compost-name` below — and falls back to the source
+filename otherwise; naming a root never changes its page's filename. A
+session row also carries its first and last turn and its session id; a
+document row carries a word count and its import time, the only date a
+`document` root can reach, through `derived_from` to its `blob`. Every root
+digested more than once gets its own row — nothing is collapsed.
 
 ### draw [ROOT] [--engine ENGINE]
 
@@ -613,6 +624,15 @@ subcommand — the count in STATUS does not include them.
 install -e .`. Mints a scratch filename, opens `$EDITOR`, digests the file
 as `notes` on close. `extras/compost_new.py`; `DEVELOPMENT.md`, "What
 belongs in extras/".
+
+**`compost-name <root-guid | storage-name> "The display name"`** — same
+standing, same file it is documented beside. Resolves the identifier to a
+root (a guid directly, or a storage name through the `blob` it names and its
+`derived_from` edge), refuses a non-root, an unknown identifier or an empty
+name, and writes one new `graph/<uuid>.jsonl` holding a `display_name` node
+and the `names` edge that points it at the root — never editing a file
+already written, so renaming is running it again. Runs `check` on the result
+and reports it. `extras/compost_name.py`.
 
 **A read-only SQL view over `graph/*.jsonl`**, via duckdb — nothing
 materialised, no subcommand, no `compost query`. `tools/graph_sql.py`

@@ -173,6 +173,15 @@ def build() -> list:
             if S._digest(st, "claude-code-response", [str(wrapper)], "compost"):
                 raise RuntimeError("digest failed for response.json")
 
+        # A display name, hand-written straight into graph/ — the only way
+        # one is ever produced (v0.2.10: the view reads them, nothing in
+        # `src/` writes them). Exercises `display_name` / `names` / the
+        # `display` layer, none of which any route or layer builder mints.
+        b = R.Builder()
+        dn = b.node("display_name", {"value": "A hand-written display name"})
+        b.edge("names", dn, answered_root["guid"], "display")
+        st.write("display-name.jsonl", b.records)
+
         recs, _ = st.load()
         return recs
 

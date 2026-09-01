@@ -21,8 +21,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from extras import compost_new as N   # noqa: E402
+from extras import compost_name as CN  # noqa: E402
 from src import records as R          # noqa: E402
 from src import store as S            # noqa: E402
+from src import views as V            # noqa: E402
 
 FAKE_EDITOR = """#!/usr/bin/env python3
 import sys
@@ -168,6 +170,96 @@ def main():
                     f"rc={rc}, {out.strip()!r}")
         case("refuses outside a base, same message as any other command",
              not_a_base_refuses)
+
+    # -- compost-name (docs/roadmap.md, v0.2.10) -------------------------
+    with tempfile.TemporaryDirectory() as d2:
+        base2 = Path(d2) / "base"
+        S.Store.init(base2)
+        note = Path(d2) / "note-for-naming.md"
+        note.write_text("A note somebody will give a display name.\n",
+                        encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            S._digest(S.Store(base2), "notes", [str(note)], "compost")
+        recs, _ = S.Store(base2).load()
+        root = next(r["guid"] for r in recs
+                   if r["record"] == "node" and r["type"] == "document")
+        para = next(r["guid"] for r in recs
+                   if r["record"] == "node" and r["type"] == "Para")
+
+        def _run_name(*args):
+            old = Path.cwd()
+            os.chdir(base2)
+            try:
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    rc = CN.main(list(args))
+                return rc, out.getvalue()
+            finally:
+                os.chdir(old)
+
+        def writes_a_file_check_accepts_and_the_view_shows_it():
+            before = set(S.Store(base2).graph.glob("*.jsonl"))
+            rc, out = _run_name(root, "A Name From compost-name")
+            after = set(S.Store(base2).graph.glob("*.jsonl")) - before
+            problems = S.Store(base2).check()
+            with contextlib.redirect_stdout(io.StringIO()):
+                V.render_all(S.Store(base2))
+            idx = (S.Store(base2).views / "default-html" / "index.html").read_text()
+            return (rc == 0 and len(after) == 1 and not problems
+                    and "A Name From compost-name" in idx), \
+                (f"rc={rc}, new files={len(after)}, check problems={problems}, "
+                 f"shown in index={'A Name From compost-name' in idx}")
+        case("compost-name writes a file check accepts, and the view shows "
+             "the name", writes_a_file_check_accepts_and_the_view_shows_it)
+
+        def refuses_an_unknown_identifier():
+            before = set(S.Store(base2).graph.glob("*.jsonl"))
+            rc, out = _run_name("deadbeef-0000-0000-0000-000000000000", "x")
+            after = set(S.Store(base2).graph.glob("*.jsonl")) - before
+            return rc == 1 and not after and "does not resolve" in out, \
+                f"rc={rc}, new files={len(after)}, {out.strip()!r}"
+        case("compost-name refuses an unknown identifier",
+             refuses_an_unknown_identifier)
+
+        def refuses_a_non_root_target():
+            before = set(S.Store(base2).graph.glob("*.jsonl"))
+            rc, out = _run_name(para, "a paragraph is not a root")
+            after = set(S.Store(base2).graph.glob("*.jsonl")) - before
+            return rc == 1 and not after and "not a root" in out, \
+                f"rc={rc}, new files={len(after)}, {out.strip()!r}"
+        case("compost-name refuses a target that is not a root",
+             refuses_a_non_root_target)
+
+        def refuses_an_empty_name():
+            before = set(S.Store(base2).graph.glob("*.jsonl"))
+            rc, out = _run_name(root, "   ")
+            after = set(S.Store(base2).graph.glob("*.jsonl")) - before
+            return rc == 1 and not after and "must not be empty" in out, \
+                f"rc={rc}, new files={len(after)}, {out.strip()!r}"
+        case("compost-name refuses an empty name", refuses_an_empty_name)
+
+        def two_runs_leave_two_files_and_the_view_shows_the_newer():
+            before = set(S.Store(base2).graph.glob("*.jsonl"))
+            orig_now = R._now
+            try:
+                R._now = lambda: "2020-01-01T00:00:00Z"
+                _run_name(root, "An Older compost-name Run")
+                R._now = lambda: "2030-01-01T00:00:00Z"
+                _run_name(root, "A Newer compost-name Run")
+            finally:
+                R._now = orig_now
+            after = set(S.Store(base2).graph.glob("*.jsonl")) - before
+            with contextlib.redirect_stdout(io.StringIO()):
+                V.render_all(S.Store(base2))
+            idx = (S.Store(base2).views / "default-html" / "index.html").read_text()
+            return (len(after) == 2
+                    and "A Newer compost-name Run" in idx
+                    and "An Older compost-name Run" not in idx), \
+                (f"{len(after)} new files, newest shown: "
+                 f"{'A Newer compost-name Run' in idx}, "
+                 f"older not shown: {'An Older compost-name Run' not in idx}")
+        case("two runs of compost-name leave two files; the view shows "
+             "the newer name", two_runs_leave_two_files_and_the_view_shows_the_newer)
 
     for ok, name, detail in results:
         print(f"  {'pass' if ok else 'FAIL'}  {name:<58} {detail}")

@@ -249,7 +249,7 @@ digest of the same conversation, should a `duplicates` layer ever join them
 ### 3.4 Entities
 
 Nodes that belong to no containment tree at all —
-`UNCONTAINED = {"file", "blob", "alias", "unresolved_citation"}`
+`UNCONTAINED = {"file", "blob", "alias", "unresolved_citation", "display_name"}`
 (`src/records.py:43`). They are pointed at; they are inside nothing.
 
 | type | params |
@@ -258,6 +258,17 @@ Nodes that belong to no containment tree at all —
 | `blob` | `original_name`, `stored_as`, `bytes_sha256`, `imported_at`, `route` |
 | `alias` | `value`, `scheme` — a name that leads to another node |
 | `unresolved_citation` | — (no params) |
+| `display_name` | `value` — what a view should show for the root it names |
+
+**`display_name` is not `alias` wearing a second hat**, even though both are
+`{value, node}` shapes. An alias answers *"what does this string resolve
+to"* — input to node; a display name answers *"what should be shown for
+this node"* — node to string. Opposite directions, and overloading them
+would put display names inside `lookup`'s resolver. Unlike `alias` and
+`unresolved_citation`, `display_name` carries no top-level provenance of its
+own — the naming edge's `created_at` is what the view sorts by (docs/roadmap.md,
+v0.2.10, "the newer created_at wins"). Nothing in `src/` writes one; only the
+view reads them, and `extras/compost_name.py` is the writer.
 
 **`file` and `blob` are not the same thing and are not to be merged.** A `file`
 is a path some session mentioned; a `blob` is bytes that live in
@@ -331,6 +342,7 @@ things that may write records.** Any script or agent emitting valid JSONL under
 | `conversation` | `responds_to` | response `document` → the `document`/`session` it answers | `routes._response` |
 | `conversation` | `next` | a round → what follows it, note before its response and response before the next note | " |
 | `conversation` | `next` | answered root → response `document`, **reading order** | `routes._response` |
+| `display` | `names` | `display_name` → the root it names | hand-written; `extras/compost_name.py` |
 
 **`conversation` is its own layer, not `citation`.** "This response answered
 that note" is a different kind of fact from a link found in parsed text, and
@@ -441,7 +453,7 @@ anything acts on.
 Four lists are closed in schema 1. Everything else is open.
 
 **Layers** (§4): `pandoc-ast`, `session`, `claude-code`, `ingestion`, `agent`,
-`citation`, `conversation`.
+`citation`, `conversation`, `display`.
 
 **Routes** — the named ways material enters a base: `notes`,
 `claude-code-transcript`, `pandoc-ast`, `claude-code-response`. **Nothing is
@@ -493,7 +505,7 @@ Seven guarantees, each sabotage-verified:
    updated to say so.
 7. The assembled base passes `records.check()`.
 
-Current coverage: **35 node types, 12 edge pairs, 380 nodes.** `citation` /
+Current coverage: **36 node types, 13 edge pairs, 381 nodes.** `citation` /
 `cites` and `citation` / `names` are exercised by a document written *inside
 the test itself* — `tests/test_grammar.py`'s `build()` digests the fixtures,
 reads a real block guid out of the base, writes a temporary document citing
@@ -508,9 +520,13 @@ already the source of its own pandoc-ast `next` edge and `Graph._next` keys the
 whole chain by source alone (`src/records.py:302`); pointing the wrapper at one
 was tried while writing this fixture and broke `check` immediately, which is
 exactly the accepted risk `docs/roadmap.md` names as *"`Graph._next` is
-layer-blind"*, confirmed rather than merely asserted. The *not yet minted* list
-(§8, item 6) is empty as of v0.2.4 — it held `("citation", "cites")` while
-`citation_edges()` was defined and tested but called by nothing in `src/`.
+layer-blind"*, confirmed rather than merely asserted. `display` / `names` is
+exercised the same way again: `build()` hand-writes a `display_name` node and
+its `names` edge straight into `graph/`, the only path anything ever mints one
+by (v0.2.10 — nothing in `src/` writes one; `extras/compost_name.py` does).
+The *not yet minted* list (§8, item 6) is empty as of v0.2.4 — it held
+`("citation", "cites")` while `citation_edges()` was defined and tested but
+called by nothing in `src/`.
 
 Two fixtures exist for the base-constructor coverage below and nothing else.
 Before them the fixtures reached 28 of the 33 pre-v0.2.4 types, and

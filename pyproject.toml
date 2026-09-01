@@ -20,6 +20,9 @@ compost = "src.cli:main"
 # own dispatch table is what keeps the subcommand count in
 # docs/man-compost.md unmoved.
 compost-new = "extras.compost_new:main"
+# `compost-name`, not `compost name` — same reasoning, same file this
+# comment lives beside.
+compost-name = "extras.compost_name:main"
 
 [tool.setuptools]
 # extras/ is installed but is not the tool: DEVELOPMENT.md, "What belongs in

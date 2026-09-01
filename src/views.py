@@ -87,6 +87,15 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 HANDLE_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*\{#%s\}$" % R.HANDLE_RE)
 
 
+# The display-name layer, and the node type it names — its own vocabulary,
+# not a reuse of `alias`. An alias answers "what does this string resolve
+# to" (input to node); a display name answers "what should be shown for
+# this node" (node to string) — opposite directions, and overloading them
+# would put display names in `lookup`'s resolver. docs/roadmap.md, v0.2.10.
+DISPLAY_LAYER = "display"
+DISPLAY_NAME_TYPE = "display_name"
+
+
 def handle(guid: str) -> str:
     return guid[:R.HANDLE_LEN]
 
@@ -407,12 +416,11 @@ CSS = """
   --author:#9aa7bb;      /* v0.1's turn-label grey, verbatim */
   --agent:#d99b2b;       /* v0.1's claude/agent border colour, verbatim */
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg:#16181c; --fg:#e6e6e6; --dim:#8b8b8b; --line:#2b2f36; --mark:#7aa2ff;
-    --hl:#1c2740; --author:#8b96ab; --agent:#d9a94b;
-  }
-}
+/* Forced light, deliberately: v0.1's Wikipedia-like page is what the palette
+   above was restored for, and a dark-mode media query here undid exactly
+   that on a machine set to dark. Every token above stays, so flexible
+   theming later is a change of values rather than a rewrite.
+   docs/roadmap.md, v0.2.10. */
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--fg); margin: 0;
        font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -421,8 +429,14 @@ h1, h2, h3 { line-height: 1.25; margin: 2rem 0 .6rem; }
 pre { background: color-mix(in srgb, var(--fg) 5%, transparent);
       padding: .8rem 1rem; border-radius: 6px; overflow-x: auto; }
 code { font-size: .9em; }
+/* Shared by every pandoc table and by the index page's own tables
+   (render_index): `display: block` plus `overflow-x: auto` makes a wide
+   table scroll inside its own box rather than widening the page, and
+   reuses --line/--dim like everything else here — v0.2.10 added no
+   second rule, because this one already does what an index table needs. */
 table { border-collapse: collapse; width: 100%; overflow-x: auto; display: block; }
 th, td { border: 1px solid var(--line); padding: .4rem .6rem; text-align: left; }
+th { color: var(--dim); font-weight: 600; }
 blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding-left: 1rem;
              color: var(--dim); }
 .block { position: relative; }
@@ -574,6 +588,160 @@ def render_html(records, root, title: str) -> str:
             f"</body>\n</html>\n")
 
 
+# -- the index ----------------------------------------------------------
+
+def _display_name(g: R.Graph, root: str) -> str | None:
+    """The most recent display name naming `root`, or None.
+
+    A display-name edge points *at* the root (`display_name -> names ->
+    root`), the opposite direction from what `Graph.linked` indexes edges
+    by (source), so answering this per row would be a scan over every
+    `names` edge in the base once per row. Built once instead, on first
+    call, and cached on `g` itself — the same pattern `g.wrap` already uses
+    for a view to carry state a bare `Graph` has no field for.
+
+    Several display names may name one root, the same way two builds mint
+    two aliases for one value: nothing collapses them in the records. The
+    most recent by the naming edge's `created_at` wins; ties — same
+    timestamp, or no display name at all — are broken by the display_name
+    node's own guid, so the choice is stable across repeated renders.
+    """
+    idx = getattr(g, "_display_name_index", None)
+    if idx is None:
+        idx = {}
+        for edges in g._rel.get("names", {}).values():
+            for e in edges:
+                if e.get("layer") != DISPLAY_LAYER:
+                    continue          # the citation layer's own `names` use
+                n = g.nodes.get(e["source"])
+                if n is None or n["type"] != DISPLAY_NAME_TYPE:
+                    continue
+                key = (e.get("created_at", ""), n["guid"])
+                cur = idx.get(e["destination"])
+                if cur is None or key > cur[0]:
+                    idx[e["destination"]] = (key, R._p(n, "value"))
+        g._display_name_index = idx
+    hit = idx.get(root)
+    return hit[1] if hit else None
+
+
+def _when(ts):
+    """An ISO timestamp trimmed to what a person scans: `2026-08-25 16:13`.
+
+    Display only — the record keeps whatever the source wrote, to the
+    millisecond and with its own offset. This drops the seconds, the
+    subseconds and the `Z`, because a table of `2003-08-05T16:30:57.370Z` is
+    a column nobody reads across. Anything that is not an ISO-looking string
+    is passed through untouched rather than guessed at (v0.2.10; the roadmap
+    asked for date columns and did not say what a date looks like, which is
+    how the raw form shipped in the first place).
+    """
+    if not ts or len(ts) < 16 or ts[10] not in "T ":
+        return ts or "\u2014"
+    return ts[:10] + " " + ts[11:16]
+
+
+def _row_facts(g: R.Graph, recs: list, root: str) -> dict:
+    """What one index row needs, computed once so the two renderers below
+    stay presentational.
+
+    `name` falls back to the source filename's stem — never to a heading
+    read out of the document, which v0.2.10 rejected outright (a name that
+    changes when the prose changes is a reminder pretending to be an
+    identifier). Everything date-shaped is read from a record, never
+    guessed from a path: a session's turns each carry their own timestamp,
+    and a document's only reachable date is its blob's `imported_at`,
+    through `derived_from` — `CLAUDE.md` is explicit that nothing else
+    turns a filename into a storage fact.
+    """
+    n = g.nodes[root]
+    source = R._p(n, "source")
+    stem = Path(source).stem if source else root
+    out = {"name": _display_name(g, root) or stem, "source": source}
+    if n["type"] == "session":
+        turns = [g.nodes[k] for k in g.children(root)
+                 if g.nodes[k]["type"] == "turn"]
+        times = sorted(t for t in (R._p(t, "timestamp") for t in turns) if t)
+        out["session_id"] = R._p(n, "session_id")
+        out["first_turn"] = times[0] if times else None
+        out["last_turn"] = times[-1] if times else None
+    else:
+        def walk(guid):
+            yield guid
+            for k in g.children(guid):
+                yield from walk(k)
+        out["words"] = sum(len(R.plain_text(g.nodes[k]).split())
+                           for k in walk(root))
+        blob = R.blob_of(recs, root)
+        out["imported_at"] = R._p(blob, "imported_at") if blob else None
+    return out
+
+
+def render_index(g: R.Graph, recs: list, docs: list, names: dict) -> str:
+    """The `default-html/index.html` page: one section per member of
+    `records.ROOT_TYPES`, generated rather than hardcoded (docs/roadmap.md,
+    v0.2.10 — "the sections are generated from ROOT_TYPES, never
+    hardcoded"). `names` is `view_names(docs)`, the filename-stem map, not
+    the display-name index above — the same word means two different
+    things one function apart, on purpose, following the driver that
+    already used it that way.
+    """
+    total_nodes = sum(1 for r in recs if r["record"] == "node")
+    sections = []
+    for t in sorted(R.ROOT_TYPES):
+        rows = [d for d in docs if d["type"] == t]
+        facts = {d["guid"]: _row_facts(g, recs, d["guid"]) for d in rows}
+        heading = t[:1].upper() + t[1:] + "s"
+        sort_key = "last_turn" if t == "session" else "imported_at"
+        rows = sorted(rows, key=lambda d: facts[d["guid"]].get(sort_key) or "",
+                      reverse=True)
+        if not rows:
+            sections.append(f"<h2>{_html.escape(heading)}</h2>\n"
+                            f"<p>no {_html.escape(t)}s yet</p>")
+            continue
+        if t == "session":
+            cols = ["first turn", "last turn", "session id", "source"]
+
+            def cells(f):
+                return [_when(f.get("first_turn")),
+                        _when(f.get("last_turn")),
+                        f.get("session_id") or "—",
+                        f.get("source") or "—"]
+        elif t == "document":
+            cols = ["words", "imported"]
+
+            def cells(f):
+                return [str(f.get("words", 0)),
+                        _when(f.get("imported_at"))]
+        else:
+            # A root type this index has no dedicated columns for yet —
+            # reached only by adding a member to ROOT_TYPES, which is
+            # exactly the case this fallback exists to not crash on.
+            cols = ["source"]
+
+            def cells(f):
+                return [f.get("source") or "—"]
+        thead = "".join(f"<th>{_html.escape(c)}</th>" for c in cols)
+        trs = []
+        for d in rows:
+            f = facts[d["guid"]]
+            href = _html.escape(names[d["guid"]] + ".html")
+            row_cells = "".join(f"<td>{_html.escape(str(c))}</td>"
+                                for c in cells(f))
+            trs.append(f'<tr><td><a href="{href}">'
+                       f'{_html.escape(f["name"])}</a></td>{row_cells}</tr>')
+        sections.append(
+            f"<h2>{_html.escape(heading)}</h2>\n"
+            f"<table><thead><tr><th>name</th>{thead}</tr></thead>"
+            f"<tbody>{''.join(trs)}</tbody></table>")
+    body = "\n".join(sections)
+    return (f"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+            f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            f"<title>compost</title><style>{CSS}</style></head><body><main>"
+            f"<h1>compost</h1><p>{len(docs)} documents and sessions, "
+            f"{total_nodes} nodes.</p>{body}</main></body></html>\n")
+
+
 # -- driver -----------------------------------------------------------------
 
 def view_names(docs) -> dict:
@@ -614,11 +782,10 @@ def render_all(st: S.Store):
     launched = {r["destination"] for r in recs
                 if r["record"] == "edge" and r["type"] == "launched"}
     docs = [n for n in g.nodes.values()
-            if n["type"] in ("document", "session")
+            if n["type"] in R.ROOT_TYPES
             and n["guid"] not in launched]
     names = view_names(docs)
     written = []
-    index = []
     for doc in sorted(docs, key=lambda d: R._p(d, "source") or d["guid"]):
         root = doc["guid"]
         name = names[root]
@@ -631,7 +798,6 @@ def render_all(st: S.Store):
             d.mkdir(parents=True, exist_ok=True)
             (d / (name + ext)).write_text(fn(), encoding="utf-8")
             written.append(d / (name + ext))
-        index.append(name)
 
     # Remove pages this render did not produce. `render` used to only ever
     # write, which was invisible while every document had a page forever — and
@@ -652,16 +818,8 @@ def render_all(st: S.Store):
                 removed.append(f)
 
     idx = st.views / "default-html" / "index.html"
-    links = "\n".join(f'<li><a href="{_html.escape(n)}.html">{_html.escape(n)}</a></li>'
-                      for n in index)
-    idx.write_text(
-        f"<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
-        f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        f"<title>compost</title><style>{CSS}</style></head><body><main>"
-        f"<h1>compost</h1><p>{len(index)} documents, "
-        f"{sum(1 for r in recs if r['record'] == 'node')} nodes.</p>"
-        f"<ul>{links}</ul></main></body></html>\n", encoding="utf-8")
-    return written, len(index), files, removed
+    idx.write_text(render_index(g, recs, docs, names), encoding="utf-8")
+    return written, len(docs), files, removed
 
 
 def main(argv):
