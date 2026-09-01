@@ -17,6 +17,7 @@ disagree, the changelog is right and this file is stale.
 | **v0.2.7** | a graph view: DOT always, SVG when graphviz is installed |
 | **v0.2.8** | a query layer over the records |
 | **v0.2.9** | the view a person can actually read — the v0.1 affordances, restored |
+| **v0.2.10** | the index page, and a name you chose |
 
 ---
 
@@ -1779,6 +1780,252 @@ be untouched — if `records.py` changed, the change is wrong.
 - **The light palette is a 2026-08 aesthetic decision** with no measurement
   behind it, unlike most entries in this file. It is restoring something the
   human liked, and that is the whole justification.
+
+---
+
+## v0.2.10 — the index page, and a name you chose
+
+### Why this is a release
+
+v0.2.9 made a *document* readable. The index is still the flat list of filename
+stems `render_all` has emitted since v0.2: no dates, no grouping, no counts, and
+**nine of twenty-nine rows named by a raw uuid**. Finding anything is the one
+daily task the tool still does not help with.
+
+The full question-and-answer record is `docs/design-0.2.10.md`; this section is
+what was decided and what to build.
+
+### Two sections, named in the code's vocabulary
+
+`Sessions` and `Documents` — literally the two strings in `records.ROOT_TYPES`,
+capitalised. **Not** `Conversations`, `Transcripts` or `Notes`.
+
+Three sections were asked for. The graph can tell apart two, and the three-way
+split leaves 23 of 29 rows homeless with one section empty:
+
+| asked-for section | rows today |
+|---|---|
+| transcripts — `session` roots | 5 |
+| notes — `document`, route `notes` | 2 |
+| conversations — `responds_to` chains | **0** |
+| **no name for these** — `document`, route `pandoc-ast` | **23** |
+
+**The code's words are deliberate, and the point is that they chafe.** A page
+reading `Documents: 23` in a word nobody thinks in is a standing reminder the
+vocabulary is unfinished. The drift is not one-sided: `docs/design-0.2.10.md`
+spent six sections saying *conversations* while `render_all` says `session`, so
+neither the human nor the agent was using the code's own words. Putting them on
+the page is the cheapest way to keep noticing.
+
+The real fix is v0.3.0's artifact kinds — `docs/design-0.3.0.md` §2 — at which
+point the sections become the kinds and this label is relabelled in one line.
+
+### A display name is a record, not something read out of the file
+
+**The heading-derived title is rejected.** Searching a document for its first
+`Header` would have named 17 of 24 for free, and it was turned down for a good
+reason: a name that changes when the prose changes is a reminder pretending to
+be an identifier, and having the *view* reach into a document to invent one is
+the kind of implicitness this project refuses everywhere else.
+
+Instead a display name is **its own node**, joined to the root by an edge — the
+shape `alias` already uses. Not a field on the root: records are immutable and
+the root is not ours to edit. When v0.3.0 makes nodes changeable this may become
+a property, and that is a stated transitional position rather than drift.
+
+```json
+{"record":"node","schema_version":1,"guid":"…","type":"display_name",
+ "params":{"value":"Roadmap — the argument, while it is still an argument"}}
+{"record":"edge","schema_version":1,"guid":"…","layer":"display",
+ "type":"names","source":"<display_name guid>","destination":"<root guid>"}
+```
+
+**Four small vocabulary additions, each with its reason:**
+
+- **`display_name` node type.** Not a reuse of `alias`: an alias answers *"what
+  does this string resolve to"* — input to node — and a display name answers
+  *"what should be shown for this node"* — node to string. Opposite directions.
+  Overloading would put display names into `lookup`'s resolver.
+- **`names` edge, reused.** Same shape and same claim as the alias case — *this
+  node names that one*. One fewer edge type than inventing `titles`.
+- **`display` layer**, new. A display name is not a citation, and `names` today
+  lives only in the `citation` layer. Keeping the layer honest is what lets
+  either be reasoned about alone.
+- **`display_name` joins `records.UNCONTAINED`.** Without it `check` demands
+  exactly one `contains` parent and every display name is a reported problem.
+  **This is the one line of `src/records.py` this release touches**, and it is a
+  constant, not the reconstruction path — the round-trip property is unaffected.
+
+**Read-only in this release.** The view reads a display name when one exists and
+falls back to the filename stem when none does. **Nothing here writes one.**
+Creation is a hand-written JSONL file under `graph/`, which `CLAUDE.md` already
+blesses — *"anything may write records; `check` is the gate"* — and a CLI
+surface for it stays forbidden exactly as `compost layer alias` is.
+
+So the index ships showing filenames and improves for each document named. That
+matches *"the file name is good enough right now"* without closing the door.
+
+**Several display names may name one root**, the same way two builds mint two
+aliases for one value. Nothing collapses them in the records. **The view takes
+the most recent by `created_at`, ties broken by guid** so the page is
+deterministic. Collapsing in a view breaks no rule — views are derived,
+disposable and never re-ingested — and it touches no record.
+
+### What a row carries
+
+Trimmed to what earns its place; turn and tool-call counts were dropped.
+
+| `Sessions` | `Documents` |
+|---|---|
+| display name, else source filename | display name, else source filename |
+| first turn | words |
+| last turn | imported |
+| session id | |
+| source filename | |
+
+**Two date columns, not a range string**, so both are sortable and neither is
+parsed back out of prose.
+
+**Sessions get a real time; documents get an import time, and the word
+`imported` is on the page.** A `document` root carries no timestamp at all — its
+params are `meta`, `pandoc_api_version`, `route`, `source`, and `meta` is empty
+on all 24 — so the only date reachable is the `blob`'s `imported_at`, through
+the `derived_from` edge. That is when it was fed in, not when it was written,
+and one column called *date* covering both would be a quiet lie.
+
+**The session id stays** because it is what makes the duplicate rows legible.
+Dropping the turn counts costs nothing here: the three `cdb16054` copies all
+start `2026-08-28 15:45` and end `15:52`, `16:41` and `08-30 15:11`, so the
+last-turn column separates them on its own.
+
+### Sorting, and the duplicates
+
+**Both sections newest first** — sessions by last turn, documents by
+`imported_at`, both descending.
+
+**All duplicate rows are shown.** Five of the 29 are two actual things,
+`2e9cd256` twice and `cdb16054` three times. Collapsing them needs revision
+chains, which is v0.3.0; a view that hid them would be asserting something the
+graph does not support, and these duplicates are the evidence v0.3.0 is being
+designed from. Newest-first means the current one is on top.
+
+### Filtering is postponed, and what was actually wanted is recorded
+
+A filter box over 29 rows was cut. The real want is **full-text search across
+documents** — type words, the note surfaces — which is a different feature that
+building the small one would not have led to. Recorded in `TODO.md`'s *Known
+gaps*, unscheduled.
+
+### The theme is forced to light
+
+v0.2.9 restored v0.1's palette and kept a `prefers-color-scheme: dark` branch,
+so the page renders dark on a dark-set machine — which is not the Wikipedia-like
+look the restoration was for. **Delete the dark block; keep every `:root`
+token**, so flexible theming later is a change of values rather than a rewrite.
+
+### Deliberately not in scope
+
+- **Writing display names.** Read-only, as above.
+- **A title layer.** A `layer` builder that *proposes* names from headings, as
+  records to keep or delete, is the honest form of the rejected idea and would
+  be re-runnable like the citation layer. Not now, and not without asking.
+- **Collapsing duplicate rows.** v0.3.0.
+- **`a[href^="#"]::after`**, still printing the full guid after every citation
+  link in prose. Untouched since v0.2.9 and still its own question.
+
+---
+
+### What has to be built
+
+**1. `src/records.py` — one line.** Add `"display_name"` to `UNCONTAINED`
+(`src/records.py:43`). Nothing else in this file changes.
+
+**2. `src/views.py` — `_display_name(g, root)`.** Return the `value` of the most
+recent `display_name` node joined to `root` by a `names` edge, or `None`.
+Deterministic tie-break on guid. `Graph.linked` already walks non-`contains`
+edges by type, but the edge points *at* the root, so this needs a reverse
+lookup built once per render rather than per row — 29 rows today, but it is a
+scan per row otherwise.
+
+**3. `src/views.py` — `_row_facts(g, recs, root)`.** One function returning what
+a row needs, so the two section renderers stay presentational:
+
+- `name` — display name, else `Path(params["source"]).stem`
+- `source` — `params["source"]`
+- for a `session`: `session_id`, and min/max of its turns' `params["timestamp"]`
+  (every turn carries one; verified across 1,110 and 171 turns)
+- for a `document`: word count — sum of `len(R.plain_text(n).split())` over the
+  subtree — and `imported_at` from the `blob`, reached by following
+  `derived_from` from the root
+
+**Follow `derived_from`; never guess a path.** `CLAUDE.md` is explicit that no
+rule turns an original filename into a storage path.
+
+**4. `src/views.py` — `render_index(g, recs, docs, names)`.** Extract the
+f-string at `src/views.py:654` into its own function returning HTML. Two
+`<table>`s under `<h2>Sessions</h2>` and `<h2>Documents</h2>`, each row linking
+to `names[root] + ".html"`. **`view_names` is unchanged** — the display name
+changes shown text only, never a filename or a URL, or every bookmark moves when
+a name is edited. Internal only: `compost render` takes no new argument.
+
+Empty sections render their heading with a `no sessions yet` line rather than
+vanishing, so the page's shape does not depend on the data.
+
+**5. `src/views.py` — CSS.** Delete `@media (prefers-color-scheme: dark)`
+(`src/views.py:410-415`), keep the `:root` block above it. Add table styling
+reusing the existing `--line` and `--dim` tokens; the tables must scroll inside
+their own container rather than widening the page.
+
+**6. `docs/record-grammar.md`.** Add `display_name` to §3.4 entities and to the
+`UNCONTAINED` list at :252, `display` to the closed layer list in §6, and the
+`display_name → root` row to §4's edge table. `tests/test_grammar.py` asserts
+the document against the code, so this is not optional bookkeeping.
+
+**7. `docs/man-compost.md`.** The `render` section describes what
+`index.html` lists.
+
+**8. `TODO.md`.** Full-text search under *Known gaps*, unscheduled.
+
+---
+
+### Tests — the guarantees this release states
+
+In `tests/test_views.py` unless noted. Each is a property made to fail on
+purpose first, per `tests/test_sabotage.py`.
+
+1. **A root with no `display_name` shows its filename stem.**
+2. **A root with one shows the name, and the page filename is unchanged** —
+   both halves in one test, since the second is what protects bookmarks.
+3. **Two `display_name` nodes on one root: the newer `created_at` wins**, and
+   the choice is stable across two renders.
+4. **A `display_name` node passes `check`** — the `UNCONTAINED` line. Sabotage:
+   remove it and the node is reported as having 0 parents.
+5. **The index has exactly two `<h2>`s, `Sessions` and `Documents`**, and a base
+   with no sessions still renders both.
+6. **Every row links to a file that exists** in `default-html/`.
+7. **A session row's first/last columns are the min and max of its turns'
+   timestamps** — computed independently in the test, not copied from the view.
+8. **A document row's `imported` comes from the blob reached by
+   `derived_from`**, not from any filename.
+9. **Both sections are sorted descending** on their stated key.
+10. **Duplicate roots each get their own row** — a base with the same transcript
+    digested twice has two session rows.
+11. **The CSS defines no `prefers-color-scheme` block**, and `--bg` is light.
+12. **`records.py` is otherwise untouched**: the round-trip suite stays at
+    526/526, and `git diff` on `src/records.py` is one line.
+
+### Costs accepted knowingly
+
+- **The index reads a record type nothing writes.** Until a display name is
+  hand-written, the page looks exactly as it does today apart from grouping and
+  columns. That is the accepted price of not deriving names from prose.
+- **A hand-written naming file has no tool to check it beyond `check`**, which
+  does not validate node types — so a typo'd `"display_nmae"` is silently
+  ignored rather than reported. The grammar validation layer already named in
+  `CLAUDE.md` is where that gets fixed, and it is not scheduled.
+- **Sorting documents by import time groups the v0.1 migration into one block**,
+  since 23 of them were ingested on the same day. The page will look bulk-loaded
+  because it was.
 
 ---
 
