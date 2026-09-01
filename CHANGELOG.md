@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.9-rc — the view a person can actually read
+## v0.2.9 — 2026-09-01 — the view a person can actually read
 
 The first release aimed at the page rather than the records. `TODO.md`'s bar is
 *a version marks a change in what the tool can do*, and what the tool could not
