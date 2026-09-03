@@ -289,6 +289,66 @@ and an edge pointing at a placeholder hashes differently on every build.
 `content_hash` is **evidence for a dedup design**, not a mechanism anything acts
 on. Nothing in `src/` reads it to decide anything.
 
+### The closed vocabularies
+
+Four lists are closed in schema 1; everything else is open. Closed means a value
+outside the list is a bug, not an extension.
+
+**Routes** — `notes`, `claude-code-transcript`, `pandoc-ast`,
+`claude-code-response`. Nothing is inferred from a file extension; the suffix
+survives into `storage/` as decoration and nothing reads it.
+
+**Layers** — `pandoc-ast`, `session`, `claude-code`, `ingestion`, `agent`,
+`citation`, `conversation`, `display`.
+
+**Authors** on a `turn` — `human`, `assistant`, `envelope`. *These bit once:*
+the HTML view shipped CSS selectors naming `claude` and `agent`, ported from
+v0.1, which matched nothing on any page ever rendered. A closed list is only
+useful if the code is checked against it.
+
+**Schemes** — which resolver produced a citation edge or an alias: `uuid-link`,
+and `kg-8hex` for migrated v0.1 handles.
+
+Two more sets are closed in code rather than in prose. **`ROOT_TYPES`** —
+`document`, `session` — the nodes with no parent. **`UNCONTAINED`** — `blob`,
+`file`, `alias`, `unresolved_citation`, `display_name` — nodes that are *pointed
+at* rather than contained. Everything else has exactly one `contains` parent.
+
+### The ten invariants
+
+What `check()` asserts over a whole loaded graph. **A view of a graph failing any
+of them is refused, not rendered** (principle 11).
+
+1. No guid carries two different records.
+2. Every edge endpoint resolves to a node that is present.
+3. Parent count: `UNCONTAINED` zero, roots zero, everything else **exactly one**.
+4. A `session` is `launched` by at most one `toolcall`.
+5. No cycle through `contains` ∪ `launched` — both are containment as far as
+   rendering is concerned, and a cycle across the pair would loop a view.
+6. No cycle in `contains` alone.
+7. The `next` chain over a node's children is a total order: one head, no cycle,
+   no edge leaving the parent, full coverage.
+8. No two nodes share a handle. Vacuous while a handle is the whole guid; it
+   exists so that shortening handles cannot silently introduce collisions.
+9. `content_hash` is present exactly when required — nodes only.
+10. `schema_version`, when present, is not greater than the one this tool writes.
+
+### Where the per-type grammar lives, and why it is not in this file
+
+**`docs/record-grammar.md` holds the exhaustive tables** — every node type with
+its params, every `(layer, type)` edge pair, the two hash definitions in full.
+This document states the *shape*; that one is the *reference*.
+
+The split is not a filing preference. **`tests/test_grammar.py` holds that file
+against a base built from the fixtures, in both directions**: the grammar may
+not name a type the base never produces, and the base may not produce one the
+grammar does not name — and the same for edge pairs and for every node type's
+params. An undocumented param is exactly the drift it exists to catch.
+
+That property is worth more than having one file. It also means the reference
+cannot be moved or absorbed without moving the test that guards it, and a
+grammar nothing checks is how every stale document in this repository started.
+
 ### `schema_version`, on every record
 
 Not per file and not per base: filenames carry no meaning and `load()` moves
