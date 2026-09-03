@@ -3,6 +3,81 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.12-rc — the grammar, untangled
+
+A **markdown document** was the source of truth for what a valid record is, and
+the suite that checked it **scraped prose with regexes** — splitting on the
+literal string `## 3. Node types`, parsing table pipes, pulling field names out
+of backticks. Rename that heading and nothing failed: the suite found fewer
+types and quietly asserted less.
+
+The records are JSON. There is a standard way to define and validate a JSON
+document's shape. `TODO-code-review.md` keeps the incident as the worked example
+of a class, and this release removes it.
+
+### Three layers, each doing what it can
+
+| layer | answers | where |
+|---|---|---|
+| **JSON Schema** | what may a *record* be | `tools/record-schema-1.json` |
+| **`check()`** | what must a *graph* be | `src/records.py`, unchanged |
+| **prose** | *why* | `docs/compost.md` |
+
+**`check()` is not replaced and does not shrink.** Its ten assertions are
+cross-record — no cycle in `contains`, the `next` chain is a total order,
+exactly one parent — and no per-document validator can express any of them.
+
+**The five coverage guarantees survive with their meaning intact**, changing
+only their source: `json.load` instead of `text.split(...)`. They are the
+valuable half, and no schema expresses them either — *every documented type is
+exercised by a fixture* is a claim about a corpus. The regex scrapers are
+**deleted**, and a guarantee asserts they are gone.
+
+**Every record in the fixture base is now validated against the schema.**
+
+### Two schema bugs, both found by the machinery working
+
+**Top-level provenance.** `alias` and `unresolved_citation` carry `created_at`
+and `tool_version` as top-level keys rather than in `params` — `layers.py`
+writes them and `record-grammar.md` documents it as deliberate. The schema had
+`additionalProperties: false` and never listed them, so **every alias the tool
+produces failed validation.** Found by the implementing agent, which reported it
+and named which side was wrong instead of quietly patching either.
+
+**A writer no fixture reaches.** 152 `alias` nodes in a real base carry
+`generated_by` and `pandoc` from `tools/v01_dictionary.py`. A schema seeded from
+the fixtures never saw them. Adding the params made *documented ⇒ exercised*
+fail — which is that check working — so the honest fix was **a fixture**, not
+deleting the params.
+
+The lesson is worth the words: **a schema seeded from fixtures describes only
+what the fixtures reach.**
+
+### The appendix, and what v0.2.13 reads
+
+`docs/compost.md` gains the grammar as **generated tables**, rebuilt by
+`tools/build_whitepaper.py`, asserted current and asserted idempotent. Raw JSON
+Schema was rejected on size — 714 lines against the paper's 497.
+
+The last table is **59 params with a blank `content?` column**, grouped by param
+rather than by type so a param appearing on four types is decided once. It is
+the input that specs v0.2.13's fold.
+
+### What it cost
+
+`tests/test_grammar.py` hardcoded `total = 7` while **8** checks ran — the same
+class as `test_manpage`'s `total = 6` last release. **Twice in two releases**, so
+it is a confirmed pattern rather than an accident. Both now compute their
+denominator.
+
+`CLAUDE.md`'s table stops calling `record-grammar.md` machine-read and names the
+schema; the paths test widened to cover `tools/` as well as `docs/`.
+
+`jsonschema` is the third dependency after graphviz and duckdb, and unlike
+graphviz it is **required** — a validator that might not be there validates
+nothing. Floored rather than pinned, stated as a choice: nothing here measures
+version-sensitive behaviour the way those two pins were measured.
+
 ## v0.2.11 — 2026-09-03 — the whitepaper
 
 `docs/compost.md`. What compost is, in one document read start to finish: the
