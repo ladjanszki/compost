@@ -19,6 +19,7 @@ disagree, the changelog is right and this file is stale.
 | **v0.2.9** | the view a person can actually read — the v0.1 affordances, restored |
 | **v0.2.10** | the index page, and a name you chose |
 | **v0.2.11** | the whitepaper — `docs/` revamped into one structured document |
+| **v0.2.12** | the grammar, untangled — a JSON Schema replaces the markdown-scraping test |
 
 ---
 
@@ -2294,6 +2295,125 @@ block. Add:
    that is read.
 2. **Every path named in `CLAUDE.md`'s authoritative table exists.** The
    contradiction that started this release would have been caught by it.
+
+---
+
+## v0.2.12 — the grammar, untangled
+
+### The tangle
+
+`docs/record-grammar.md`, a **markdown document**, is the source of truth for
+what a valid record is, and `tests/test_grammar.py` discovers that grammar by
+**scraping prose with regexes** — splitting on the literal string
+`## 3. Node types`, parsing table pipes, pulling field names out of backticks.
+
+Rename that heading and the suite does not fail. It finds fewer types and
+quietly asserts less. **A test that weakens without failing is worse than no
+test, because the board stays green** — and the v0.2.11 docs revamp was about to
+do exactly that rename.
+
+The records are JSON. There is a standard way to define and validate a JSON
+document's shape, and this invented a worse one. `TODO-code-review.md` keeps the
+incident as the worked example of a class.
+
+### The fix is three layers, not one
+
+| layer | answers | where |
+|---|---|---|
+| **JSON Schema** | what may a *record* be | `tools/record-schema-1.json` |
+| **`check()`** | what must a *graph* be | `src/records.py`, unchanged |
+| **prose** | *why* | `docs/compost.md` |
+
+**A schema cannot express the ten invariants.** No cycle in `contains`, the
+`next` chain is a total order, exactly one parent — all cross-record, and a
+per-document validator has no view of them. `check()` is not replaced and does
+not shrink.
+
+**The five coverage guarantees survive.** They are the valuable half and no
+schema expresses them either: *every documented type is exercised by a fixture*
+is a claim about a corpus. They keep running — reading `json.load` instead of
+`text.split("## 3. Node types")`.
+
+### `jsonschema` is the third dependency
+
+After graphviz and duckdb, and it gets the same treatment: a justification, not
+a shrug.
+
+**Valid records are the floor every graph-level check stands on.** `check()` can
+only ask whether a graph hangs together if the records in it are well-formed,
+and nothing verifies that today — `CLAUDE.md` says so plainly: *"this is a trust
+model and the trust is currently unearned."* A schema without a validator leaves
+that gap open while looking closed. It is also the mechanism `CLAUDE.md` already
+anticipates for *"when this has to run somewhere the writers are not trusted."*
+
+Unlike graphviz, this one is **required**: a validator that might not be there
+validates nothing.
+
+### The appendix is generated tables, not pasted JSON
+
+The whitepaper gets the grammar as an appendix — **rendered from the schema**,
+not copied by hand and not pasted raw.
+
+Raw JSON Schema was considered and rejected on size: 714 lines against the
+paper's 497, so pasting it would more than double the document and drop a wall
+of JSON into the middle of a paper. Tables read; JSON validates.
+
+**Generated, so it cannot drift**, and asserted current by a test — the same
+discipline that keeps the README's opening identical to the abstract.
+
+### What has to be built
+
+**1. `tools/record-schema-1.json`** — written, 714 lines, seeded from the base
+`tests/test_grammar.py:build()` produces so it describes what the fixtures
+actually contain rather than what anyone remembers. 36 node types, 13
+`(layer, type)` edge pairs. `$defs/node_types` carries each type's params, split
+required/optional; `$defs/edge_pairs` carries the pairs.
+
+**2. `tools/schema_tables.py`** — renders markdown from the schema. Three
+tables: node types with their params, the edge `(layer, type)` pairs, and **a
+params-by-type review table** listing all 57 params with an empty column for a
+human to mark whether each is content. That last one is the input to v0.2.13 and
+is the reason this release exists in this order.
+
+**3. `tools/build_whitepaper.py`** — the whitepaper build, one step today.
+Regenerates the appendix between explicit markers in `docs/compost.md` and
+writes the file back. Idempotent: running it twice changes nothing.
+
+**4. `tests/test_grammar.py` — rewritten to read the schema.** The five coverage
+guarantees keep their exact meaning and change only their source:
+`documented_nodes()` and `documented_edges()` read `$defs` from JSON instead of
+scraping §3 and §4. **Delete the regex scrapers entirely** — leaving them is how
+the coupling comes back.
+
+**5. Records are validated against the schema.** A new guarantee: every record
+in the fixture-built base validates. This is the half the schema exists for.
+
+**6. `environment.yml`** — `jsonschema`, with a comment saying why, in the style
+of the graphviz and duckdb entries.
+
+**7. `docs/compost.md` §4** — the paragraph arguing that the per-type grammar
+stays in `record-grammar.md` is now false and is rewritten to describe the three
+layers. The status line already names this as due.
+
+**8. `docs/record-grammar.md`** — keeps the prose and the reasons, loses its
+status as the machine-read source. A header says so, and points at the schema.
+
+### Guarantees
+
+1. **Every record in the fixture base validates against the schema.**
+2. **Every node type the base produces is in the schema**, and **every type the
+   schema names is exercised** — both directions, unchanged in meaning.
+3. **Same for `(layer, type)` edge pairs**, both directions.
+4. **No node carries a param the schema does not name.**
+5. **`tests/test_grammar.py` contains no `text.split("## ` and no markdown table
+   parsing.** The coupling is gone, asserted rather than assumed.
+6. **The whitepaper's appendix matches what the generator produces.** Sabotage:
+   edit a table by hand and the test fails.
+7. **The build script is idempotent** — running it twice leaves the file
+   byte-identical.
+8. **`check()` still makes its ten assertions** and the round-trip suite stays
+   at **526/526**. `src/records.py` changes only if the schema exposes a real
+   disagreement, and any such change is reported rather than made quietly.
 
 ---
 

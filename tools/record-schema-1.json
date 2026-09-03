@@ -1,0 +1,714 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ladjanszki/compost/schema/record-1.json",
+  "title": "compost record grammar, schema 1",
+  "description": "What a single record may be. Graph-level invariants -- parent counts, cycles, the next chain -- are NOT expressible here and live in records.check(). See docs/compost.md.",
+  "schema_version": 1,
+  "oneOf": [
+    {
+      "$ref": "#/$defs/node"
+    },
+    {
+      "$ref": "#/$defs/edge"
+    }
+  ],
+  "$defs": {
+    "guid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "node": {
+      "type": "object",
+      "required": [
+        "record",
+        "guid",
+        "type"
+      ],
+      "properties": {
+        "record": {
+          "const": "node"
+        },
+        "guid": {
+          "$ref": "#/$defs/guid"
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "enum": [
+            "BlockQuote",
+            "BulletList",
+            "Caption",
+            "Cell",
+            "CodeBlock",
+            "DefinitionItem",
+            "DefinitionList",
+            "DefinitionTerm",
+            "Div",
+            "Figure",
+            "Header",
+            "HorizontalRule",
+            "LineBlock",
+            "ListItem",
+            "OrderedList",
+            "Para",
+            "Plain",
+            "RawBlock",
+            "Row",
+            "Table",
+            "TableBody",
+            "TableFoot",
+            "TableHead",
+            "alias",
+            "blob",
+            "contentblock",
+            "display_name",
+            "document",
+            "file",
+            "logline",
+            "session",
+            "thinking",
+            "toolcall",
+            "tooloutput",
+            "turn",
+            "unresolved_citation"
+          ]
+        },
+        "params": {
+          "type": "object"
+        },
+        "content": {},
+        "content_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": [
+        "record",
+        "guid",
+        "layer",
+        "type",
+        "source",
+        "destination"
+      ],
+      "properties": {
+        "record": {
+          "const": "edge"
+        },
+        "guid": {
+          "$ref": "#/$defs/guid"
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "layer": {
+          "enum": [
+            "agent",
+            "citation",
+            "claude-code",
+            "conversation",
+            "display",
+            "ingestion",
+            "pandoc-ast",
+            "session"
+          ]
+        },
+        "type": {
+          "enum": [
+            "cites",
+            "contains",
+            "derived_from",
+            "launched",
+            "names",
+            "next",
+            "replies_to",
+            "responds_to",
+            "touches"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/guid"
+        },
+        "destination": {
+          "$ref": "#/$defs/guid"
+        },
+        "by": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "tool_version": {
+          "type": "string"
+        },
+        "content_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_types": {
+      "BlockQuote": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "BulletList": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "Caption": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "Cell": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "align": {},
+            "attr": {},
+            "colspan": {},
+            "rowspan": {}
+          },
+          "required": [
+            "align",
+            "attr",
+            "colspan",
+            "rowspan"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "CodeBlock": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "attr": {},
+            "text": {}
+          },
+          "required": [
+            "attr",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "DefinitionItem": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "DefinitionList": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "DefinitionTerm": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": true
+      },
+      "Div": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "attr": {}
+          },
+          "required": [
+            "attr"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "Figure": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "attr": {}
+          },
+          "required": [
+            "attr"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "Header": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "attr": {},
+            "level": {}
+          },
+          "required": [
+            "attr",
+            "level"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": true
+      },
+      "HorizontalRule": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "LineBlock": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": true
+      },
+      "ListItem": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "wrap": {}
+          },
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "OrderedList": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "list_attributes": {}
+          },
+          "required": [
+            "list_attributes"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "Para": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": true
+      },
+      "Plain": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": true
+      },
+      "RawBlock": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "format": {},
+            "text": {}
+          },
+          "required": [
+            "format",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "Row": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "attr": {}
+          },
+          "required": [
+            "attr"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "Table": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "attr": {},
+            "colspecs": {}
+          },
+          "required": [
+            "attr",
+            "colspecs"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "TableBody": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "attr": {},
+            "intermediate_rows": {},
+            "row_head_columns": {}
+          },
+          "required": [
+            "attr",
+            "intermediate_rows",
+            "row_head_columns"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "TableFoot": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "attr": {}
+          },
+          "required": [
+            "attr"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "TableHead": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "attr": {}
+          },
+          "required": [
+            "attr"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "alias": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "scheme": {},
+            "value": {}
+          },
+          "required": [
+            "scheme",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "blob": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "bytes_sha256": {},
+            "imported_at": {},
+            "original_name": {},
+            "route": {},
+            "stored_as": {}
+          },
+          "required": [
+            "bytes_sha256",
+            "imported_at",
+            "original_name",
+            "route",
+            "stored_as"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "contentblock": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "block": {},
+            "block_type": {}
+          },
+          "required": [
+            "block",
+            "block_type"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "display_name": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "document": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "meta": {},
+            "pandoc_api_version": {},
+            "route": {},
+            "source": {},
+            "api_error_status": {},
+            "duration_api_ms": {},
+            "duration_ms": {},
+            "fast_mode_disabled_reason": {},
+            "fast_mode_state": {},
+            "is_error": {},
+            "modelUsage": {},
+            "num_turns": {},
+            "permission_denials": {},
+            "result": {},
+            "session_id": {},
+            "stop_reason": {},
+            "subtype": {},
+            "terminal_reason": {},
+            "time_to_request_ms": {},
+            "total_cost_usd": {},
+            "ttft_ms": {},
+            "ttft_stream_ms": {},
+            "type": {},
+            "usage": {},
+            "uuid": {}
+          },
+          "required": [
+            "meta",
+            "pandoc_api_version",
+            "route",
+            "source"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "file": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "path": {}
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "logline": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "line_type": {},
+            "log": {},
+            "timestamp": {},
+            "uuid": {}
+          },
+          "required": [
+            "line_type",
+            "log",
+            "timestamp",
+            "uuid"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "session": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "lines": {},
+            "route": {},
+            "session_id": {},
+            "source": {},
+            "version": {},
+            "agent": {}
+          },
+          "required": [
+            "lines",
+            "route",
+            "session_id",
+            "source",
+            "version"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "thinking": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "empty": {},
+            "text": {}
+          },
+          "required": [
+            "empty",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "toolcall": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "input": {},
+            "name": {},
+            "tool_use_id": {}
+          },
+          "required": [
+            "input",
+            "name",
+            "tool_use_id"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "tooloutput": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "is_error": {},
+            "text": {},
+            "tool_use_id": {}
+          },
+          "required": [
+            "is_error",
+            "text",
+            "tool_use_id"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "turn": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "author": {},
+            "log": {},
+            "timestamp": {},
+            "uuid": {}
+          },
+          "required": [
+            "author",
+            "log",
+            "timestamp",
+            "uuid"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
+      "unresolved_citation": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": false
+      }
+    },
+    "edge_pairs": [
+      {
+        "layer": "agent",
+        "type": "launched"
+      },
+      {
+        "layer": "citation",
+        "type": "cites"
+      },
+      {
+        "layer": "citation",
+        "type": "names"
+      },
+      {
+        "layer": "claude-code",
+        "type": "replies_to"
+      },
+      {
+        "layer": "conversation",
+        "type": "next"
+      },
+      {
+        "layer": "conversation",
+        "type": "responds_to"
+      },
+      {
+        "layer": "display",
+        "type": "names"
+      },
+      {
+        "layer": "ingestion",
+        "type": "derived_from"
+      },
+      {
+        "layer": "pandoc-ast",
+        "type": "contains"
+      },
+      {
+        "layer": "pandoc-ast",
+        "type": "next"
+      },
+      {
+        "layer": "session",
+        "type": "contains"
+      },
+      {
+        "layer": "session",
+        "type": "next"
+      },
+      {
+        "layer": "session",
+        "type": "touches"
+      }
+    ]
+  }
+}
