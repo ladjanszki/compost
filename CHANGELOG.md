@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.11-rc — the whitepaper
+## v0.2.11 — 2026-09-03 — the whitepaper
 
 `docs/compost.md`. What compost is, in one document read start to finish: the
 abstract, the shape, the principles, the digestors, the records, the renderers,

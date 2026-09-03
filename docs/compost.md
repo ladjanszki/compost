@@ -3,16 +3,17 @@
 *A local-first knowledge base where a conversation and a document are the same
 kind of thing, and every paragraph has a name.*
 
-**Status: v0.2.11 draft, complete in outline.** Assembled from `CLAUDE.md`,
+**Status: shipped in v0.2.11.** Assembled from `CLAUDE.md`,
 `decisions.md`, `record-format.md`, `record-grammar.md` and the roadmap. Where
 it disagrees with the code, **the code is right and this is a bug** — and that
 is the only reading order this document accepts, because every number in it was
 measured rather than remembered.
 
-Not yet done: the mechanical half of v0.2.11 — aligning the README's opening
-with the abstract, the test that keeps them aligned, the link-resolution test,
-and splitting `migration.md` along the seam between what shipped and what was
-only ever proposed.
+**Section 4 changes in v0.2.12.** It currently argues why the per-type grammar
+stays in `record-grammar.md`; that argument ends when a JSON Schema becomes the
+source of truth for record shape. Deferred with it: splitting `migration.md`,
+and deciding what becomes of `spec.md`, `spec-review.md` and
+`design-answers.md`, which stay in place until read.
 
 ---
 
