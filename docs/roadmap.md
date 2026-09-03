@@ -2232,15 +2232,31 @@ nothing — this was asked for explicitly. Where it moves, it moves whole.
   They assert documents against the program, which makes them the only automatic
   check that a restructure did not quietly drop a definition.
 
-### What has to be decided while doing it, not before
+### Decided, 2026-09-03
 
-- Whether `roadmap.md` and the `design-*.md` files belong in `docs/` at all, or
-  in a `planning/` peer. They are the category that most clearly is not *"what
-  is true now"*.
-- Whether `migration.md` stays, given it describes files deliberately absent.
-- Whether the whitepaper supersedes `README.md` or feeds it.
+**`roadmap.md` and `design-*.md` stay in `docs/`.** They are documents and their
+names say what they are; a second directory would be ceremony. What makes them
+not-a-fourth-category is a **lifecycle rule**, now explicit: **a design document
+is deleted when its version ships.** `design-0.3.0.md` goes when v0.3.0 does,
+leaving `design-0.3.1.md` as the only planning file. So `docs/` holds *what is
+true now* plus *what is being decided now*, and nothing that is merely old.
 
-These are judgement calls about audience, and they are the operator's.
+**`migration.md` stays, and is split along a seam it already has.** It is not
+the legacy-citation document — it is the v0.1 corpus migration plan. Part of it
+**shipped** (`--by kg-8hex`, `tools/dj_prepare.py`, the v0.1 handle dictionary,
+all tested) and part was never built. Its handle-dictionary and
+citation-rewriting sections are live input for the v0.3.x export/import work,
+so exiling it to notes would lose material that is about to be needed. The
+revamp separates what shipped from what is still a proposal.
+
+**`README.md` keeps its own job and shares one paragraph.** The whitepaper does
+not replace it: an abstract says what the argument is, a README says what this
+is and how to start, and it is the landing page a stranger sees. So the README
+keeps the quickstart, the requirements and the pointers — and its opening
+**is the whitepaper's abstract, verbatim**, with a test asserting the two match.
+Same reasoning as `tools/queries/*.sql` being referenced from `docs/queries.md`
+rather than pasted into it: *the copy that runs cannot drift from the copy that
+is read.*
 
 ### Tests
 
