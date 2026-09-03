@@ -73,6 +73,27 @@ Each of these is generalised from the incident above.
    data can quietly assert nothing. **Ask every test: what makes it fail if it
    stops testing anything?**
 
+   **Confirmed twice, in consecutive releases — this is a pattern, not an
+   accident.** Two suites hardcoded their own denominator:
+
+   | suite | said | actually ran | found |
+   |---|---|---|---|
+   | `tests/test_manpage.py` | `total = 6` | 6, then 8 after two were added | v0.2.11 |
+   | `tests/test_grammar.py` | `total = 7` | **8** | v0.2.12 |
+
+   The second was already wrong when it was found: eight checks ran and the
+   board reported seven. **A hardcoded denominator cannot notice a check being
+   skipped, deleted, or never reached** — it reports the number the author
+   believed, forever. `test_grammar`'s was wrong for at least one release and
+   nothing said so, because the only thing that would say so is the number
+   itself.
+
+   Both now compute from the checks that actually ran. **Grep every suite for a
+   literal total, a hardcoded count in a summary line, or an assertion count
+   written as a number rather than derived.** Then ask the harder version: which
+   suites *silently skip* under some condition — a missing corpus, an absent
+   binary, an import guard — and does the board say so?
+
 3. **Which documents are load-bearing for code?** A prose file a program parses
    is a schema without a schema's guarantees. Find every `open(...md)` and every
    split on a heading.
