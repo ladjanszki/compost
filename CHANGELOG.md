@@ -3,6 +3,72 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.11-rc — the whitepaper
+
+`docs/compost.md`. What compost is, in one document read start to finish: the
+abstract, the shape, the principles, the digestors, the records, the renderers,
+the symmetry that is the thesis, and the decisions with the measurement behind
+each.
+
+### The principles are counted, and they are not invariants
+
+Asked three times across the project's life and never answered: *how many are
+there, where do I consult them, and is "invariant" the right word?*
+
+**Fifteen principles. Ten invariants. Different lists, different documents, and
+only one of them is enforced by a program.** An invariant is a property `check()`
+asserts — you cannot ship past it. A principle is enforced by attention; you can
+violate one with every test green, and each of the fifteen was learned by
+violating it. Python calls its own list *aphorisms*. Conflating the two makes
+the weaker kind sound stronger, which is backwards.
+
+Each principle carries the incident that produced it: the audit that found the
+transcript importer dropping 46% of a real file, the suffix routing whose
+fallback was not "markdown" but *anything at all*, the prefix resolver that
+resolved for a tool and was a dead anchor for a person clicking it.
+
+### The README's opening is the abstract, verbatim
+
+Asserted by a test, so the whitepaper's claim about itself is a fact rather than
+an intention — the same reasoning that keeps `tools/queries/*.sql` referenced
+from `docs/queries.md` rather than pasted into it.
+
+### `CLAUDE.md` stops claiming one status for all of `docs/`
+
+It said *"what is true now"* and called `spec.md` historical four lines later.
+Six rows now, one per kind — the whitepaper, what is true now, what is being
+decided now, the part-shipped migration, the superseded drafts, and the material
+that is not in this repository at all.
+
+The superseded drafts are named as **superseded and not yet reviewed** rather
+than *"worth reading for intent"*. They stay in place until read; leaving them
+is not free, and the table now says what they are.
+
+A second test asserts every `docs/` path the table names exists. The
+contradiction that opened this release would have been caught by it, and so
+would `design-answers.md` being named for two days after it left the repository.
+
+### What it cost
+
+`tests/test_manpage.py` hardcoded `total = 6`, so adding a guarantee did not
+move the denominator and removing one would not either — **a test that can
+weaken without failing.** The count is derived from the checks that ran now, and
+the suite reports 8/8.
+
+The first sabotage of the new abstract test was itself wrong: the phrase chosen
+wrapped across a line, so nothing was replaced and the test passed for the wrong
+reason. A sabotage that quietly does nothing proves nothing.
+
+### Deferred, deliberately
+
+Splitting `migration.md`, and deciding what becomes of `spec.md`,
+`spec-review.md` and `design-answers.md`. And `record-grammar.md`'s headings are
+**not** renamed here: `tests/test_grammar.py` discovers the grammar by splitting
+on the literal strings `## 3. Node types` and `## 4. Edge types`, so renaming
+either would silently make it assert less. That coupling — a markdown document
+as the source of truth for a JSON format, scraped by regex — is recorded in
+`TODO-code-review.md` as the worked example of a class, and v0.2.12 removes it.
+
 ## v0.2.10 — 2026-09-01 — the index page, and a name you chose
 
 v0.2.9 made a document readable. This makes the front page one you can find
