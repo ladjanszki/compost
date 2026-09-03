@@ -85,6 +85,14 @@
         "content": {},
         "content_hash": {
           "$ref": "#/$defs/sha256"
+        },
+        "created_at": {
+          "type": "string",
+          "description": "Top-level provenance, exactly as on an edge — never inside params. Only `alias` and `unresolved_citation` carry it; see docs/record-grammar.md and layers.py:_entity()."
+        },
+        "tool_version": {
+          "type": "string",
+          "description": "Top-level provenance. Same two node types as created_at."
         }
       },
       "additionalProperties": false
@@ -426,7 +434,13 @@
           "type": "object",
           "properties": {
             "scheme": {},
-            "value": {}
+            "value": {},
+            "generated_by": {
+              "description": "The script that wrote this alias. Present on the v0.1 handle dictionary's output (tools/v01_dictionary.py), absent on the citation layer's."
+            },
+            "pandoc": {
+              "description": "The pandoc version the dictionary was built with. Same writer as generated_by."
+            }
           },
           "required": [
             "scheme",

@@ -9,11 +9,12 @@ it disagrees with the code, **the code is right and this is a bug** — and that
 is the only reading order this document accepts, because every number in it was
 measured rather than remembered.
 
-**Section 4 changes in v0.2.12.** It currently argues why the per-type grammar
-stays in `record-grammar.md`; that argument ends when a JSON Schema becomes the
-source of truth for record shape. Deferred with it: splitting `migration.md`,
-and deciding what becomes of `spec.md`, `spec-review.md` and
-`design-answers.md`, which stay in place until read.
+**Section 4's grammar paragraph was rewritten in v0.2.12**: the per-type
+grammar's machine-read source moved from `record-grammar.md` prose to
+`tools/record-schema-1.json`, validated by `jsonschema`; `record-grammar.md`
+keeps the prose and the reasons. Still deferred: splitting `migration.md`, and
+deciding what becomes of `spec.md`, `spec-review.md` and `design-answers.md`,
+which stay in place until read.
 
 ---
 
@@ -333,21 +334,39 @@ of them is refused, not rendered** (principle 11).
 9. `content_hash` is present exactly when required — nodes only.
 10. `schema_version`, when present, is not greater than the one this tool writes.
 
-### Where the per-type grammar lives, and why it is not in this file
+### Where the per-type grammar lives, now in three layers
 
-**`docs/record-grammar.md` holds the exhaustive tables** — every node type with
-its params, every `(layer, type)` edge pair, the two hash definitions in full.
-This document states the *shape*; that one is the *reference*.
+Through v0.2.11 this section argued that `docs/record-grammar.md` was the
+*machine-read* reference, held against a fixture-built base by
+`tests/test_grammar.py`. That test discovered the grammar by scraping the
+document's prose — splitting on a heading string, parsing markdown table
+pipes, pulling field names out of backticks — and a rename of that heading
+would have made the suite quietly assert less rather than fail.
+`TODO-code-review.md` keeps the incident; **v0.2.12** is the fix.
 
-The split is not a filing preference. **`tests/test_grammar.py` holds that file
-against a base built from the fixtures, in both directions**: the grammar may
+**Three layers now answer three different questions, and no single file is
+asked to answer all of them.**
+
+| layer | answers | where |
+|---|---|---|
+| JSON Schema | what may a *record* be | `tools/record-schema-1.json` |
+| `check()` | what must a *graph* be | `src/records.py`, unchanged |
+| prose | *why* | this document, and `docs/record-grammar.md` |
+
+A schema validates one document at a time and cannot express any of the ten
+invariants above — no cycle in `contains`, the `next` chain a total order,
+exactly one parent — so `check()` is not replaced and does not shrink.
+
+**The five coverage guarantees survive, unweakened, reading structured data
+instead of scraping a document**: `tests/test_grammar.py` holds the schema
+against a base built from the fixtures, in both directions — the schema may
 not name a type the base never produces, and the base may not produce one the
-grammar does not name — and the same for edge pairs and for every node type's
-params. An undocumented param is exactly the drift it exists to catch.
+schema does not name — and the same for `(layer, type)` edge pairs and for
+every node type's params. It also validates every record in that base against
+the schema directly, which no amount of table-scraping ever did.
 
-That property is worth more than having one file. It also means the reference
-cannot be moved or absorbed without moving the test that guards it, and a
-grammar nothing checks is how every stale document in this repository started.
+`docs/record-grammar.md` keeps the prose and the reasons; it is no longer what
+any program reads. The appendix below is the schema, rendered.
 
 ### `schema_version`, on every record
 
@@ -495,3 +514,138 @@ makes them different blocks is where they sit. Hence principle 7.
   machine-local. This repository has had personal material purged from its
   history once, and that is the standard for rewriting history: material that
   should never have been committed, not material that is merely old.
+
+## Appendix: the record grammar
+
+Generated from `tools/record-schema-1.json` by `tools/schema_tables.py`, run
+through `python3 -m tools.build_whitepaper`. Everything between the two
+markers below is regenerated on every build and discarded if hand-edited —
+`tests/test_grammar.py` asserts the file already holds exactly what a fresh
+render produces, and that running the build again changes nothing.
+
+<!-- BEGIN GENERATED: tools/schema_tables.py -->
+
+**36 node types.** Params split required / optional; "carries content" means the type also holds pandoc inline content, not only `params`.
+
+| type | required params | optional params | carries content |
+|---|---|---|---|
+| `BlockQuote` | — | — | — |
+| `BulletList` | — | — | — |
+| `Caption` | — | — | — |
+| `Cell` | `align`, `attr`, `colspan`, `rowspan` | — | — |
+| `CodeBlock` | `attr`, `text` | — | — |
+| `DefinitionItem` | — | — | — |
+| `DefinitionList` | — | — | — |
+| `DefinitionTerm` | — | — | yes |
+| `Div` | `attr` | — | — |
+| `Figure` | `attr` | — | — |
+| `Header` | `attr`, `level` | — | yes |
+| `HorizontalRule` | — | — | — |
+| `LineBlock` | — | — | yes |
+| `ListItem` | — | `wrap` | — |
+| `OrderedList` | `list_attributes` | — | — |
+| `Para` | — | — | yes |
+| `Plain` | — | — | yes |
+| `RawBlock` | `format`, `text` | — | — |
+| `Row` | `attr` | — | — |
+| `Table` | `attr`, `colspecs` | — | — |
+| `TableBody` | `attr`, `intermediate_rows`, `row_head_columns` | — | — |
+| `TableFoot` | `attr` | — | — |
+| `TableHead` | `attr` | — | — |
+| `alias` | `scheme`, `value` | `generated_by`, `pandoc` | — |
+| `blob` | `bytes_sha256`, `imported_at`, `original_name`, `route`, `stored_as` | — | — |
+| `contentblock` | `block`, `block_type` | — | — |
+| `display_name` | `value` | — | — |
+| `document` | `meta`, `pandoc_api_version`, `route`, `source` | `api_error_status`, `duration_api_ms`, `duration_ms`, `fast_mode_disabled_reason`, `fast_mode_state`, `is_error`, `modelUsage`, `num_turns`, `permission_denials`, `result`, `session_id`, `stop_reason`, `subtype`, `terminal_reason`, `time_to_request_ms`, `total_cost_usd`, `ttft_ms`, `ttft_stream_ms`, `type`, `usage`, `uuid` | — |
+| `file` | `path` | — | — |
+| `logline` | `line_type`, `log`, `timestamp`, `uuid` | — | — |
+| `session` | `lines`, `route`, `session_id`, `source`, `version` | `agent` | — |
+| `thinking` | `empty`, `text` | — | — |
+| `toolcall` | `input`, `name`, `tool_use_id` | — | — |
+| `tooloutput` | `is_error`, `text`, `tool_use_id` | — | — |
+| `turn` | `author`, `log`, `timestamp`, `uuid` | — | — |
+| `unresolved_citation` | — | — | — |
+
+**13 `(layer, type)` edge pairs.**
+
+| layer | type |
+|---|---|
+| `agent` | `launched` |
+| `citation` | `cites` |
+| `citation` | `names` |
+| `claude-code` | `replies_to` |
+| `conversation` | `next` |
+| `conversation` | `responds_to` |
+| `display` | `names` |
+| `ingestion` | `derived_from` |
+| `pandoc-ast` | `contains` |
+| `pandoc-ast` | `next` |
+| `session` | `contains` |
+| `session` | `next` |
+| `session` | `touches` |
+
+**59 distinct params, for review.** Which node types each appears on, and a blank column for a human to mark whether the param is content — the input `v0.2.13` reads.
+
+| param | appears on | content? |
+|---|---|---|
+| `agent` | `session` |  |
+| `align` | `Cell` |  |
+| `api_error_status` | `document` |  |
+| `attr` | `Cell`, `CodeBlock`, `Div`, `Figure`, `Header`, `Row`, `Table`, `TableBody`, `TableFoot`, `TableHead` |  |
+| `author` | `turn` |  |
+| `block` | `contentblock` |  |
+| `block_type` | `contentblock` |  |
+| `bytes_sha256` | `blob` |  |
+| `colspan` | `Cell` |  |
+| `colspecs` | `Table` |  |
+| `duration_api_ms` | `document` |  |
+| `duration_ms` | `document` |  |
+| `empty` | `thinking` |  |
+| `fast_mode_disabled_reason` | `document` |  |
+| `fast_mode_state` | `document` |  |
+| `format` | `RawBlock` |  |
+| `generated_by` | `alias` |  |
+| `imported_at` | `blob` |  |
+| `input` | `toolcall` |  |
+| `intermediate_rows` | `TableBody` |  |
+| `is_error` | `document`, `tooloutput` |  |
+| `level` | `Header` |  |
+| `line_type` | `logline` |  |
+| `lines` | `session` |  |
+| `list_attributes` | `OrderedList` |  |
+| `log` | `logline`, `turn` |  |
+| `meta` | `document` |  |
+| `modelUsage` | `document` |  |
+| `name` | `toolcall` |  |
+| `num_turns` | `document` |  |
+| `original_name` | `blob` |  |
+| `pandoc` | `alias` |  |
+| `pandoc_api_version` | `document` |  |
+| `path` | `file` |  |
+| `permission_denials` | `document` |  |
+| `result` | `document` |  |
+| `route` | `blob`, `document`, `session` |  |
+| `row_head_columns` | `TableBody` |  |
+| `rowspan` | `Cell` |  |
+| `scheme` | `alias` |  |
+| `session_id` | `document`, `session` |  |
+| `source` | `document`, `session` |  |
+| `stop_reason` | `document` |  |
+| `stored_as` | `blob` |  |
+| `subtype` | `document` |  |
+| `terminal_reason` | `document` |  |
+| `text` | `CodeBlock`, `RawBlock`, `thinking`, `tooloutput` |  |
+| `time_to_request_ms` | `document` |  |
+| `timestamp` | `logline`, `turn` |  |
+| `tool_use_id` | `toolcall`, `tooloutput` |  |
+| `total_cost_usd` | `document` |  |
+| `ttft_ms` | `document` |  |
+| `ttft_stream_ms` | `document` |  |
+| `type` | `document` |  |
+| `usage` | `document` |  |
+| `uuid` | `document`, `logline`, `turn` |  |
+| `value` | `alias`, `display_name` |  |
+| `version` | `session` |  |
+| `wrap` | `ListItem` |  |
+
+<!-- END GENERATED -->

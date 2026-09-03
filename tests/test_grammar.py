@@ -2,38 +2,46 @@
 """
 test_grammar.py — the record grammar cannot drift from the records.
 
-`docs/record-grammar.md` claims to state exhaustively what a record is allowed
-to be. That claim was written by reading `src/`, which is how every stale
-document in this repository started, so it is held here against a real digest
-instead.
+Through v0.2.11 the ground truth here was `docs/record-grammar.md`, a
+**markdown document**, discovered by scraping its prose with regexes:
+splitting on the literal heading string `## 3. Node types`, parsing markdown
+table pipes, pulling field names out of backticks. Rename that heading and the
+suite would not fail — it would find fewer types and quietly assert less.
+`TODO-code-review.md` keeps that incident; this file is the fix, scheduled as
+v0.2.12 (`docs/roadmap.md`).
 
-The ground truth is a **base built from the fixtures**, not the code: a type the
-program can emit but no fixture reaches is a type nobody has ever seen written,
-and a table entry for it is a guess. That is why this suite ships with the
-fixtures that close the gap — before them the fixtures exercised 28 of the 33
-documented node types, and `CodeBlock`, `RawBlock`, `BlockQuote`, `Div` and
-`contentblock` were documented from the code alone.
+**The ground truth is now `tools/record-schema-1.json`**, read with
+`json.load` rather than scraped, plus `records.check()` for the ten
+cross-record invariants no per-document schema can express — see
+`docs/compost.md` §4, "the per-type grammar, now in three layers".
 
-Checked in **both directions**, like `test_manpage.py`: the grammar may not name
-a type the base never produces, and the base may not produce one the grammar
-does not name. The same for edge `(layer, type)` pairs, and for the params of
-every node type — an undocumented param is exactly the drift this exists to
-catch.
+The base against which the schema is held is still **built from the
+fixtures**, not from the code: a type the program can emit but no fixture
+reaches is a type nobody has ever seen written, and a schema entry for it
+would be a guess. Checked in **both directions**, like `test_manpage.py`: the
+schema may not name a type the base never produces, and the base may not
+produce one the schema does not name. The same for edge `(layer, type)`
+pairs, and for the params of every node type — an undocumented param is
+exactly the drift this exists to catch. New in v0.2.12: every record in the
+base is validated against the schema directly, which no amount of
+table-scraping ever did.
 """
 import json
-import re
 import sys
 import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
+import jsonschema
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import records as R    # noqa: E402
 from src import session as SESS  # noqa: E402
 from src import store as S      # noqa: E402
+from tools import build_whitepaper as BW   # noqa: E402
+from tools import schema_tables as ST      # noqa: E402
 
 HERE = Path(__file__).parent
-GRAMMAR = HERE.parent / "docs/record-grammar.md"
 FIX = HERE / "fixtures"
 
 # Written down rather than discovered, because "the program cannot produce this
@@ -46,48 +54,18 @@ FIX = HERE / "fixtures"
 NOT_YET_MINTED = set()
 
 
-def documented_nodes(text: str) -> dict:
-    """Node type -> the params the grammar names for it.
-
-    Every table row in §3 whose first cell is a single backticked identifier.
-    Params are the backticked tokens of the second cell; `—` means none and a
-    trailing `?` marks optional, which this does not distinguish because the
-    check is "no param appears that is undocumented", not "every documented
-    param appears" — a fixture is not obliged to exercise an optional key.
-    """
-    body = text.split("## 3. Node types", 1)[1].split("\n## 4.", 1)[0]
-    out = {}
-    for line in body.splitlines():
-        if not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 2 or not (cells[0].startswith("`")
-                                  and cells[0].endswith("`")):
-            continue
-        name = cells[0].strip("`")
-        if " " in name:            # a prose cell, not a type
-            continue
-        # Merged, not assigned: `session` is described in §3.2 and named again
-        # in §3.3 as a root, and the second row must not erase the first.
-        out.setdefault(name, set()).update(
-            m.rstrip("?") for m in re.findall(r"`([^`]+)`", cells[1]))
-    return out
+def documented_nodes(schema: dict) -> dict:
+    """Node type -> the param names the schema allows for it (required and
+    optional together — the check here is "no param appears that is
+    undocumented", not "every documented param appears"; a fixture is not
+    obliged to exercise an optional key)."""
+    return {name: set(spec["params"]["properties"])
+            for name, spec in schema["$defs"]["node_types"].items()}
 
 
-def documented_edges(text: str) -> set:
-    """The `(layer, type)` pairs the grammar's §4 table names."""
-    body = text.split("## 4. Edge types", 1)[1].split("\n## 5.", 1)[0]
-    out = set()
-    for line in body.splitlines():
-        if not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 2:
-            continue
-        pair = [re.findall(r"`([^`]+)`", c) for c in cells[:2]]
-        if all(len(c) == 1 for c in pair):
-            out.add((pair[0][0], pair[1][0]))
-    return out
+def documented_edges(schema: dict) -> set:
+    """The `(layer, type)` pairs `$defs/edge_pairs` names."""
+    return {(p["layer"], p["type"]) for p in schema["$defs"]["edge_pairs"]}
 
 
 def build() -> list:
@@ -182,14 +160,48 @@ def build() -> list:
         b.edge("names", dn, answered_root["guid"], "display")
         st.write("display-name.jsonl", b.records)
 
+        # The v0.1 handle dictionary's alias shape, which no other fixture
+        # reaches: `tools/v01_dictionary.py` writes 152 of these in a real
+        # migrated base, with two params the citation layer's aliases never
+        # carry. Without this the schema could name them and the
+        # documented-implies-exercised check would fail — which is the check
+        # working, and this fixture is the honest answer to it rather than
+        # deleting the params from the schema.
+        b2 = R.Builder()
+        al = b2.node("alias", {"value": "a3f2b1c4", "scheme": "kg-8hex",
+                               "generated_by": "tools/v01_dictionary.py",
+                               "pandoc": "3.10"})
+        for r in b2.records:
+            r["created_at"], r["tool_version"] = R._now(), "0.2.12"
+        b2.edge("names", al, answered_root["guid"], "citation")
+        st.write("v01-alias.jsonl", b2.records)
+
         recs, _ = st.load()
         return recs
 
 
+# -- guarantee 5: the scrapers are gone --------------------------------------
+#
+# Built by concatenation rather than as one literal, on purpose: written as a
+# single string, this file's own source would contain the exact sequence it
+# is searching for, and the check would fail against itself forever. Split
+# across a `+`, the two pieces never sit next to each other in this file's
+# raw text, so only a *reintroduced* scraper — which would write the whole
+# thing as one literal, the way the old one did — can trip it.
+_SCRAPED_SPLIT = "text." + 'split("## '
+_SCRAPED_TABLE = "strip(" + '"|"' + ")"
+
+
+def no_markdown_scraping() -> bool:
+    """True if this file no longer splits on a heading or parses table pipes."""
+    text = Path(__file__).read_text(encoding="utf-8")
+    return _SCRAPED_SPLIT not in text and _SCRAPED_TABLE not in text
+
+
 def main():
-    text = GRAMMAR.read_text()
-    doc_nodes = documented_nodes(text)
-    doc_edges = documented_edges(text)
+    schema = ST.load_schema()
+    doc_nodes = documented_nodes(schema)
+    doc_edges = documented_edges(schema)
     recs = build()
 
     seen_nodes = Counter(r["type"] for r in recs if r["record"] == "node")
@@ -201,40 +213,58 @@ def main():
             seen_params[r["type"]] |= set((r.get("params") or {}).keys())
 
     problems = []
+    results = []
 
     def check(name, ok, detail=""):
-        print(f"  {'ok   ' if ok else 'FAIL '} {name:<48} {detail}")
+        print(f"  {'ok   ' if ok else 'FAIL '} {name:<52} {detail}")
+        results.append(ok)
         if not ok:
             problems.append(name)
 
+    # Guarantee 1: every record in the fixture base validates against the
+    # schema. The half table-scraping never did at all.
+    validator = jsonschema.Draft202012Validator(schema)
+    invalid = []
+    for r in recs:
+        errs = sorted(validator.iter_errors(r), key=lambda e: e.message)
+        if errs:
+            invalid.append(f"{r['type']} {r['guid'][:8]}: {errs[0].message}")
+    check("every record in the fixture base validates against the schema",
+          not invalid,
+          "; ".join(invalid[:3]) + (f"  (+{len(invalid) - 3} more)"
+                                     if len(invalid) > 3 else ""))
+
+    # Guarantee 2, both directions.
     undocumented = sorted(set(seen_nodes) - set(doc_nodes))
-    check("every node type in the base is documented",
+    check("every node type in the base is in the schema",
           not undocumented, ", ".join(undocumented))
 
     unexercised = sorted(set(doc_nodes) - set(seen_nodes))
-    check("every documented node type is exercised",
+    check("every node type the schema names is exercised",
           not unexercised, ", ".join(unexercised))
 
+    # Guarantee 4.
     bad_params = []
     for t, params in sorted(seen_params.items()):
         extra = params - doc_nodes.get(t, set())
         if extra:
             bad_params.append(f"{t}: {', '.join(sorted(extra))}")
-    check("no node carries an undocumented param",
+    check("no node carries a param the schema does not name",
           not bad_params, "; ".join(bad_params))
 
+    # Guarantee 3, both directions.
     e_undoc = sorted(seen_edges - doc_edges)
-    check("every (layer, type) in the base is documented",
+    check("every (layer, type) in the base is in the schema",
           not e_undoc, ", ".join(map(str, e_undoc)))
 
     e_unex = sorted(doc_edges - seen_edges - NOT_YET_MINTED)
-    check("every documented edge pair is exercised",
+    check("every (layer, type) the schema names is exercised",
           not e_unex, ", ".join(map(str, e_unex)))
 
     still_absent = sorted(p for p in NOT_YET_MINTED if p in seen_edges)
     check("the not-yet-minted list is still accurate",
           not still_absent,
-          f"{still_absent} is minted now — update the grammar"
+          f"{still_absent} is minted now — update the allowance"
           if still_absent else "")
 
     # The two fixtures this suite added carry the guarantees of their own
@@ -245,9 +275,40 @@ def main():
     check("the contentblock fixture round-trips exactly",
           SESS.records_to_session(srecs, sroot) == lines)
 
+    # Guarantee 8 (partial — the round-trip half is test_records.py's own
+    # 526/526; this is the part that belongs to a graph built here).
     check("the assembled base passes check", not R.check(recs))
 
-    total = 7
+    # Guarantee 5.
+    check("test_grammar.py contains no markdown-scraping code",
+          no_markdown_scraping())
+
+    # Guarantee 6: the committed appendix already holds exactly what the
+    # generator produces right now. Sabotage: hand-edit one table cell in
+    # docs/compost.md between the markers and this fails.
+    wp_text = BW.WHITEPAPER.read_text(encoding="utf-8")
+    committed = wp_text.split(BW.BEGIN, 1)[1].split(BW.END, 1)[0].strip()
+    fresh = ST.render(schema).strip()
+    check("the whitepaper's appendix matches what the generator produces",
+          committed == fresh,
+          "" if committed == fresh else
+          f"{len(committed)} vs {len(fresh)} chars committed/generated")
+
+    # Guarantee 7: running the build twice on a scratch copy is idempotent.
+    # A scratch copy, never the tracked file — the property under test is the
+    # script's, not a side effect of this suite running.
+    with tempfile.TemporaryDirectory() as d:
+        scratch = Path(d) / "compost.md"
+        scratch.write_text(wp_text, encoding="utf-8")
+        BW.build(whitepaper=scratch)
+        once = scratch.read_text(encoding="utf-8")
+        changed_again = BW.build(whitepaper=scratch)
+        twice = scratch.read_text(encoding="utf-8")
+        check("the appendix build is idempotent",
+              once == twice and not changed_again,
+              "" if once == twice else "second run changed the file")
+
+    total = len(results)
     print(f"\n{total - len(problems)}/{total} grammar guarantees hold  |  "
           f"{len(seen_nodes)} node types, {len(seen_edges)} edge pairs, "
           f"{sum(seen_nodes.values())} nodes")

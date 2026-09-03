@@ -1,5 +1,14 @@
 # The record grammar — schema 1
 
+**As of v0.2.12, this file is prose, not a machine-read source.** What a
+record is allowed to be is now stated in `tools/record-schema-1.json` and
+validated by `jsonschema`; `tests/test_grammar.py` holds *that* file against a
+base built from the fixtures, not this one. This document keeps the tables and
+the reasons behind them — read it to understand *why* the grammar is shaped
+this way — but a program disagreeing with it is no longer a fact this file can
+assert about itself. `docs/compost.md` §4 states the three-layer split in
+full: schema, `check()`, prose.
+
 **What a record is allowed to be**, exhaustively, as the program actually
 writes and validates it today. This is the normative companion to
 `docs/record-format.md`: that document argues *why* the node and edge design is

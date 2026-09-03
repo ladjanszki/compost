@@ -31,7 +31,17 @@ dependencies:
   # a full board.
   - duckdb=1.5.5
 
-# No pip dependencies beyond pandoc, graphviz and duckdb.
+  # Validates every record against tools/record-schema-1.json
+  # (docs/roadmap.md, "v0.2.12 — the grammar, untangled"). Required, not
+  # optional like graphviz and duckdb: the schema replaces a markdown-scraping
+  # test that quietly asserted less every time the prose it scraped was
+  # renamed (TODO-code-review.md), and a validator that might not be there
+  # validates nothing. Floored rather than pinned — nothing here measures
+  # jsonschema's version the way graphviz's and duckdb's are measured, so
+  # there is nothing yet to protect by pinning exactly.
+  - jsonschema>=4.26
+
+# No pip dependencies beyond pandoc, graphviz, duckdb and jsonschema.
 #
 # Node and npx were required through v0.1.6, for the djot.js reference parser
 # (@djot/djot). v0.2 removed them: pandoc reads and writes djot natively, so

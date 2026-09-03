@@ -29,6 +29,11 @@ tools/          committed scripts that are not the tool, and never installed
   roundtrip.py  the pandoc-only fixed-point harness
   dj_prepare.py      repair a v0.1 .dj so pandoc keeps its list-item handles
   v01_dictionary.py  the legacy handle -> guid dictionary, as alias records
+  record-schema-1.json   the record grammar, machine-read — the ground
+                truth tests/test_grammar.py holds the base against
+  schema_tables.py   record-schema-1.json -> markdown tables
+  build_whitepaper.py    regenerates docs/compost.md's grammar appendix
+                from schema_tables.py, between two markers, idempotently
   loop.py       one round of the conversation loop: note in, response out,
                 already cited — docs/roadmap.md, "the conversation loop"
   graph_sql.py  the read-only SQL view over graph/*.jsonl, via duckdb —

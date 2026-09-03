@@ -140,12 +140,12 @@ def main():
     # v0.2.11. CLAUDE.md's authoritative table named docs/design-answers.md
     # for two days after it had been moved out of the repository. A path in
     # that table is a promise the file is there.
-    named = set(re.findall(r"`(docs/[A-Za-z0-9_.*-]+)`", cl))
+    named = set(re.findall(r"`((?:docs|tools)/[A-Za-z0-9_.*-]+)`", cl))
     missing = sorted(p for p in named
                      if "*" not in p and not (root / p).exists())
     empty = sorted(p for p in named
                    if "*" in p and not list(root.glob(p)))
-    check("every docs/ path named in CLAUDE.md exists",
+    check("every docs/ or tools/ path named in CLAUDE.md exists",
           not missing and not empty,
           f"missing={missing} empty-globs={empty}")
 
