@@ -427,17 +427,33 @@ Each version is provable alone, and nothing waits on a decision still open.
 |---|---|
 | **v0.2.10** | the index page — **shipped 2026-09-01** |
 | **v0.2.11** | **the whitepaper** — `docs/` revamped into one structured document: the invariants, the shape, the grammar |
-| **v0.2.12** | the fold — `content_hash` on every node type, `subtree_hash`, and the per-type whitelists written into the grammar |
+| **v0.2.12** | **the grammar, untangled** — a JSON Schema replaces the markdown-scraping test — plus the fold: `content_hash` on every node type, `subtree_hash`, and the per-type whitelists as schema annotations |
 | **v0.2.13** | **AoTA** — `mutability` declared and checked, positional alignment, delta ingest |
 | **v0.2.14** | the ledger — retraction, provenance, replay as a filter |
 | **v0.2.15** | **TA** — `revision_of` on roots, full-tree revisions |
 | **v0.3.0** | the first semantic layer, over all of it |
 
-**The whitepaper goes first**, and not only because it was asked for. v0.2.12's
-deliverable is *a set of per-type whitelists with a reason for each entry* —
-which is a grammar document, and the grammar has nowhere coherent to live until
-the revamp gives it one. Doing it the other way round means writing the lists
-into a `docs/` that is being restructured underneath them.
+**v0.2.12 absorbed the grammar untangling**, and the two belong together: its
+deliverable was *per-type whitelists with a reason for each entry*, and if the
+grammar is a schema then the whitelists are schema annotations rather than a
+second document to keep in step.
+
+**`jsonschema` becomes the third dependency**, after graphviz and duckdb, and
+gets the same treatment they did — a stated justification. The argument is not
+convenience: **valid records are the floor every graph-level check stands on.**
+`check()` can only ask whether a graph hangs together if the records in it are
+well-formed, and today nothing verifies that — `CLAUDE.md` says so plainly,
+*"this is a trust model and the trust is currently unearned."* A schema without
+a validator would leave that gap open while looking closed.
+
+What a schema **cannot** do stays where it is: the ten invariants are
+cross-record — no cycle in `contains`, the `next` chain is a total order,
+exactly one parent — and no per-document validator can express any of them.
+Three layers, each doing what it can: **schema** for what a record may be,
+**`check()`** for what a graph must be, **prose** for why.
+
+**The whitepaper still goes first**, because v0.2.12 changes what the grammar
+*is*, and the paper has to describe a shape that has settled.
 
 **v0.2.13 no longer waits on v0.2.12.** §6b showed AoTA alignment is a
 positional walk over content hashes, which already exist. The fold makes the

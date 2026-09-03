@@ -1,12 +1,14 @@
 # compost — conversations and text to an addressable graph
 
-A local-first knowledge base for people who run many projects at once and need
-to get back into one cheaply after weeks away.
+compost turns conversations and notes into an addressable graph. Every
+paragraph, list item, tool call and answer becomes a node with a permanent
+identifier, so a person and an agent can point at the same sentence and disagree
+about it. Nothing is summarised away: the conversation that produced a decision
+stays readable beside the decision.
 
-You write in your editor and submit. Every paragraph, list item, todo, tool call
-and answer becomes a node with a permanent identifier, so you and an agent can
-point at the same sentence and argue about it. Nothing is summarised away: the
-conversation that produced a decision stays readable next to the decision.
+It is built for one situation — running several projects at once, and needing to
+get back into one cheaply after weeks away. The design follows from that: keep
+everything, decide later, and make every claim checkable.
 
 ```
 compost init

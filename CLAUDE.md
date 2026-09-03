@@ -105,12 +105,19 @@ base's own content is **the records**, never a corpus.
 
 ## What is authoritative
 
+**`docs/` holds four different kinds of thing, and the table says which.** It
+used to claim one status for the whole directory while calling `spec.md`
+historical four lines later; both could not be true.
+
 | Source | Status |
 |---|---|
-| `docs/` | **what is true now.** Rewritten as understanding improves. |
+| `docs/compost.md` | **the whitepaper — start here.** What compost is, the fifteen principles, the shape, the grammar's vocabularies, and the decisions with the measurement behind each. |
+| `docs/record-grammar.md`, `docs/record-format.md`, `docs/man-compost.md`, `docs/queries.md`, `docs/decisions.md` | **what is true now.** Rewritten as understanding improves. `record-grammar.md` and `man-compost.md` are held against the program by their own suites. |
+| `docs/roadmap.md`, `docs/design-*.md` | **what is being decided now.** A design document is deleted when its version ships, so this category never accumulates. |
+| `docs/migration.md` | the v0.1 corpus migration. **Part shipped, part never built** — the handle dictionary and `kg-8hex` exist; the routes are still a proposal. Describes files not on this disk. |
+| `docs/spec.md`, `docs/spec-review.md`, `docs/design-answers.md` | **superseded v0.2 drafts, not yet reviewed.** Kept for intent, deliberately left in place until read. Not evidence of anything current. |
 | `CHANGELOG.md` | what happened, and what it cost. Append-only in spirit. |
 | the **v0.1 corpus** | **not in this repository.** It was personal notes and was removed from the history, not merely deleted. It is kept privately as the input for a migration that has not been written. |
-| `docs/spec.md`, `docs/design-answers.md` | the human's own v0.2 drafts. Historical, superseded by `decisions.md`, worth reading for intent. |
 
 Anything quoting the v0.1 corpus — `docs/migration.md` above all — describes
 files you will not find here. Its measurements were taken while those files were

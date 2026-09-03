@@ -28,11 +28,10 @@ It is built for one situation — running several projects at once, and needing 
 get back into one cheaply after weeks away. The design follows from that: keep
 everything, decide later, and make every claim checkable.
 
-> **Not yet true, and listed as v0.2.11 work:** this is *intended* to be the
-> README's opening verbatim, with a test asserting the two match so neither can
-> drift. Today the README says something close but not identical. The claim is
-> written here in the form it will take, and marked, rather than asserted early
-> — which is the failure mode this whole document exists to reduce.
+> This is the README's opening, verbatim. `tests/test_manpage.py` asserts the
+> two are byte-identical, so neither can drift — the same reasoning that keeps
+> `tools/queries/*.sql` referenced from `docs/queries.md` rather than pasted
+> into it.
 
 ---
 

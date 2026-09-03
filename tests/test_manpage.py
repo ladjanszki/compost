@@ -76,13 +76,25 @@ def synopsis_names(man):
             if line.startswith("compost ")]
 
 
+def _abstract(text: str) -> str:
+    """The whitepaper's abstract: everything between the heading and the note."""
+    return text.split("## Abstract\n", 1)[1].split("\n>", 1)[0].strip()
+
+
+def _readme_opening(text: str) -> str:
+    """The README's opening: after the title, before the first fenced block."""
+    return text.split("\n", 1)[1].split("\n```", 1)[0].strip()
+
+
 def main():
     man = MAN.read_text()
     names = usage_names()
     problems = []
+    ran = []
 
     def check(name, ok, detail=""):
         print(f"  {'ok   ' if ok else 'FAIL '} {name:<46} {detail}")
+        ran.append(name)
         if not ok:
             problems.append(name)
 
@@ -112,8 +124,32 @@ def main():
     check("every alias the dispatcher accepts is in the man page",
           not absent, ", ".join(absent))
 
-    total = 6
-    print(f"\n{total - len(problems)}/{total} man-page guarantees hold")
+    root = Path(__file__).parent.parent
+    wp = (root / "docs" / "compost.md").read_text(encoding="utf-8")
+    rd = (root / "README.md").read_text(encoding="utf-8")
+    cl = (root / "CLAUDE.md").read_text(encoding="utf-8")
+
+    # v0.2.11. The whitepaper says its abstract *is* the README's opening.
+    # Nothing enforced that, so it was a claim rather than a fact — the
+    # failure this project keeps paying for. Sabotage: change one word in
+    # either file.
+    check("the README's opening is the whitepaper's abstract, verbatim",
+          _abstract(wp) == _readme_opening(rd),
+          f"{len(_abstract(wp))} vs {len(_readme_opening(rd))} chars")
+
+    # v0.2.11. CLAUDE.md's authoritative table named docs/design-answers.md
+    # for two days after it had been moved out of the repository. A path in
+    # that table is a promise the file is there.
+    named = set(re.findall(r"`(docs/[A-Za-z0-9_.*-]+)`", cl))
+    missing = sorted(p for p in named
+                     if "*" not in p and not (root / p).exists())
+    empty = sorted(p for p in named
+                   if "*" in p and not list(root.glob(p)))
+    check("every docs/ path named in CLAUDE.md exists",
+          not missing and not empty,
+          f"missing={missing} empty-globs={empty}")
+
+    print(f"\n{len(ran) - len(problems)}/{len(ran)} man-page guarantees hold")
     return 1 if problems else 0
 
 

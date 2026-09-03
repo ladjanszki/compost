@@ -2258,18 +2258,42 @@ Same reasoning as `tools/queries/*.sql` being referenced from `docs/queries.md`
 rather than pasted into it: *the copy that runs cannot drift from the copy that
 is read.*
 
+### Scope, trimmed 2026-09-03
+
+**The whitepaper plus two small alignments. No file moves.**
+
+`docs/compost.md` is written. What remains here is making the rest of the repo
+point at it honestly:
+
+1. **The README's opening becomes the abstract, verbatim**, with a test.
+2. **`CLAUDE.md`'s authoritative table stops claiming one status for all of
+   `docs/`**, and names the whitepaper.
+
+**Deferred, deliberately:** splitting `migration.md`, and deciding what becomes
+of `spec.md`, `spec-review.md` and `design-answers.md`. They stay where they
+are, unreviewed, until read. *Leaving them is not free* — the table has to say
+something honest about them, so it gains a row naming them as superseded and
+not yet reviewed, rather than as *"worth reading for intent"*, which currently
+sits four lines from the claim that `docs/` is what is true now.
+
+**`record-grammar.md`'s headings must not be renamed in this release.**
+`tests/test_grammar.py` discovers the grammar by splitting on the literal
+strings `## 3. Node types` and `## 4. Edge types`. Renaming either does not
+fail the suite — it silently finds fewer types and asserts less. v0.2.12
+removes that coupling; until then it is a tripwire, and it is recorded in
+`TODO-code-review.md` as the worked example of the class.
+
 ### Tests
 
-The suites already covering `docs/` are the gate: `test_grammar` (the grammar
-document against the code), `test_manpage` (the man page against the program),
-and `clean-room.sh`'s *the docs describe only what shipped* block. Add:
+The suites already covering `docs/` are the gate: `test_grammar`,
+`test_manpage`, and `clean-room.sh`'s *the docs describe only what shipped*
+block. Add:
 
-1. **Every relative link between files under `docs/` resolves.** A restructure
-   breaks links silently; nothing checks this today.
+1. **The README's opening and the whitepaper's abstract are byte-identical.**
+   The `queries.md` pattern — the copy that runs cannot drift from the copy
+   that is read.
 2. **Every path named in `CLAUDE.md`'s authoritative table exists.** The
    contradiction that started this release would have been caught by it.
-3. **The principles list is non-empty and each entry has a reason.** Structural,
-   not a word count — the failure to prevent is a list of slogans.
 
 ---
 
