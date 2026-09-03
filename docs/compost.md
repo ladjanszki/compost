@@ -3,10 +3,16 @@
 *A local-first knowledge base where a conversation and a document are the same
 kind of thing, and every paragraph has a name.*
 
-**Status: v0.2.11 draft.** This document is being assembled from `CLAUDE.md`,
+**Status: v0.2.11 draft, complete in outline.** Assembled from `CLAUDE.md`,
 `decisions.md`, `record-format.md`, `record-grammar.md` and the roadmap. Where
-it disagrees with the code, the code is right and this is a bug. Sections marked
-*(to write)* are outlined and not yet drafted.
+it disagrees with the code, **the code is right and this is a bug** — and that
+is the only reading order this document accepts, because every number in it was
+measured rather than remembered.
+
+Not yet done: the mechanical half of v0.2.11 — aligning the README's opening
+with the abstract, the test that keeps them aligned, the link-resolution test,
+and splitting `migration.md` along the seam between what shipped and what was
+only ever proposed.
 
 ---
 
@@ -170,30 +176,177 @@ isolate from. Branch only for a genuine one-way door. *The incident:* the
 standing candidate for a feature branch turned out to be render-time and shipped
 on `main` in an afternoon.
 
-## 3. Digestors *(to write)*
+## 3. Digestors
 
-Outline: what a route is; the four that exist (`notes`,
-`claude-code-transcript`, `pandoc-ast`, `claude-code-response`); that a route
-may declare the file it read *names other files*, which is the one place
-`digest` reads something it was not handed; that this makes ingestion recursive
-and would need a queue if it became asynchronous; and the two-phase rule —
-nothing is written until every input has parsed, which is what makes a batch
-safe to re-run.
+A **digestor** — a *route* in the code — is one named way material enters a
+base. There are four:
 
-## 4. The records *(to write)*
+| route | reads | pulls in other files |
+|---|---|---|
+| `notes` | prose, as commonmark_x | no |
+| `pandoc-ast` | a pandoc JSON document, already parsed | no |
+| `claude-code-transcript` | a Claude Code session `*.jsonl` | **yes** |
+| `claude-code-response` | a `{responds_to, envelope}` wrapper around `claude --print` | no |
 
-Outline: node, edge, the `contains` tree and the `next` chain; layers as the
-unit of provenance and deletion; `schema_version`; the two hash functions and
-why they are not comparable. Much of this is `record-grammar.md`, which is
-verified against the code by `tests/test_grammar.py` and keeps that property
-wherever it ends up.
+**The route is named, never guessed** (principle 2). `compost digest --as=notes
+notes.jsonl` reads markdown, because that is what was asked for. A missing or
+unknown `--as` is an error that lists the routes rather than a guess at what was
+meant.
 
-## 5. Renderers *(to write)*
+### Ingestion is two-phase, and that is what makes it safe to re-run
 
-Outline: three views from one set of records; that renderers depend on each
-other — the HTML view will embed graphviz output, which is why `graphviz/` is a
-peer of `views/` and not inside it; and that views are generated and disposable,
-so deleting one costs a rebuild.
+**Nothing is written until every input has been read and parsed.** Storage names
+are minted rather than derived, so a batch that dies halfway leaves the files it
+already ingested in the base — and re-running it after fixing the bad input
+would ingest them a *second* time under fresh guids. Validating first makes a
+batch safe to re-run, which is the only reason it is safe to hand this command a
+glob.
+
+### A route may say the file it read names other files
+
+This is the one place `digest` reads something it was not handed, and it is
+allowed for one reason: **it is not a guess.** A transcript that launched a
+subagent records that agent's id in its own log, the agent's turns are in a file
+named after that id, and the parent is *incomplete* without it. Every discovery
+is printed, because a side effect nobody can see is the kind found by accident
+two months later. `--no-follow` turns it off.
+
+That makes ingestion **recursive** — a depth-2 agent finds its parent among the
+depth-1 transcripts pulled in by the same invocation. It is depth-first and
+synchronous today. If it ever became asynchronous, this is the part that needs a
+queue: the recursion is discovered while reading, not known in advance.
+
+### Every edge endpoint a batch mints must resolve
+
+Either within the batch or already committed, or **nothing is written.** A
+structural field naming a guid nobody minted is not a fact about the world, it
+is a typo in whatever produced the file.
+
+This is deliberately *not* the citation path. A citation whose target is missing
+is real information — something was cited that is not here yet — and
+`compost layer citation` records it as a placeholder.
+
+### What a digest leaves behind
+
+Bytes are copied into `storage/` under a freshly minted `GUID.EXT`, and a `blob`
+node records the original name, the sha256, the import time and the route. The
+document is joined to it by a **`derived_from`** edge in the `ingestion` layer —
+derived *from* the bytes, not contained *by* them.
+
+**The two names are unrelated on purpose.** To get from a document to its bytes
+you follow `derived_from` and read `params["stored_as"]`. There is no rule that
+turns an original filename into a storage path, and anything that invents one
+will be wrong.
+
+## 4. The records
+
+One record per line of JSONL, each saying whether it is a `node` or an `edge`.
+Measured on a working base: **90,434 records — 29 node types and 8 edge types.**
+
+### Structure is two edge types
+
+**`contains`** builds the tree: every node has exactly one parent, except roots
+(`document`, `session`) which have none and a short list that is *pointed at*
+rather than contained — `blob`, `file`, `alias`, `unresolved_citation`,
+`display_name`.
+
+**`next`** orders siblings. Order is a chain, not an index, because an index has
+to be renumbered and a chain does not. Three loader checks replace what an index
+made impossible: one head, no cycle, full coverage of the children.
+
+Everything else — `cites`, `launched`, `touches`, `replies_to`, `derived_from`,
+`names` — is meaning rather than structure.
+
+### Layers are the unit of provenance and of deletion
+
+Every edge carries one. Eight are defined: `pandoc-ast`, `session`,
+`claude-code`, `ingestion`, `agent`, `citation`, `conversation`, `display`.
+
+A layer answers *who asserted this, and can I remove it without touching
+anything else?* Deleting a whole graph file that one `layer` run wrote is the
+only inverse this design offers for accumulation it never removes — and it works
+because a layer's edges are separable from the structure they annotate.
+
+### Two hash functions that share a name and are not comparable
+
+| | node | edge |
+|---|---|---|
+| input | `[type, params, content]` | the record minus a skip list |
+| shape | positional **array** | an **object** |
+| present | only when the node has content | always |
+
+Both are `sha256(canonical(…))`, where `canonical` is JSON with sorted keys, no
+spaces, `ensure_ascii=False`. **A query grouping by `content_hash` across record
+kinds is comparing nothing.**
+
+The edge form excludes identity *and provenance* deliberately: a hash must say
+what the edge **claims**, never when or by what it was written, or the same fact
+rebuilt tomorrow would not match the one written today.
+
+**Neither reaches everything**, and this is the honest statement of the gap: the
+transcript node types, `alias` and `unresolved_citation` carry no hash at all,
+and an edge pointing at a placeholder hashes differently on every build.
+`content_hash` is **evidence for a dedup design**, not a mechanism anything acts
+on. Nothing in `src/` reads it to decide anything.
+
+### `schema_version`, on every record
+
+Not per file and not per base: filenames carry no meaning and `load()` moves
+records between files freely, so a per-record field is the only form that
+survives regrouping and lets schema 2 sit beside schema 1 during a migration.
+**Absent means 1**, by definition rather than by guess.
+
+The field is also *read* — `check` refuses a record from a newer tool than the
+one loading it. Without that it would be a comment in JSON.
+
+## 5. Renderers
+
+Three views, from the records and from nothing else:
+
+| view | for | how it treats bulk |
+|---|---|---|
+| `views/default-djot/` | agents | shown in full — djot has no collapse |
+| `views/default-html/` | people | tool calls, output and subagent transcripts folded |
+| `views/default-md/` | regenerating README and the like | full, **no handles injected** |
+
+The markdown view carries only the handles its source already had, so its output
+is clean enough to commit.
+
+### `render` refuses a graph that fails `check`
+
+Not a crash — a refusal, printed (principle 11). A page that looks fine and is
+wrong is worse than no page.
+
+### What is on disk is exactly this render's output
+
+`render` used to only ever write, which was invisible while every document had a
+page forever, and became wrong the moment a transcript could stop having one of
+its own — the stale page stays in the browser showing a document the graph no
+longer presents that way. So the sweep removes what this run did not produce.
+Views are generated and disposable; deleting one costs a rebuild.
+
+### Renderers depend on each other
+
+`compost draw` writes DOT — and SVG when graphviz is installed — into
+`.compost/graphviz/`, a **peer** of `graph/`, `storage/` and `views/` rather
+than a subdirectory of `views/`.
+
+The direction of the dependency is why: an HTML view will eventually *embed*
+those SVGs, which makes graphviz output an **input** to `render`, the way
+`storage/` is an input to `graph/`. Putting an input inside the output directory
+would be backwards, and actively confusing the moment `render` starts reading
+from it. The pipeline is legible from the layout alone.
+
+**The DOT is always written; the SVG only when the binary is there.** That is
+what keeps the dependency optional: text an agent can read and anyone can render
+later, rather than all-or-nothing.
+
+### A display name changes what is shown, never what a file is called
+
+Page filenames come from the document's source stem, disambiguated by the root's
+guid when two collide. A display name — a record, not a field — changes the text
+on the index and nothing else. Otherwise every bookmark moves whenever a name is
+edited.
 
 ## 6. The symmetry, which is the thesis
 
@@ -208,11 +361,67 @@ it.
 
 Everything else in this document exists to keep that true.
 
-## 7. Decisions *(to write)*
+## 7. Decisions, and the principle behind each
 
-Outline: each significant decision, the principle behind it, and the measurement
-that settled it. `decisions.md` loses nothing in the move — where it goes, it
-goes whole.
+Every non-obvious choice in this codebase is justified here or in
+`docs/decisions.md`, which loses nothing in the move. A selection, with what
+settled each:
+
+**The tool does not hold your hand.** *(principle 10)* An architecture review of
+a larger design — declarations, staleness detection, dependency-ordered
+rebuilds — found **four states a base could enter and never leave**, each
+escapable only by hand-editing `graph/`. All four came from one source: trying
+to keep the graph automatically consistent. Removing the goal removed every one
+of them.
+
+**`load()` collapses byte-identical records.** Two writers asserting the same
+fact is agreement, not conflict. This looks like a convenience and is not:
+measured on a base holding one duplicated graph file, *with* dedup 0 problems,
+*without* it `Para … has 2 parents` and `render` refuses. Getting
+"collapse later" would mean teaching `check` to count distinct parent edges —
+the same logic relocated, not removed.
+
+**A handle is the full UUIDv4.** *(principle 8)* It costs **21.7%** of the djot
+view's characters against 7.7% at eight, and on small dense documents reaches
+60–75%. Accepted. A prefix resolver was built and removed: it resolved for a
+tool while the HTML view emitted the href verbatim, uniqueness degraded as the
+base grew, and nobody had complained about length — the 21.7% was a number in a
+document, not a person's complaint.
+
+**Storage names are minted uuids, not content hashes.** *(principle 7)* A
+content-addressed name resolves duplicates at write time by construction. The
+same bytes may legitimately arrive twice, and the second arrival is information.
+
+**`graph/` is flat.** *(principle 6)* Closed ahead of the query layer, because
+Python's `rglob` and a SQL glob over the same directory would have disagreed
+about what the graph is, for a reason having nothing to do with whatever was
+being checked.
+
+**The three pandoc defects are recorded and not repaired.** *(principle 15)*
+They live in pandoc's *writer*, downstream of everything the round-trip
+property covers. Suppressing them on read would pull them inside the boundary
+being tested and break the property by construction.
+
+**Views may filter; importers may not.** *(principle 4)* The harness injects
+slash-command boilerplate into transcripts — an instruction addressed to the
+model, rendered inside a frame attributed to the human. It is suppressed **at
+view time**, recognised structurally rather than by matching prose, and every
+suppressed paragraph is still a node that `compost lookup` resolves.
+
+**Alignment is positional, not by hash.** Measured on two re-ingested
+transcripts: walking both trees in document order, the older is a clean prefix
+of the newer — **5,496 of 5,496** and **221 of 221**, exactly. So *"has this
+append-only document changed underneath us?"* is a walk, and needs no global
+identity. The same measurement showed 99.98% of an older tree's nodes already
+hash-identical after a re-ingest, the single miss being the root, whose
+`params["lines"]` counts the file rather than describing the conversation.
+
+**A content hash cannot be an identity.** Within one 6,193-node transcript,
+**36% of nodes share a content hash with another** — 633 empty table cells, 229
+empty thinking markers, 217 rows. A Merkle fold cuts that to 28.5% by
+distinguishing containers, and does **nothing** for leaves, because a leaf's
+fold *is* its content hash. Those 229 markers genuinely are the same value; what
+makes them different blocks is where they sit. Hence principle 7.
 
 ## 8. What this is not
 
