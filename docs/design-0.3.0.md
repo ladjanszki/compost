@@ -10,6 +10,10 @@ attached, ready to be lifted into `roadmap.md` as a version — or **OPEN**, wit
 the options named and what each one blocks. Nothing sits here unmarked. When a
 thing settles, it moves, and this file shrinks.
 
+**As of 2026-09-03 nothing here is open.** Every section is settled or parked
+with a reason, and §12 packages the result into versions. What remains is
+writing the roadmap entries and building them.
+
 v0.3.0 is reached when change, the text artifacts, and the first semantic layer
 exist. The patch versions between here and there are packaging, not milestones.
 
@@ -28,9 +32,14 @@ can be short.
 | **GeTA** | **dropped.** A generated artifact is a view; a view that is ingested back is a TA. It never needed a name of its own. |
 | **the records** | a base's own content. Never "a corpus". |
 
-**Kind and route are orthogonal.** `--as=notes` says *how the bytes are read*;
-the kind says *what may happen to it afterwards*. A markdown file can be an
-ImTA (a dated note) or a TA (the README). The same route reads both.
+**The dimension is called `mutability`, not `kind`.** *Kind* is too generic for
+a project that will grow more artifact classes; this one axis says exactly one
+thing — **what may be modified in the subgraph under this root**. ImTA: nothing.
+AoTA: the tail only. TA: anything.
+
+**Mutability and route are orthogonal.** `--as=notes` says *how the bytes are
+read*; mutability says *what may happen to it afterwards*. A markdown file can
+be an ImTA (a dated note) or a TA (the README). The same route reads both.
 
 ---
 
@@ -57,7 +66,7 @@ to allow this.
 
 ---
 
-## 2. SETTLED — the kind is declared at ingest and verified by `check`
+## 2. SETTLED — `mutability` is declared at ingest and verified by `check`
 
 Not inferred, and not merely computed after the fact.
 
@@ -134,10 +143,10 @@ correct, and that is the design, not a cost. It is O(depth), not O(n), and it is
 what makes the root hash meaningful: the root changes *because* something under
 it did. Git pays this on every commit.
 
-**Still to specify exactly** — see OPEN §8. The fold must skip `guid`,
-`created_at` and `tool_version` or two identical documents never fold equal. It
-is one function, specified once, or a different JSON encoder silently makes
-every document unique.
+**Still to specify exactly** — see §8. The fold takes a per-type whitelist and
+never includes `guid`, `created_at` or `tool_version`, or two identical
+documents never fold equal. It is one function, specified once, or a different
+JSON encoder silently makes every document unique.
 
 ---
 
@@ -168,7 +177,8 @@ asserted twice with different payloads needs last-write-wins, and LWW needs a
 sequence. Which means:
 
 > **The ledger question and the mutation question are the same question.**
-> Whether `seq` is semantics or audit metadata is decided entirely by OPEN §7.
+> Whether `seq` is semantics or audit metadata is decided entirely by §7 —
+> and §7 settled on new-node, so `seq` is audit metadata.
 
 ---
 
@@ -188,7 +198,7 @@ requirement:**
 The larger transcript re-minted 5,496 nodes to record 697 new ones. Exactly
 **one** node failed to match that arguably should have: the `session` root
 itself, because `params["lines"]` moved 2129 → 2248. That single fact is the
-whole of OPEN §8.
+whole of §8, and §8 dissolves it: `lines` is not on the whitelist.
 
 This is the project's own stated criterion firing: *filter only when disk or
 compute requires it.* Here compute does require something — and the answer is
@@ -209,121 +219,189 @@ the node that carries the handle you would cite."*
 
 ---
 
-## 7. OPEN — new node per change, or a mutation record?
+## 6b. SETTLED — alignment is positional, and that is the whole AoTA mechanism
 
-**The central fork.** Everything else in this document waits on it.
+**Measured 2026-09-03, and it collapses most of §8.**
 
-**Option A — a new node per version.** A changed paragraph is a new node with a
-new guid. The old node stays, untouched and still true. Retraction is a
-tombstone; `seq` is audit metadata only; merging two bases is union; `check`
-runs on records as it does today.
+Walk both trees in document order — parent, then children in `next` order — and
+compare content hashes pairwise:
 
-**Option B — a mutation record.** `{op: upsert, id: …, payload: …}` — the same
-id re-asserted. The graph becomes the **fold** of the log rather than the set of
-records. `seq` becomes semantics (last-write-wins). `check` must run on the fold.
-Merging needs conflict resolution.
+| session | old tree | new tree | identical prefix |
+|---|---|---|---|
+| `2e9cd256` | 5,496 nodes | 6,192 | **5,496 — 100.00%** |
+| `cdb16054` | 221 nodes | 1,454 | **221 — 100.00%** |
 
-**What is known:**
+**The old tree is a clean prefix of the new one. Exactly, not approximately.**
 
-- `delta-ingestion-and-block-versioning-v2.md` establishes that Option B in its
-  old form was rejected for three constraints — LLM-generated Cypher, per-block
-  enrichment, no-git — **all of which have since expired**. Its conclusion is
-  explicitly void and must be re-decided. So this is genuinely reopened, not
-  re-litigated.
-- Option A is what compost already is. Option B is a different database.
-- Option B's own advocate (the ledger conversation, 2026-08-30) says whole-entity
-  upsert is *"almost certainly right"* over per-property, and that per-property
-  only wins when different sources own different fields of one node — which is
-  not this project's situation.
+So the AoTA head check is: *walk both in document order, compare content hashes,
+the old must be a prefix.* Delta ingest is: *mint nodes from index N onward.*
+Neither needs a Merkle fold, a global identity, or a way to tell two identical
+blocks apart.
 
-**Recommendation: Option A**, with the ledger envelope carried as records-about-
-records. It keeps §5's first invariant, keeps `check` where it is, and makes the
-ledger purely additive — so it does not have to come first and cannot paint us
-into a corner. Option B can be adopted later *on top of* Option A's log; the
-reverse is not true.
+**And this answers "why not 100% on a re-ingest?"** It is 100%, of the overlap.
+The earlier 88.7% was the fraction of the *newer, larger* tree — misleading. Of
+the **older** tree, `5,496 of 5,497` matched: **99.98%**, and the single miss is
+the session root, because `params["lines"]` moved 2129 → 2248. One field, one
+node, and it is the whole of §8's live question.
 
-**Blocks:** the ledger design, the retraction mechanism, and whether `seq`
-exists at all.
+**The steps stay separable.** Alignment is a pure function of two trees —
+`(old, new) → prefix length` — that writes nothing. Deciding what is new, and
+writing it, are separate calls. Nothing here forecloses doing them at different
+times, or asynchronously.
 
 ---
 
-## 8. OPEN — what goes into the fold
+## 6c. SETTLED — what a hash can and cannot do
 
-Specifically: which `params` participate.
+Both hashes are kept, because they answer different questions:
 
-The measurement in §6 makes this concrete. The `session` root failed to match
-across ingests **only** because `params["lines"]` changed. If `lines` is in the
-fold, every AoTA root changes identity on every append — which defeats §1. If it
-is out, the fold must name what else is out.
+| | answers |
+|---|---|
+| **`content_hash`** | is this the same *value* |
+| **`subtree_hash`** (Merkle fold) | is this the same *subtree* |
+| **`guid`** | is this the same *thing* |
 
-Known cases needing a ruling:
+Measured on the 6,193-node session:
 
-- `lines` on a session root — **volatile by design**, changes on every append.
-- `source` on any root — the same bytes ingested under a different filename.
-  Should that be the same document?
-- `log` on a `turn` — the whole original JSON line. It is what makes turns
-  stable *and* unique across re-ingest, so it almost certainly stays in.
-- `imported_at` on a `blob` — wall-clock, changes every time.
+| | nodes sharing their hash with another |
+|---|---|
+| content hash | 2,228 — **36.0%** |
+| Merkle fold | 1,762 — **28.5%** |
 
-**Recommendation:** a fold over `[type, fold_params, content, [child folds…]]`
-where `fold_params` excludes a **named, closed list** of volatile keys, written
-in `docs/record-grammar.md` beside the two existing hash functions. Not a
-heuristic, not "keys that look like metadata" — a list, with each entry's reason.
+**The fold helps for containers and not at all for leaves.** `Cell` collisions
+drop 633 → 438 and `Row` 217 → 110, because their children differ. But the 229
+empty `thinking` nodes have **one** distinct content hash and **one** distinct
+fold — a leaf has no children, so its fold *is* its content hash. `Plain` (428)
+and `logline` (405) are likewise unmoved.
 
-**Blocks:** delta ingestion, the AoTA head check, the ImTA seal.
+**This is not a defect and no hash will fix it.** 229 empty thinking markers are
+genuinely the same value. What makes them different *blocks* is where they sit.
+That is what the guid is for, and why content-addressed naming was rejected:
+identity is positional, equality is content-derived, and conflating them merges
+things that are only accidentally alike.
 
----
+**Hash choice, settled:** `guid` stays **UUIDv4**; `content_hash` and
+`subtree_hash` are both **SHA-256**. UUIDv5 is a truncated MD5/SHA-1 namespace
+hash — weaker, shorter, and designed for naming rather than comparison. Using
+one family for identity and another for equality also makes it visible at a
+glance which is which, which is worth more than uniformity.
 
-## 9. OPEN — how a TA revision shares its unchanged blocks
-
-The question as asked: *"what happens if I only change one block? Does
-everything else get a new version, or do we point at the changed one?"*
-
-The obstacle is structural, not philosophical. If revision 2 reuses revision 1's
-unchanged block nodes, those blocks are now contained by two roots — and
-`check`'s invariant 3 says every non-root node has **exactly one** `contains`
-parent. Reuse breaks it.
-
-**Option A — each revision is a full tree.** Simple, current, and pays the 88.7%
-again on every TA edit.
-
-**Option B — relax the one-parent invariant.** Cheap to say, expensive to mean:
-that invariant is what makes `render` a tree walk rather than a graph walk, and
-it is checked in four places.
-
-**Option C — split structure from content.** A revision is an ordered list of
-*references* to content nodes; content nodes are shared, structure is per
-revision. This is git's tree/blob split, and it is Option A of the old delta-
-ingestion doc, which was rejected for the LLM-Cypher constraint that no longer
-exists.
-
-**No recommendation yet.** C is almost certainly where this ends up, but it
-changes what a document *is*, and that deserves its own argument rather than
-being decided as a corollary here.
-
-**Blocks:** TA support, and therefore the topic list, and therefore the first
-semantic layer.
+**Whitelist, not blacklist.** The fold and the content hash take a **named list
+of params they include**, per node type. An exclusion list means a param added
+later silently joins the hash and every existing node stops matching itself —
+the failure would look like "everything changed" and have no obvious cause.
 
 ---
 
-## 10. OPEN — the file's life outside the base
+## 7. SETTLED — a new node per change, and no upsert anywhere
 
-Raised as *"thinking about the files' afterlife"*, and it is sharper than it
-looks: it is a second, orthogonal dimension to the kind.
+**Option A**, chosen. A changed paragraph is a new node with a new guid; the old
+node stays, untouched and still true. Retraction is a tombstone, `seq` is audit
+metadata rather than semantics, merging two bases is union, and `check` runs on
+records exactly as it does today.
 
-| | tracked on disk | internal only |
-|---|---|---|
-| **ImTA** | a note you keep | a note ingested and deleted |
-| **AoTA** | **a transcript — the file keeps growing and we re-read it** | a log written only through the tool |
-| **TA** | a README rendered, edited, re-ingested | a plan that lives only in the base |
+Mutation records — the same id re-asserted, last-write-wins — are **not adopted
+now and are not foreclosed**. They can be layered on top of this log later; the
+reverse is not true. Revisit only if the new-node form produces a measured pain
+point rather than an anticipated one.
 
-The AoTA/tracked cell is the interesting one, and it is the actual daily case:
-compost is not *holding* the transcript, it is **tracking an external file that
-grows**. That is a different relationship from ownership, and it may deserve to
-be recorded on the root rather than left implicit.
+**So: no `UPSERT`, for TAs or anything else.** Asked directly, and the answer
+falls out of Option A: nothing is ever re-asserted under an existing id, so
+nothing needs last-write-wins, so nothing needs a sequence to be correct.
 
-**Not blocking**, but it should be settled before the ingest CLI grows a flag,
-because the flag will encode whichever answer we pick.
+### Which records carry `revision_of` — roots only
+
+Asked directly: *do the nodes get connected by revision edges, or only the
+roots?*
+
+**Only the roots.** A TA revision mints a whole new tree and chains its root to
+the previous root with one `revision_of` edge. Individual blocks get **no**
+revision edges.
+
+Two reasons, and the second is the one that decides it:
+
+- **Correspondence is computed, not stored.** §6b showed alignment is a
+  positional walk over content hashes. "Which block in v2 is this block from
+  v1?" is answerable on demand, from records that already exist. An edge per
+  block would be storing an answer a walk already gives — and storing it once,
+  at write time, is exactly the shape this project avoids.
+- **A per-block revision edge would multiply.** The measured trees are 5,497 and
+  6,193 nodes. One edge per block per revision is a second graph the size of the
+  first, minted on every save, for a fact recomputable in one pass.
+
+`revision_of` is therefore a small, sparse layer: one edge per revision of one
+document. `cites` edges keep pointing at the old block, which stays exactly
+true — someone cited that text and they did.
+
+---
+
+## 8. SETTLED in principle — a per-type whitelist, written in the grammar
+
+The live question was one field: does `lines` on a session root participate? It
+was the sole reason a re-ingested transcript's root failed to match itself
+(§6b). Under a whitelist the question dissolves — `lines` is simply not in the
+list, because it is a count of the file, not a property of the conversation.
+
+**Whitelist, never blacklist.** An exclusion list means a param added later
+silently joins the hash and every existing node stops matching itself. The
+symptom would be *"everything changed"* with no obvious cause, discovered long
+after the release that caused it. A whitelist fails the other way: a param that
+should count and was not listed is invisible to the hash, which is a wrong
+answer you can find by asking *"why did this not change?"* — a question someone
+actually asks.
+
+**Per node type, not one global list.** A `turn`'s identity lives in its `log`;
+a `document` root's does not have a `log` at all. One list covering both would
+be a list of everything, which is a blacklist wearing a hat.
+
+**Three fields are never in any list**, because they are about the record rather
+than the thing: `guid`, `created_at`, `tool_version`.
+
+**The lists themselves are the deliverable of the fold release**, and they
+belong in the grammar rather than in code comments — stated once, with a reason
+per entry, in the same document that already states the two existing hash
+functions side by side. That is one of the things the whitepaper exists to hold.
+
+**Rejected: hashing the raw pandoc AST node.** Tempting and wrong — it makes
+pandoc's grammar, not ours, decide when two blocks are the same, and a pandoc
+upgrade would silently re-identify the whole base.
+
+---
+
+## 9. SETTLED for now — a TA revision is a full tree, and the debate is booked
+
+**Option A**, deliberately the unsophisticated one: each revision re-mints the
+whole tree. Unchanged blocks get new guids and are recognised by content hash
+and position rather than by being shared.
+
+**Why this is acceptable today**, when the same waste was unacceptable for
+AoTA: the duplication was already cut where it actually hurts. A transcript
+re-ingested daily grows by ~700 nodes and re-minted 5,496 for nothing — that is
+the 88.7% §6 measured, and §6b removes it. A README saved twice does not have
+that shape or that frequency.
+
+**Why the other options are not chosen yet.** Sharing unchanged blocks across
+revisions gives them two `contains` parents and breaks `check`'s invariant 3.
+Relaxing that invariant is expensive — it is what makes `render` a tree walk
+rather than a graph walk. Splitting structure from content, git's tree/blob
+model, is almost certainly where this ends up, but it changes what a *document
+is*, and that deserves its own conversation rather than being decided as a
+corollary here.
+
+**Booked as its own discussion**, with the context above, so the conversation
+starts from the measurements rather than from scratch.
+
+---
+
+## 10. PARKED — the file's life outside the base
+
+Tracked-versus-internal is a real second dimension, orthogonal to `mutability`,
+and the interesting cell is the daily one: compost does not *hold* a transcript,
+it **tracks an external file that grows**. That is a different relationship from
+ownership and may deserve to be recorded on the root.
+
+**Explicitly out of scope for v0.3.0**, by decision rather than by drift. It
+does not block anything below.
 
 ---
 
@@ -341,20 +419,27 @@ because the flag will encode whichever answer we pick.
 
 ---
 
-## 12. Proposed packaging
+## 12. Packaging
 
-Order chosen so each version is provable alone and nothing waits on a fork that
-is still open.
+Each version is provable alone, and nothing waits on a decision still open.
 
-| version | content | waits on |
-|---|---|---|
-| **v0.2.10** | the index page — sections, display names, filtering | nothing |
-| **v0.2.11** | the fold: `subtree_hash`, the closed volatile-key list, `compost diff` | §8 |
-| **v0.2.12** | AoTA — declared kind, delta ingestion, the head check | §8, §2 |
-| **v0.2.13** | the ledger envelope — retraction, provenance, replay as a filter | §7 |
-| **v0.2.14** | TA — revisions and block sharing | §9 |
-| **v0.3.0** | the first semantic layer, over all of it | — |
+| version | content |
+|---|---|
+| **v0.2.10** | the index page — **shipped 2026-09-01** |
+| **v0.2.11** | **the whitepaper** — `docs/` revamped into one structured document: the invariants, the shape, the grammar |
+| **v0.2.12** | the fold — `content_hash` on every node type, `subtree_hash`, and the per-type whitelists written into the grammar |
+| **v0.2.13** | **AoTA** — `mutability` declared and checked, positional alignment, delta ingest |
+| **v0.2.14** | the ledger — retraction, provenance, replay as a filter |
+| **v0.2.15** | **TA** — `revision_of` on roots, full-tree revisions |
+| **v0.3.0** | the first semantic layer, over all of it |
 
-**v0.2.11 is the keystone.** The fold is what AoTA, ImTA sealing, TA diffing and
-the citation-carrying layer all read. It is also the only one of these that can
-be built and proved with no other decision made.
+**The whitepaper goes first**, and not only because it was asked for. v0.2.12's
+deliverable is *a set of per-type whitelists with a reason for each entry* —
+which is a grammar document, and the grammar has nowhere coherent to live until
+the revamp gives it one. Doing it the other way round means writing the lists
+into a `docs/` that is being restructured underneath them.
+
+**v0.2.13 no longer waits on v0.2.12.** §6b showed AoTA alignment is a
+positional walk over content hashes, which already exist. The fold makes the
+check cheaper and gives ImTA its seal; it is not a prerequisite. If the fold
+slips, AoTA still ships.

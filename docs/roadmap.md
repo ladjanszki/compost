@@ -18,6 +18,7 @@ disagree, the changelog is right and this file is stale.
 | **v0.2.8** | a query layer over the records |
 | **v0.2.9** | the view a person can actually read — the v0.1 affordances, restored |
 | **v0.2.10** | the index page, and a name you chose |
+| **v0.2.11** | the whitepaper — `docs/` revamped into one structured document |
 
 ---
 
@@ -2129,6 +2130,130 @@ purpose first, per `tests/test_sabotage.py`.
 - **Sorting documents by import time groups the v0.1 migration into one block**,
   since 23 of them were ingested on the same day. The page will look bulk-loaded
   because it was.
+
+---
+
+## v0.2.11 — the whitepaper, and a `docs/` that means one thing
+
+### Why this is a release, and why it is first
+
+**`CLAUDE.md` contradicts itself about `docs/`.** Its authoritative table says
+*"`docs/` — what is true now"*, and four lines later calls `spec.md`
+*"historical, superseded by `decisions.md`"*. Both cannot hold. Twelve files sit
+there and they are four different kinds of thing:
+
+| kind | files |
+|---|---|
+| what is true now | `decisions.md`, `record-format.md`, `record-grammar.md`, `man-compost.md`, `queries.md` |
+| superseded drafts, kept for intent | `spec.md`, `design-answers.md`, `spec-review.md` |
+| describes material not in this repo | `migration.md` |
+| live working design | `roadmap.md`, `design-0.3.0.md`, `design-0.2.10.md` |
+
+One rule covering four categories describes none of them, and a reader who takes
+the table literally believes `spec.md` is current.
+
+**It goes before the fold**, and not only because it was asked for first.
+v0.2.12's deliverable is *a set of per-type param whitelists with a reason for
+each entry* — that is a grammar document, and the grammar has nowhere coherent
+to live until this lands. Writing those lists into a `docs/` being restructured
+underneath them is how a definition ends up in two places disagreeing.
+
+This supersedes `TODO-docs-revamp.md`, which said *after v0.3.0*. It moved
+because it stopped being a tidy-up and became a dependency.
+
+### What a whitepaper means here
+
+**Not a scientific paper.** The model is the article a project publishes to
+explain itself: what the thing is, what it assumes, why it is shaped this way.
+It is read start to finish by someone who has never seen the tool, and it is
+consulted afterwards by someone who has.
+
+**One document, `docs/compost.md`**, with the reference material it needs beside
+it. Not twelve peers with ad-hoc names.
+
+### What it has to contain
+
+**The invariants, counted and named.** This is the thing most asked for and it
+does not exist anywhere. Rules are quoted at each other across `CLAUDE.md`,
+`decisions.md` and `roadmap.md`, and **nobody can say how many there are.**
+Three questions asked directly and still unanswered: *how many are there, where
+do I consult them, and is "invariant" even the right word?*
+
+Answer the last one in the document: **they are not invariants.** `check`'s ten
+assertions are invariants — machine-checked properties of a graph. What is meant
+here is a **principle**: *digest everything, filter at query time*, *never scan
+raw text for citations*, *the route is never inferred*. Python calls its own
+list *aphorisms* (`import this`). The distinction is worth writing down because
+one is enforced by a program and the other by attention, and conflating them
+makes the second sound stronger than it is.
+
+So: **principles** in the whitepaper, with the incident that produced each one;
+**invariants** in the grammar, with the assertion that enforces each one.
+
+**The shape**, with a diagram: digestors → the records → renderers. The waist.
+
+**Digestors** — how a route works, the list of them, that they call each other
+(a transcript pulls in the subagent transcripts it names), and that this is
+recursive and would queue if it ever became async.
+
+**Renderers** — that they also depend on each other, with the real example: the
+HTML view will embed graphviz output, which is why `graphviz/` is a peer of
+`views/` and not inside it.
+
+**The symmetry**, which is the project's actual thesis: *agents and humans read
+the same text*. HTML for people, markdown for agents, both in a browser, both
+carrying handles. Say it once, properly, in the place someone would look.
+
+**The grammar** — node types, edge types, layers, the closed vocabularies, and
+the hash definitions. `record-grammar.md` largely is this already and is
+verified against the code by `tests/test_grammar.py`. It keeps that property.
+
+**Decisions, each tied to the principle behind it.** `decisions.md` loses
+nothing — this was asked for explicitly. Where it moves, it moves whole.
+
+### The rules this release works under
+
+- **Nothing is deleted for being old.** Superseded drafts move out of `docs/` to
+  the private notes, or into a clearly marked appendix. `CHANGELOG.md` stays
+  append-only in spirit and is not touched.
+- **No history rewriting.** Measured while `design-answers.md` was briefly
+  moved: it entered in one commit, `e9f189c`, and erasing it retroactively would
+  rewrite **115 commits** and require recreating **ten tags** that
+  `clean-room.sh` checks against every `CHANGELOG` heading. On a public remote a
+  force-push does not reliably erase anything anyway. **History rewriting is for
+  material that should never have been committed** — the standard the v0.1
+  corpus met and a design draft does not. `git rm` plus a commit is the honest
+  operation.
+- **Every existing cross-reference keeps working or is updated in the same
+  commit.** `docs/` is cited from `CLAUDE.md`, `DEVELOPMENT.md`, `TODO.md`,
+  source docstrings and the suites. A move that leaves a dangling reference is
+  the failure this release is meant to remove, not create.
+- **`tests/test_grammar.py` and `tests/test_manpage.py` keep passing throughout.**
+  They assert documents against the program, which makes them the only automatic
+  check that a restructure did not quietly drop a definition.
+
+### What has to be decided while doing it, not before
+
+- Whether `roadmap.md` and the `design-*.md` files belong in `docs/` at all, or
+  in a `planning/` peer. They are the category that most clearly is not *"what
+  is true now"*.
+- Whether `migration.md` stays, given it describes files deliberately absent.
+- Whether the whitepaper supersedes `README.md` or feeds it.
+
+These are judgement calls about audience, and they are the operator's.
+
+### Tests
+
+The suites already covering `docs/` are the gate: `test_grammar` (the grammar
+document against the code), `test_manpage` (the man page against the program),
+and `clean-room.sh`'s *the docs describe only what shipped* block. Add:
+
+1. **Every relative link between files under `docs/` resolves.** A restructure
+   breaks links silently; nothing checks this today.
+2. **Every path named in `CLAUDE.md`'s authoritative table exists.** The
+   contradiction that started this release would have been caught by it.
+3. **The principles list is non-empty and each entry has a reason.** Structural,
+   not a word count — the failure to prevent is a list of slogans.
 
 ---
 
