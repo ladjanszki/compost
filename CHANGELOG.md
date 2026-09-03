@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.12-rc — the grammar, untangled
+## v0.2.12 — 2026-09-03 — the grammar, untangled
 
 A **markdown document** was the source of truth for what a valid record is, and
 the suite that checked it **scraped prose with regexes** — splitting on the
