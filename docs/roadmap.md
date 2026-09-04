@@ -2417,6 +2417,240 @@ status as the machine-read source. A header says so, and points at the schema.
 
 ---
 
+## v0.2.13 — the fold
+
+**This is not the release it was specced as.** The plan was: the human annotates
+59 params, marking which count as content, and those annotations become per-type
+whitelists. That input is no longer needed and the table is not the deliverable.
+
+Three days of measurement replaced it with a mechanical rule. The reasoning is
+in `docs/design-total-mapping.md`; the short form is that a per-type whitelist
+costs one discretionary decision per param per type per importer, and the next
+three importers on the list — cstlib, graphviz, the filesystem — would each
+bring dozens of types. A design whose cost grows with every graph the tool
+learns to hold is not a design.
+
+### The hash is mechanical
+
+**`record_hash`** = SHA-256 over canonical JSON of `[type, params, content]` —
+the record minus `guid`, `created_at`, `tool_version`, and minus its children.
+
+**`record_subtree_hash`** = SHA-256 over `[record_hash, [children's
+record_subtree_hash in next order]]`. A leaf's fold is `H([record_hash, []])`.
+
+Both are **top-level record fields**, beside `guid`. A hash stored in `params`
+would be inside its own input.
+
+**The fold ships, and the case for it is stronger than §6c made.** On documents,
+params-free containers are degenerate without it: all **417 `BulletList`s** in
+the corpus share one `record_hash`, all **159 `BlockQuote`s**, all **1,040
+`Cell`s**. The fold cuts those to 144, 60 and 988. More than a convenience —
+`record_hash` alone does not determine a container's source object, because a
+container's whole substance is its children. The fold does. That is what makes
+the no-false-positives property in `TODO-equality-layers.md` §2 true.
+
+**Scope of the fold: `contains` and `next` only.** Those are written by the
+importer in one run, so a node's fold cannot be changed by a later `layer`.
+
+### What it answers, and what it does not
+
+`record_hash` answers *is this the same record*. It does **not** answer *is this
+the same value* — that is a projection, it differs per question, and it belongs
+in a layer where being wrong is a rebuild rather than a migration.
+`TODO-equality-layers.md` is the catalogue for that work; nothing in it is
+scheduled here.
+
+### Three rules replace the whitelist
+
+1. **Total mapping.** Nothing an incoming object held may be dropped. Without
+   it, "hash the record" and "hash the source" are different numbers and the
+   difference is invisible. Three violations found: `thinking.signature` (492
+   occurrences), `toolcall.caller` (902), and structure inside a list-shaped
+   `tool_result.content` (2).
+2. **A derived param is a function of the node, never of its subtree.** `empty`
+   on `thinking` is `f(text)`: fine. `lines` on `session` is `f(children)`: it
+   moves whenever the tree grows. Measured on `session-04.jsonl` truncated to
+   70% and re-read — with `lines`, the identical prefix is **0 of 2,306** nodes;
+   without it, **2,306 of 2,306, 100.00%**.
+3. **The mapping is the whitelist.** To change what counts, change the code.
+
+Consequence, accepted deliberately: the base becomes **more** selective. 491
+empty `thinking` nodes become 491 distinct records rather than 1. Every such
+error is a false negative, and false negatives are recoverable from data on
+disk; a false merge is not recoverable at all.
+
+### What has to be built
+
+**1. `src/records.py` — `record_hash(rec)` and `stamp_hashes(records)`.**
+`record_hash` is pure and takes one record. `stamp_hashes` walks the containment
+tree from each root, computes both fields in one post-order pass, and returns
+the records. Called at the end of `ast_to_records` and `SessionImporter.run`,
+and by `src/layers.py` for the nodes a layer mints.
+
+**2. `src/session.py` — the three mapping fixes.** `signature` stored on
+`thinking`; `caller` stored on `toolcall`; `_result_text` no longer flattens a
+list-shaped `content` to joined text — the list is stored whole.
+
+**3. `src/session.py` — `lines` deleted from the `session` root's params.** It
+is `len(children)`, recomputable in one call, and it is the sole reason a
+re-ingested transcript's root failed to match itself.
+
+**4. Mapping totality, tested — structural mappings only.** For every object a
+digestor reads, every key must be a param, the node type, or descended into as
+children. The test reads the fixtures, collects the union of keys per object
+type, and fails naming any key that lands nowhere.
+
+**Parsed content is explicitly out of scope here** and is v0.2.14's whole
+subject. That costs nothing: **all three known violations are structural** —
+`signature`, `caller` and the list-shaped `tool_result.content` are every one of
+them a straight key-drop — so this test catches all three without the
+delegation machinery existing yet, and nothing built here is thrown away.
+
+**5. `src/store.py` — `check()` gains an eleventh assertion:** every node's two
+hashes recompute from the record. This is the first invariant that verifies
+content rather than structure, and it is what makes the trust model in
+`CLAUDE.md` less unearned. Every document that counts the assertions as ten
+must be updated — `CLAUDE.md`, `docs/compost.md`, `docs/man-compost.md`.
+
+**6. `tools/record-schema-1.json`** — the two top-level fields, the new params
+(`signature`, `caller`), and `lines` removed. The whitepaper appendix
+regenerates from it.
+
+**7. `docs/design-0.3.0.md` §6c rewritten.** Its three-question table is wrong
+as written: `content_hash` is renamed and answers a different question, and the
+third question moves out of the record into a layer. §8 — the per-type
+whitelist — is deleted, not amended; `docs/design-total-mapping.md` replaces it.
+
+### Guarantees
+
+1. **Every node carries both hashes, and `check` recomputes them.** Sabotage:
+   edit one hash by hand in a `graph/*.jsonl` file; `check` must fail naming the
+   node.
+2. **`record_hash` is a pure function of `[type, params, content]`.** Reordering
+   params, reordering records within a file, or splitting them across files
+   changes nothing — load-order independence extended to hashes.
+3. **A leaf's fold is `H([record_hash, []])`**, and the fold reads only
+   `contains` and `next`. Sabotage: add a `cites` edge and the fold must not
+   move.
+4. **Mapping totality holds on every fixture.** Sabotage: delete `signature`
+   from the `thinking` mapping and the suite goes red. It currently stays green,
+   which is the whole point.
+5. **The alignment precondition holds.** For every corpus session: digest it
+   truncated to 70% and whole, walk both in document order, and the old must be
+   a clean prefix of the new — **100.00%, not approximately.** This is v0.2.14's
+   foundation, measured a release early so that release is not specced on a
+   number taken under a different hash definition.
+6. **Both round-trips unchanged.** `records_to_ast(ast_to_records(ast)) == ast`
+   at 526/526, and `records_to_session(session_to_records(lines)) == lines`.
+7. **Every record validates against the schema**, including the new fields, and
+   no node carries a param the schema does not name.
+8. **The whitepaper appendix matches what the generator produces**, and the
+   build is idempotent.
+
+---
+
+## v0.2.14 — the recursion made explicit
+
+**The digestion is recursive and the code pretends it is not.** `src/session.py`
+does not call the text digestor; it reimplements it. Two `READER` constants
+holding one string, two functions turning markdown into blocks, and a reach into
+`R._block`, a private function, to do what `ast_to_records` does publicly.
+`docs/decisions.md` records that every flag in those invocations is load-bearing
+and measured — so the second copy is a silent divergence waiting for the first
+edit to the notes reader.
+
+**A digestor that meets content it does not own delegates to the digestor that
+does, and the delegated input is stored as a blob** exactly like any other
+digestor input. That is the whole release. `docs/design-total-mapping.md` §4 has
+the reasoning; the rule it produces is one sentence with no exceptions:
+
+> Every digestor's input is stored as a blob. Every key of that input is a
+> param, the node type, a child, or delegated to a named digestor — whose input
+> is itself a blob.
+
+**Cost, measured:** 549 delegated inputs across the seven corpus sessions,
+**376 KB against 10.8 MB of transcript — 3.5%.** Median input 158 bytes.
+
+### This does move the tree, and that is a revision of earlier advice
+
+The plan had been to group tree-shape changes and land them once, with the
+section container. That is wrong here. A `derived_from` edge needs a node to
+start from, and today a `text` block produces **no node at all** —
+`session.py:206` splices the parsed prose straight into the turn, so a turn with
+two text blocks has no way to say which blocks came from which input.
+Delegation without a node for the delegated document is not addressable.
+
+So the level lands here, and the section container stays independent. Blocking a
+required change on an undecided optional one is the wrong dependency —
+`TODO-section-container.md` still says the human can be talked out of sections.
+
+### What has to be built
+
+**1. `src/markdown.py` — one digestor, and the only place `READER` exists.**
+`text_to_records(text, mint, route)` returns `(records, root)`. Both
+`routes.py:_ast_of_text` and `session.py:_md_blocks` are deleted, not wrapped.
+
+**2. `src/session.py` — `_prose` becomes a delegation.** Store the input through
+`Store`, call `text_to_records`, attach the produced root as a child of the
+turn, and mint `derived_from` from that root to the blob. The produced root
+reuses the existing `document` type: a delegated markdown fragment is a document
+in exactly the sense that type already means, and `records_to_ast` handles it
+unchanged.
+
+**3. `src/store.py`** — storing a fragment that has no filename. Decide what
+`original_name` says; see `docs/design-total-mapping.md` §9.2.
+
+**4. `src/views.py` and `src/draw.py`** — descend the extra level. Every view
+that walks `turn → blocks` now walks `turn → document → blocks`. Citations are
+unaffected: they point at the block guids, which do not move.
+
+**5. Totality extended.** Delegation becomes a fourth valid destination for a
+key, and the v0.2.13 test grows to check it: the delegated value must equal the
+stored blob's bytes.
+
+**6. Schema and docs.** The `(session, derived_from)` edge pair; the storage
+paragraph in `CLAUDE.md` and `docs/compost.md` restated as *every digestor
+input* rather than *the files the human imported*.
+
+### Guarantees
+
+1. **`READER` is defined exactly once in `src/`.** Asserted, not assumed —
+   sabotage by adding a second definition and the suite goes red. This is the
+   v0.2.12 pattern: the coupling is gone and the test says so.
+2. **Every delegated input is in `storage/`**, and the node it produced reaches
+   it by exactly one `derived_from` edge.
+3. **The stored bytes equal the input exactly.** `blob` bytes for a delegated
+   fragment are byte-identical to the `text` value in the source line. Sabotage:
+   strip trailing whitespace on the way in.
+4. **Totality holds including delegation.** Sabotage: delegate without storing,
+   and the test must name the key.
+5. **Both round-trips unchanged** — 526/526 and
+   `records_to_session(session_to_records(lines)) == lines`.
+6. **v0.2.13's guarantee 5 still holds**: truncate every corpus session to 70%,
+   digest both, and the old walk is a clean prefix of the new at **100.00%**.
+   This release changes tree shape, so this is the measurement most likely to
+   move and it must be re-run rather than assumed.
+7. **`check` reports 0 problems** on a base built from every fixture, and every
+   record validates against the schema.
+
+---
+
+## v0.2.15 → v0.3.0 — skeleton only
+
+Specced one at a time, each immediately before its agent runs, with the previous
+release's measurements in hand. This is deliberate: v0.2.13 alone moved from
+*"blocked on a 59-param annotation pass"* to a mechanical rule, nearly cut the
+fold and then reinstated it, surfaced a four-version-old data loss, and split
+into two releases — none of which was predictable from the design document that
+preceded it.
+
+| version | must achieve | re-measure first | must not foreclose |
+|---|---|---|---|
+| **v0.2.15** AoTA | `mutability` declared and checked, positional alignment, delta ingest | v0.2.13 guarantee 5, after the tree moved | non-append-only sources; async alignment |
+| **v0.2.16** the ledger | retraction, provenance, replay as a filter | how many records a real base would retract | mutation records — §7 keeps them open |
+| **v0.2.17** TA | `revision_of` on roots, full-tree revisions | the fold's cost on document trees | the section container — `TODO-section-container.md` decides by here |
+| **v0.3.0** | the first semantic layer | the largest equivalence class a plausible layer produces | — |
+
 ## Risks accepted without mitigation
 
 Every item here was found, considered, and **deliberately not fixed**. Each is a
