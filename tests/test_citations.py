@@ -90,7 +90,7 @@ def main():
                      "type": "CodeBlock",
                      "params": {"attr": ["", [], []],
                                 "text": f"you cite it as [-](#{target['guid']})"},
-                     "content_hash": "0" * 64})
+                     "record_hash": "0" * 64, "record_subtree_hash": "0" * 64})
         edges, unresolved = R.citation_edges(recs)
         return not edges and not unresolved, \
             "a handle quoted inside a code block produces nothing"

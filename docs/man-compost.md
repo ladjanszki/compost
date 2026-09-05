@@ -208,8 +208,8 @@ Re-digesting a file mints fresh guids and stores the bytes again, so the same
 content can sit in storage more than once. That is **reported and not
 resolved** — `note: these bytes are already in N blobs` — because deciding two
 copies are one thing is a later layer's call. Two imports of one document
-likewise produce two sets of nodes with matching `content_hash` values; the
-identity question is still open.
+likewise produce two sets of nodes with matching `record_hash`/
+`record_subtree_hash` values; the identity question is still open.
 
 ### ls
 
@@ -237,10 +237,14 @@ What it enforces:
   subagent inside its call and would otherwise loop
 - no guid carries two different records
 - no two nodes share a handle
-- `content_hash` is present exactly when a node has content of its own
+- every node carries `record_hash` and `record_subtree_hash` — unconditionally,
+  not only a node with content of its own
 - `schema_version`, when present on a record, is not greater than what this
   tool writes — the check exists to fire the day a newer tool's records are
   loaded by an older one
+- both hashes **recompute**: `record_hash` from `[type, params, content]`,
+  `record_subtree_hash` from the fold over `contains`/`next` — the first
+  assertion here that verifies content rather than structure
 
 ### layer NAME [--by SCHEME]
 
@@ -543,8 +547,10 @@ migration's dictionary script. An `alias` names a value
 (`params["value"]`, `params["scheme"]`) that leads to another node by a
 `names` edge; today that node is always an `unresolved_citation`, a
 placeholder for a citation target not yet in the base. Both carry
-`created_at` and `tool_version` as top-level fields, the same as an edge, and
-neither carries a `content_hash`.
+`created_at` and `tool_version` as top-level fields, the same as an edge —
+and both carry `record_hash`/`record_subtree_hash` like every other node,
+since v0.2.13 made the two unconditional (`layers.py:_entity()` folds them
+in, the same as `digest`'s own mints).
 
 ## EDGE LAYERS
 

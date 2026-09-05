@@ -14,9 +14,10 @@ Three tables, in the order the roadmap names them
 
 1. **Node types**, with each type's params split required / optional.
 2. **Edge `(layer, type)` pairs.**
-3. **A params-by-type review table** — every distinct param name across every
-   node type, with a blank column for a human to mark whether it is content.
-   This is the input v0.2.13 reads; nothing here fills the column in.
+3. **A params-by-type table** — every distinct param name across every node
+   type. Its third column was to be marked up by hand, deciding which params
+   counted as content; v0.2.13 removed that question rather than answering it
+   (`docs/compost.md`, *the mapping is the whitelist*), so nothing reads it.
 
 Nothing in this file reads `docs/record-grammar.md` or any other prose. The
 only input is the schema.
@@ -61,15 +62,15 @@ def edge_pairs_table(schema: dict) -> str:
 
 
 def params_review_table(schema: dict) -> str:
-    """One row per distinct param name, the node types it appears on, and an
-    empty column for a human to mark whether the param is content — the
-    review v0.2.13 is scheduled to read."""
+    """One row per distinct param name, the node types it appears on, and a
+    column nothing fills in — kept because the table is generated. See
+    `render()` for why the review it was built for never happened."""
     node_types = schema["$defs"]["node_types"]
     by_param: dict[str, set] = {}
     for name, spec in node_types.items():
         for p in spec["params"]["properties"]:
             by_param.setdefault(p, set()).add(name)
-    lines = ["| param | appears on | content? |", "|---|---|---|"]
+    lines = ["| param | appears on | content? (unused) |", "|---|---|---|"]
     for p in sorted(by_param):
         types_cell = ", ".join(f"`{t}`" for t in sorted(by_param[p]))
         lines.append(f"| `{p}` | {types_cell} |  |")
@@ -89,9 +90,13 @@ def render(schema: dict) -> str:
         node_types_table(schema),
         f"**{len(edge_pairs)} `(layer, type)` edge pairs.**",
         edge_pairs_table(schema),
-        f"**{n_params} distinct params, for review.** Which node types each "
-        "appears on, and a blank column for a human to mark whether the param "
-        "is content — the input `v0.2.13` reads.",
+        f"**{n_params} distinct params.** Which node types each appears on. "
+        "The third column is a leftover: it was to be filled in by hand, one "
+        "row at a time, deciding which params counted as content. `v0.2.13` "
+        "removed that question rather than answering it — the mapping is the "
+        "whitelist — so nothing reads this column. It is still rendered "
+        "because the table is generated and an empty column is cheaper than "
+        "a special case.",
         params_table,
     ])
 

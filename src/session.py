@@ -90,10 +90,20 @@ def _text_of(content) -> str:
     return ""
 
 
-def _result_text(block) -> str:
+def _result_text(block):
+    """`tool_result.content`, mapped without dropping anything.
+
+    A string body is prose-shaped and is kept as a string. A list-shaped body
+    is **stored whole** — total mapping (docs/design-total-mapping.md): the
+    old code joined only the `text` key of each dict element, so an element
+    with no `text` key (a `tool_reference`, say) vanished without a trace.
+    Measured at 2 occurrences in the whole corpus, and both are now exact:
+    the list comes back byte-for-byte on the round trip, same as everything
+    else `params` carries verbatim.
+    """
     body = block.get("content")
     if isinstance(body, list):
-        return "\n".join(x.get("text", "") for x in body if isinstance(x, dict))
+        return body
     return "" if body is None else str(body)
 
 
@@ -115,11 +125,19 @@ class SessionImporter:
         return [R._block(self.b, blk) for blk in _md_blocks(text)]
 
     def _tool_use(self, block: dict) -> str:
-        guid = self.b.node("toolcall", {
+        params = {
             "name": block.get("name"),
             "tool_use_id": block.get("id"),
             "input": block.get("input", {}),
-        })
+        }
+        # Total mapping: `caller` is dropped by nothing else that reads this
+        # block, so if the source has it, the node must too. Conditional on
+        # presence — 902 of 903 `tool_use` blocks in the corpus carry it, one
+        # does not, and inventing a value for the one that lacks it would be
+        # asserting a fact the transcript never stated.
+        if "caller" in block:
+            params["caller"] = block["caller"]
+        guid = self.b.node("toolcall", params)
         self.calls[block.get("id")] = guid
         inp = block.get("input") or {}
         if isinstance(inp, dict):
@@ -149,8 +167,14 @@ class SessionImporter:
             "source": path.name,
             "session_id": meta.get("sessionId"),
             "version": meta.get("version"),
-            "lines": len(lines),
         }
+        # `lines` used to live here and is gone: `len(children)`, recomputable
+        # in one call, and a derived param that is a function of the node's
+        # *subtree* rather than the node itself. It was the sole reason a
+        # re-ingested transcript's root failed to match itself — measured on
+        # session-04.jsonl truncated to 70% and re-read, the identical prefix
+        # was 0 of 2,306 nodes with `lines`, 100.00% without. See
+        # docs/design-total-mapping.md §6.
         # A sidechain's `.meta.json` sidecar, stored verbatim on the root. It
         # carries `toolUseId`, which names the `Agent` call in the *parent*
         # that launched this agent, plus `spawnDepth`, `agentType`, `model` and
@@ -209,10 +233,17 @@ class SessionImporter:
                 elif t == "thinking":
                     # Kept as a node even though these logs carry no text: the
                     # fact that reasoning happened, and where in the turn, is
-                    # the part the transcript actually records.
+                    # the part the transcript actually records. `signature` is
+                    # stored too, total mapping: it was dropped until now, and
+                    # dropping it is what made every empty `thinking` node
+                    # hash identically (docs/design-total-mapping.md). `empty`
+                    # stays a derived param — it is `f(text)`, never a
+                    # function of the node's subtree, so it cannot move the
+                    # fold the way `lines` on `session` did.
                     children.append(self.b.node("thinking", {
                         "text": blk.get("thinking", ""),
                         "empty": not blk.get("thinking"),
+                        "signature": blk.get("signature"),
                     }))
                 elif t == "tool_use":
                     children.append(self._tool_use(blk))
@@ -263,6 +294,7 @@ class SessionImporter:
             if parent:
                 self.b.edge("replies_to", turn, parent, SOURCE_LAYER)
 
+        R.stamp_hashes(self.b.records)
         return self.b.records, session
 
 

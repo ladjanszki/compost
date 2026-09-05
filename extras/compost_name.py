@@ -121,6 +121,10 @@ def main(argv=None) -> int:
     b = R.Builder()
     dn = b.node(NODE_TYPE, {"value": name})
     b.edge("names", dn, guid, LAYER)
+    # `display_name` is UNCONTAINED, so this is a one-node leaf tree — same
+    # reasoning as `layers.py`'s `_entity()` mints. `check()` now requires
+    # both hashes on every node, `compost-name` included.
+    R.stamp_hashes(b.records)
     dest = st.write(f"{uuid.uuid4()}.jsonl", b.records)
     print(f"  wrote {dest.relative_to(st.root)}: {guid} named {name!r}")
 

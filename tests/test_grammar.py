@@ -158,6 +158,7 @@ def build() -> list:
         b = R.Builder()
         dn = b.node("display_name", {"value": "A hand-written display name"})
         b.edge("names", dn, answered_root["guid"], "display")
+        R.stamp_hashes(b.records)
         st.write("display-name.jsonl", b.records)
 
         # The v0.1 handle dictionary's alias shape, which no other fixture
@@ -174,6 +175,7 @@ def build() -> list:
         for r in b2.records:
             r["created_at"], r["tool_version"] = R._now(), "0.2.12"
         b2.edge("names", al, answered_root["guid"], "citation")
+        R.stamp_hashes(b2.records)
         st.write("v01-alias.jsonl", b2.records)
 
         recs, _ = st.load()

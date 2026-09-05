@@ -65,7 +65,7 @@ def strip_wrap(recs):
 def bogus_hash(recs):
     for r in recs:
         if r["record"] == "node" and r["type"] == "BulletList":
-            r["content_hash"] = "0" * 64
+            r["record_hash"] = "0" * 64
             return
 
 
@@ -75,7 +75,7 @@ CASES = [
     ("a next edge crossing parents", cross_parent),
     ("a cycle in the next chain", cycle),
     ("a ListItem with wrap removed", strip_wrap),
-    ("content_hash on a node with no content", bogus_hash),
+    ("record_hash tampered by hand", bogus_hash),
 ]
 
 

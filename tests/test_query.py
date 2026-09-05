@@ -11,7 +11,7 @@ asks both sides what is wrong, and requires the same guids back — not just
 the same problem *count*, which two implementations could agree on by
 accident.
 
-**Scoped deliberately, and said here rather than left implicit.** Three of
+**Scoped deliberately, and said here rather than left implicit.** Four of
 `check()`'s branches are NOT mirrored:
 
 - the "handle shared by two nodes" check is dead code today — `HANDLE_LEN`
@@ -19,9 +19,10 @@ accident.
   keys can never collide after slicing to their own full length. Mirroring a
   branch that cannot fire would test nothing; see `docs/queries.md`.
 - `Graph.children`'s ordering check (one head, no cycle, full coverage of a
-  multi-child parent's `next` chain) and the two containment-cycle checks
-  are graph-path problems, not aggregate ones. A correct general mirror
-  needs a recursive CTE walking each multi-child parent's chain, which is a
+  multi-child parent's `next` chain), the two containment-cycle checks, and
+  the eleventh assertion (both hashes recompute, added in v0.2.13) are all
+  graph-path problems, not aggregate ones. A correct general mirror needs a
+  recursive CTE walking each multi-child parent's chain, which is a
   different scale of engineering than every other branch here — untested,
   it would be worse than an honest gap. Left for later, and `docs/queries.md`
   says so.
@@ -113,15 +114,17 @@ def sabotage_launched_multiple(recs):
     return [session, n1, n2, e1, e2]
 
 
-def sabotage_hash_present_wrongly(recs):
-    doc = next(r for r in recs if r["record"] == "node" and r["type"] == "document")
-    return [dict(doc, guid=str(uuid.uuid4()), content_hash="0" * 64)]
-
-
-def sabotage_hash_missing(recs):
+def sabotage_record_hash_missing(recs):
     para = next(r for r in recs if r["record"] == "node" and r["type"] == "Para")
     twisted = dict(para, guid=str(uuid.uuid4()))
-    del twisted["content_hash"]
+    del twisted["record_hash"]
+    return [twisted]
+
+
+def sabotage_subtree_hash_missing(recs):
+    para = next(r for r in recs if r["record"] == "node" and r["type"] == "Para")
+    twisted = dict(para, guid=str(uuid.uuid4()))
+    del twisted["record_subtree_hash"]
     return [twisted]
 
 
@@ -171,12 +174,12 @@ CASES = [
     ("a session launched by two tool calls",
      sabotage_launched_multiple, "check_launched_multiple.sql",
      r"session (\S+) is launched by \d+ tool calls", (0,)),
-    ("content_hash present when it should be absent",
-     sabotage_hash_present_wrongly, "check_content_hash.sql",
-     r"^\S+ (\S+): content_hash should be absent", (0,)),
-    ("content_hash absent when it should be present",
-     sabotage_hash_missing, "check_content_hash.sql",
-     r"^\S+ (\S+): content_hash should be present", (0,)),
+    ("record_hash missing from a node",
+     sabotage_record_hash_missing, "check_record_hash.sql",
+     r"^\S+ (\S+): missing record_hash or record_subtree_hash", (0,)),
+    ("record_subtree_hash missing from a node",
+     sabotage_subtree_hash_missing, "check_record_hash.sql",
+     r"^\S+ (\S+): missing record_hash or record_subtree_hash", (0,)),
     ("a schema_version this tool did not write",
      sabotage_schema_version, "check_schema_version.sql",
      r"^(\S+) is schema \d+", (0,)),

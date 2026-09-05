@@ -114,6 +114,11 @@ def build(records: list, cited_only: bool = True) -> tuple[list, list, dict]:
         n["created_at"], n["tool_version"] = R._now(), __version__
         b.edge("names", al, guid, R.CITATION_LAYER, by=SCHEME)
 
+    # `alias` is UNCONTAINED — a leaf tree, same fold `layers.py`'s
+    # `_entity()` mints get. `check()` now requires both hashes on every
+    # node this script writes, same as any other writer.
+    R.stamp_hashes(b.records)
+
     counts = {"assigned": len({h for h, _ in found}), "minted": len(seen)}
     if wanted is not None:
         counts["cited"] = len(wanted)

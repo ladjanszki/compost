@@ -70,13 +70,76 @@ def _now() -> str:
 # it *claims* — type, layer, by, source, destination — and never when or by what
 # it was written, or the same fact rebuilt tomorrow would not match the one
 # written today, which is the entire use of the hash.
-EDGE_HASH_SKIP = {"record", "guid", "schema_version", "content_hash",
+EDGE_HASH_SKIP = {"record", "guid", "schema_version", "record_hash",
                   "created_at", "tool_version"}
 
 
 def edge_hash(e: dict) -> str:
     return hashlib.sha256(canonical(
         {k: v for k, v in e.items() if k not in EDGE_HASH_SKIP})).hexdigest()
+
+
+# --------------------------------------------------------------------------
+# The fold: record_hash and record_subtree_hash
+# --------------------------------------------------------------------------
+#
+# Both are top-level record fields, beside `guid`, `created_at` and
+# `tool_version` — never inside `params`, which would put a hash inside its
+# own input. docs/roadmap.md, "v0.2.13 — the fold".
+
+def record_hash(rec: dict) -> str:
+    """A node's own hash: SHA-256 over canonical `[type, params, content]`.
+
+    Pure and total — every node gets one, whether or not it carries content,
+    because "no content" and "content is None" are the same fact either way.
+    This is the record minus `guid`, `created_at`, `tool_version`, and minus
+    its children: two nodes with the same type/params/content hash the same
+    regardless of where either sits, which is exactly what makes the fold
+    below able to tell "same subtree" from "same node" apart.
+    """
+    return hashlib.sha256(canonical(
+        [rec["type"], rec.get("params") or {}, rec.get("content")])
+        ).hexdigest()
+
+
+def stamp_hashes(records: list) -> list:
+    """Stamp `record_hash` and `record_subtree_hash` on every node, in place.
+
+    One post-order pass over the containment tree built from `contains` and
+    `next` **only** — no other edge type may move a fold, so a `cites` edge
+    minted later cannot change a node that was already folded. A leaf's fold
+    is `H([record_hash, []])`; a leaf is any node with no `contains` children,
+    which includes every `UNCONTAINED` type (`file`, `blob`, `alias`,
+    `unresolved_citation`, `display_name`) as well as an ordinary childless
+    block.
+
+    Mutates the node dicts already in `records` (the same objects `Graph`
+    indexes them by), so the return value is `records` itself — a convenience
+    for chaining, not a copy.
+
+    Called at the end of `ast_to_records` and `SessionImporter.run`, once the
+    whole tree that batch will ever mint exists; and by `src/layers.py` for
+    the nodes a layer mints, which are always leaves.
+    """
+    g = Graph(records)
+    memo: dict[str, str] = {}
+
+    def fold(guid: str) -> str:
+        cached = memo.get(guid)
+        if cached is not None:
+            return cached
+        n = g.nodes[guid]
+        rh = record_hash(n)
+        n["record_hash"] = rh
+        kids = [fold(k) for k in g.children(guid)]
+        sh = hashlib.sha256(canonical([rh, kids])).hexdigest()
+        n["record_subtree_hash"] = sh
+        memo[guid] = sh
+        return sh
+
+    for guid in list(g.nodes):
+        fold(guid)
+    return records
 
 
 class Builder:
@@ -102,9 +165,12 @@ class Builder:
             n["params"] = params
         if content is not None:
             n["content"] = content
-        if content is not None or type_ in TEXT_IN_PARAMS:
-            n["content_hash"] = hashlib.sha256(
-                canonical([type_, params or {}, content])).hexdigest()
+        # `record_hash` and `record_subtree_hash` are NOT stamped here: the
+        # fold needs every node and every `contains`/`next` edge this batch
+        # will ever mint, which does not exist yet mid-walk. `stamp_hashes`
+        # does one post-order pass once the tree is whole — see the end of
+        # `ast_to_records` and `SessionImporter.run`, and `src/layers.py` for
+        # the nodes a layer mints.
         self.records.append(n)
         return n["guid"]
 
@@ -115,7 +181,7 @@ class Builder:
         e.update(props)                       # `by`, and anything a builder adds
         e["created_at"] = _now()
         e["tool_version"] = __version__
-        e["content_hash"] = edge_hash(e)
+        e["record_hash"] = edge_hash(e)
         self.records.append(e)
 
     def children(self, parent: str, kids: list[str], layer: str = LAYER):
@@ -278,6 +344,7 @@ def ast_to_records(doc: dict, mint=None, source: str | None = None,
         params["route"] = route
     root = b.node("document", params)
     b.children(root, [_block(b, blk) for blk in doc["blocks"]])
+    stamp_hashes(b.records)
     return b.records, root
 
 
@@ -574,17 +641,52 @@ def check(records: list) -> list[str]:
         short[h] = g_
 
     for n in nodes.values():
-        want = "content" in n or n["type"] in TEXT_IN_PARAMS
-        if want != ("content_hash" in n):
+        if "record_hash" not in n or "record_subtree_hash" not in n:
             problems.append(
-                f"{n['type']} {n['guid']}: content_hash should "
-                f"{'be present' if want else 'be absent'}")
+                f"{n['type']} {n['guid']}: missing record_hash or "
+                f"record_subtree_hash")
 
     for r in records:
         v = r.get("schema_version")
         if v is not None and v > SCHEMA_VERSION:
             problems.append(f"{r['guid']} is schema {v}; this tool writes "
                             f"{SCHEMA_VERSION}")
+
+    # Eleventh assertion, and the first that verifies content rather than
+    # structure: both hashes recompute from the record and its children.
+    # `record_hash` needs only the node itself; `record_subtree_hash` needs
+    # the fold of its children in `next` order, so a node whose stored hash
+    # was hand-edited — or whose child was, four levels down — is caught
+    # here, one node/subtree hash mismatch at a time. Wrapped in a `try`
+    # because a graph broken badly enough to fail the structural assertions
+    # above (a cycle, a malformed `next` chain) can make the walk itself
+    # raise, and a graph that already has a name for its problem does not
+    # need a traceback standing in for one.
+    try:
+        memo: dict[str, str] = {}
+
+        def _fold(guid):
+            cached = memo.get(guid)
+            if cached is not None:
+                return cached
+            n = nodes[guid]
+            rh = record_hash(n)
+            if n.get("record_hash") != rh:
+                problems.append(
+                    f"{n['type']} {guid}: record_hash does not recompute")
+            kids = [_fold(k) for k in g.children(guid)]
+            sh = hashlib.sha256(canonical([rh, kids])).hexdigest()
+            if n.get("record_subtree_hash") != sh:
+                problems.append(
+                    f"{n['type']} {guid}: record_subtree_hash does not "
+                    f"recompute")
+            memo[guid] = sh
+            return sh
+
+        for guid in nodes:
+            _fold(guid)
+    except Exception as e:
+        problems.append(f"could not verify record hashes: {e}")
 
     return problems
 

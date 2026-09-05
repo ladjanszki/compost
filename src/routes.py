@@ -201,6 +201,15 @@ def _response(path: Path, mint, route: str):
     # which of the two they are asking for. Decided in docs/roadmap.md,
     # "the conversation loop" — recorded here because the record itself gives
     # no other sign that this was deliberate.
+    #
+    # `ast_to_records` already stamped `root_rec`'s hashes, over `params`
+    # *before* this update — so they are stale the moment `params.update`
+    # runs, and re-stamping is not optional. Only the root's own hash and its
+    # own fold can have changed (every other node's params are untouched), but
+    # re-running over the whole tree is cheap for one response document and is
+    # the same call every other writer makes, rather than a special case that
+    # has to reason about which one node needs it.
+    R.stamp_hashes(recs)
 
     b = R.Builder(mint)
     # Both structural, so neither carries `by` — see docs/record-grammar.md

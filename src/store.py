@@ -393,6 +393,10 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
         # them. Its own layer, so the ingestion facts can be reasoned about
         # without touching the structure pandoc found.
         b.edge("derived_from", root, guid, INGEST_LAYER)
+        # `blob` is UNCONTAINED — a leaf, and the whole tree `b.records`
+        # holds — so this is the same one-node fold `layers.py` does for its
+        # own mints.
+        R.stamp_hashes(b.records)
 
         plans.append([src, stored, recs + b.records, root, guid,
                       known.get(sha, []) + seen.get(sha, []), referrer])

@@ -2516,6 +2516,26 @@ must be updated — `CLAUDE.md`, `docs/compost.md`, `docs/man-compost.md`.
 (`signature`, `caller`), and `lines` removed. The whitepaper appendix
 regenerates from it.
 
+**8. `tools/migrate_0_2_13.py` — and it is not optional.** Making the two
+hashes unconditional means `check()` reports one problem *per node* on every
+base written before this release, and `render` refuses when `check` fails: a
+base that worked yesterday is unusable today. Re-digesting is not an escape,
+because guids are minted fresh and every citation into that base would break.
+
+So the release ships a whole-file rewrite — the only honest form of change to
+immutable records — that stamps both hashes, renames an edge's `content_hash`
+to `record_hash` (same value; the field is excluded from its own input, so only
+the key changes), drops the old per-node `content_hash`, and drops `lines` from
+`session` roots. It requires the base path explicitly and refuses to walk up the
+tree looking for one, because the base a developer's machine would offer is not
+a base anyone wants migrated by accident.
+
+**It deliberately does not retro-fit the mapping fixes.** `signature` and
+`caller` are recoverable from the parent turn's `params["log"]`, but
+reconstructing them would make a migrated base and a freshly-digested one differ
+in a third, invisible way. A migrated base is *valid*, not identical to a
+re-digest, and that distinction stays visible.
+
 **7. `docs/design-0.3.0.md` §6c rewritten.** Its three-question table is wrong
 as written: `content_hash` is renamed and answers a different question, and the
 third question moves out of the record into a layer. §8 — the per-type
@@ -2546,6 +2566,12 @@ whitelist — is deleted, not amended; `docs/design-total-mapping.md` replaces i
    no node carries a param the schema does not name.
 8. **The whitepaper appendix matches what the generator produces**, and the
    build is idempotent.
+9. **The migration is idempotent and leaves a base that passes `check`.**
+   Sabotage: build a v0.2.12-format base — nodes carrying the old conditional
+   `content_hash` and no fold, edges carrying `content_hash`, a `session` root
+   carrying `lines` — split across two files so the containment tree spans them.
+   `check` must report one problem per node before and **0 after**, and running
+   the migration twice must leave the files **byte-identical**.
 
 ---
 

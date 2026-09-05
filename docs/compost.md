@@ -3,7 +3,15 @@
 *A local-first knowledge base where a conversation and a document are the same
 kind of thing, and every paragraph has a name.*
 
-**Status: shipped in v0.2.11.** Assembled from `CLAUDE.md`,
+**Version 0.2.13.** Every earlier version of this document is frozen under
+`docs/whitepaper/`, unedited, so that the paper explaining this project can
+eventually be digested *by* it — one revision chain over its own history, once
+v0.2.17 lands `revision_of`. The version lives in this line and not in the
+filename: `docs/compost.md` never moves, because three call sites hardcode it
+and a generator pointed at a frozen copy would rewrite the history it was
+keeping.
+
+**First assembled in v0.2.11** from `CLAUDE.md`,
 `decisions.md`, `record-format.md`, `record-grammar.md` and the roadmap. Where
 it disagrees with the code, **the code is right and this is a bug** — and that
 is the only reading order this document accepts, because every number in it was
@@ -89,10 +97,26 @@ different documents, and only one of them is enforced by a program.**
 **1. Digest everything the file holds; filter at query time, never at import.**
 A field dropped while reading is dropped once, silently, and every base built
 afterwards is missing it with nothing to show it was ever there. Filtering later
-is free and reversible; filtering at import is neither. *Held by property:*
-`records_to_session(session_to_records(lines)) == lines`, exact. *The incident:*
+is free and reversible; filtering at import is neither. *The incident:*
 an audit found the transcript importer dropping 46% of a real transcript's lines
 and seventeen log-line keys.
+
+*Held by two properties, and the second was missing until v0.2.13.* The first is
+`records_to_session(session_to_records(lines)) == lines`, exact — the **file** is
+reconstructible. The second is **total mapping**: for every object a digestor
+reads, every key is accounted for — a param, the node type, or descended into as
+children. A key that lands nowhere fails the suite, naming the digestor and the
+key.
+
+**The file-level property is not enough on its own, and hid a real loss for four
+minor versions.** Every transcript line is kept verbatim in the parent turn's
+`params["log"]`, so the round trip stayed green while the *nodes* were
+impoverished: `thinking` dropped `signature` on 492 blocks, `toolcall` dropped
+`caller` on 902, and a list-shaped tool result was flattened to joined text. The
+first had a visible consequence nobody noticed — every empty `thinking` node in
+a base hashed identically, **491 into 1**, because the only thing distinguishing
+them was the field the mapping threw away. The file was whole and the graph was
+not, and only one of those was being tested.
 
 **2. Nothing about ingestion is inferred from a file extension.** The route is
 named with `--as` or the command refuses. *The incident:* this was dispatch on
@@ -315,7 +339,7 @@ Two more sets are closed in code rather than in prose. **`ROOT_TYPES`** —
 `file`, `alias`, `unresolved_citation`, `display_name` — nodes that are *pointed
 at* rather than contained. Everything else has exactly one `contains` parent.
 
-### The ten invariants
+### The eleven invariants
 
 What `check()` asserts over a whole loaded graph. **A view of a graph failing any
 of them is refused, not rendered** (principle 11).
@@ -331,8 +355,14 @@ of them is refused, not rendered** (principle 11).
    no edge leaving the parent, full coverage.
 8. No two nodes share a handle. Vacuous while a handle is the whole guid; it
    exists so that shortening handles cannot silently introduce collisions.
-9. `content_hash` is present exactly when required — nodes only.
+9. Every node carries `record_hash` and `record_subtree_hash` — unconditionally,
+   not only nodes with content of their own (v0.2.13 renamed and generalised the
+   old per-node `content_hash`, which was conditional).
 10. `schema_version`, when present, is not greater than the one this tool writes.
+11. Both hashes **recompute** — `record_hash` from `[type, params, content]`,
+    `record_subtree_hash` from the fold over `contains`/`next` — v0.2.13, and
+    the first assertion here that verifies content rather than structure
+    (`docs/roadmap.md`, "v0.2.13 — the fold").
 
 ### Where the per-type grammar lives, now in three layers
 
@@ -487,20 +517,51 @@ model, rendered inside a frame attributed to the human. It is suppressed **at
 view time**, recognised structurally rather than by matching prose, and every
 suppressed paragraph is still a node that `compost lookup` resolves.
 
-**Alignment is positional, not by hash.** Measured on two re-ingested
-transcripts: walking both trees in document order, the older is a clean prefix
-of the newer — **5,496 of 5,496** and **221 of 221**, exactly. So *"has this
+**Alignment is positional, not by hash.** Walk both trees in document order and
+the older is a clean prefix of the newer. Re-measured in v0.2.13 under
+`record_hash`, over six corpus sessions truncated to 70% and re-read: **8,848 of
+8,848 — 100.0000%** of the older tree, every session exactly. So *"has this
 append-only document changed underneath us?"* is a walk, and needs no global
-identity. The same measurement showed 99.98% of an older tree's nodes already
-hash-identical after a re-ingest, the single miss being the root, whose
-`params["lines"]` counts the file rather than describing the conversation.
+identity.
 
-**A content hash cannot be an identity.** Within one 6,193-node transcript,
-**36% of nodes share a content hash with another** — 633 empty table cells, 229
-empty thinking markers, 217 rows. A Merkle fold cuts that to 28.5% by
-distinguishing containers, and does **nothing** for leaves, because a leaf's
-fold *is* its content hash. Those 229 markers genuinely are the same value; what
-makes them different blocks is where they sit. Hence principle 7.
+**And one derived param defeated it single-handed.** Before v0.2.13 the session
+root carried `params["lines"]`, a count of the file. On `session-04` the
+identical prefix was **0 of 2,306** with it and **2,306 of 2,306** without —
+because the root is position 0, so a root that fails to match makes the prefix
+empty and delta ingest re-mints everything. Hence the rule: *a derived param may
+be a function of the node itself; it may never be a function of the node's
+subtree.* `empty` on `thinking` is `f(text)` and is stable forever; `lines` was
+`f(children)` and moved every time the tree grew.
+
+**A record hash cannot be an identity.** Within one 6,193-node transcript, **36%
+of nodes shared a hash with another** — 633 empty table cells, 229 empty thinking
+markers, 217 rows. A Merkle fold cuts that to 28.5% by distinguishing containers
+and does **nothing** for leaves, because a leaf's fold *is* its own hash. Those
+229 markers genuinely are the same value; what makes them different blocks is
+where they sit. Hence principle 7.
+
+**`record_hash` answers "is this the same record", not "is this the same
+value".** *(v0.2.13, renaming and generalising the conditional `content_hash`.)*
+The second question is a projection — it differs per question, and it belongs in
+a layer, where being wrong is a rebuild rather than a migration.
+
+**The fold earns its place on documents, not on transcripts.** A container's
+whole substance is its children, so its own hash says nothing: **all 417
+`BulletList`s** in the corpus share one `record_hash`, all 159 `BlockQuote`s, all
+1,040 `Cell`s. `record_subtree_hash` cuts those to 144, 60 and 988. This is also
+what makes the hash safe in one direction only — given total mapping, subtree
+equality implies the source subtrees were identical, so for any coarser notion
+of sameness the fold yields **false negatives only**. It can fail to notice a
+sameness; it cannot invent one. Before total mapping that was false, and the 491
+merged thinking blocks were the proof.
+
+**The mapping is the whitelist.** *(principle 1.)* A per-type list of which
+params count as content was specced and abandoned: it costs one discretionary
+decision per param per type per digestor, and cstlib, graphviz and a filesystem
+digestor would each bring dozens of types. The importer already decides what a
+thing is made of, in code that is reviewed and under test. Asking a second time,
+in a table, is asking in a worse place — so the hash covers the record, and to
+change what counts you change the mapping.
 
 ## 8. What this is not
 
@@ -559,9 +620,9 @@ render produces, and that running the build again changes nothing.
 | `document` | `meta`, `pandoc_api_version`, `route`, `source` | `api_error_status`, `duration_api_ms`, `duration_ms`, `fast_mode_disabled_reason`, `fast_mode_state`, `is_error`, `modelUsage`, `num_turns`, `permission_denials`, `result`, `session_id`, `stop_reason`, `subtype`, `terminal_reason`, `time_to_request_ms`, `total_cost_usd`, `ttft_ms`, `ttft_stream_ms`, `type`, `usage`, `uuid` | — |
 | `file` | `path` | — | — |
 | `logline` | `line_type`, `log`, `timestamp`, `uuid` | — | — |
-| `session` | `lines`, `route`, `session_id`, `source`, `version` | `agent` | — |
-| `thinking` | `empty`, `text` | — | — |
-| `toolcall` | `input`, `name`, `tool_use_id` | — | — |
+| `session` | `route`, `session_id`, `source`, `version` | `agent` | — |
+| `thinking` | `empty`, `signature`, `text` | — | — |
+| `toolcall` | `input`, `name`, `tool_use_id` | `caller` | — |
 | `tooloutput` | `is_error`, `text`, `tool_use_id` | — | — |
 | `turn` | `author`, `log`, `timestamp`, `uuid` | — | — |
 | `unresolved_citation` | — | — | — |
@@ -584,9 +645,9 @@ render produces, and that running the build again changes nothing.
 | `session` | `next` |
 | `session` | `touches` |
 
-**59 distinct params, for review.** Which node types each appears on, and a blank column for a human to mark whether the param is content — the input `v0.2.13` reads.
+**60 distinct params.** Which node types each appears on. The third column is a leftover: it was to be filled in by hand, one row at a time, deciding which params counted as content. `v0.2.13` removed that question rather than answering it — the mapping is the whitelist — so nothing reads this column. It is still rendered because the table is generated and an empty column is cheaper than a special case.
 
-| param | appears on | content? |
+| param | appears on | content? (unused) |
 |---|---|---|
 | `agent` | `session` |  |
 | `align` | `Cell` |  |
@@ -596,6 +657,7 @@ render produces, and that running the build again changes nothing.
 | `block` | `contentblock` |  |
 | `block_type` | `contentblock` |  |
 | `bytes_sha256` | `blob` |  |
+| `caller` | `toolcall` |  |
 | `colspan` | `Cell` |  |
 | `colspecs` | `Table` |  |
 | `duration_api_ms` | `document` |  |
@@ -611,7 +673,6 @@ render produces, and that running the build again changes nothing.
 | `is_error` | `document`, `tooloutput` |  |
 | `level` | `Header` |  |
 | `line_type` | `logline` |  |
-| `lines` | `session` |  |
 | `list_attributes` | `OrderedList` |  |
 | `log` | `logline`, `turn` |  |
 | `meta` | `document` |  |
@@ -629,6 +690,7 @@ render produces, and that running the build again changes nothing.
 | `rowspan` | `Cell` |  |
 | `scheme` | `alias` |  |
 | `session_id` | `document`, `session` |  |
+| `signature` | `thinking` |  |
 | `source` | `document`, `session` |  |
 | `stop_reason` | `document` |  |
 | `stored_as` | `blob` |  |

@@ -215,9 +215,18 @@ def _render_session(g, n, mode):
                                    [_code(p["text"], ["thinking"])]]}]
 
     if t == "tooloutput":
-        body = [_code(p.get("text", ""), ["tool-output"], guid)]
+        # `params["text"]` is a string for the ordinary case, and — since
+        # v0.2.13 stopped flattening a list-shaped `tool_result.content` to
+        # joined text (docs/design-total-mapping.md) — sometimes the list
+        # itself, stored whole. A `CodeBlock`'s payload has to be a string
+        # either way, so a list is shown as the same pretty JSON `contentblock`
+        # already uses for a block this importer has no reading for.
+        raw = p.get("text", "")
+        text = (json.dumps(raw, indent=1, ensure_ascii=False)
+               if isinstance(raw, list) else raw)
+        body = [_code(text, ["tool-output"], guid)]
         if mode == "html":
-            n_lines = p.get("text", "").count("\n") + 1
+            n_lines = text.count("\n") + 1
             err = " (error)" if p.get("is_error") else ""
             return _details(f"output — {n_lines} lines{err}", body)
         return body

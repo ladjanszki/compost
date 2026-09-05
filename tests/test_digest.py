@@ -215,20 +215,29 @@ def main():
                 # `pandoc-ast` is `notes` with the reading step removed, so
                 # feeding it the AST that `notes` would have produced must give
                 # the same graph. Guids differ — they are minted — so the
-                # comparison is over content hashes, which are the identity of
-                # what was recorded rather than of when it was recorded.
+                # comparison is over record hashes, which are the identity of
+                # what was recorded rather than of when it was recorded. Both
+                # routes go through `ast_to_records`, which stamps
+                # `record_hash` unconditionally, so every node contributes —
+                # not only the ones with content of their own.
                 recs, _ = st.load()
 
                 def hashes(route, name):
+                    # The root itself is excluded: its own params carry
+                    # `route` and `source`, which differ by construction
+                    # between the two routes, so its `record_hash` legitimately
+                    # differs too. Everything *beneath* the root — including
+                    # container nodes now that the hash is unconditional —
+                    # must still match, because both routes end up feeding the
+                    # same AST into the same `ast_to_records`.
                     root = next(r for r in recs if r["record"] == "node"
                                 and R._p(r, "route") == route
                                 and R._p(r, "source") == name)
                     g = R.Graph(recs)
-                    out, stack = [], [root["guid"]]
+                    out, stack = [], list(g.children(root["guid"]))
                     while stack:
                         n = g.nodes[stack.pop()]
-                        if "content_hash" in n:
-                            out.append(n["content_hash"])
+                        out.append(n["record_hash"])
                         stack += g.children(n["guid"])
                     return sorted(out)
 

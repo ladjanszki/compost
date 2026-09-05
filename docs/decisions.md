@@ -186,8 +186,11 @@ inheriting the second.
   Whether a link or an image becomes its own node stays open until a query
   needs it.
 - **Identifiers: a guid on nodes *and* edges.** Nodes carry `guid` (UUIDv4,
-  identity) and `content_hash` (SHA256, a dedup key — not identity). Edges
-  carry a `guid` too in this version. A pure content-hash identity for edges
+  identity) and, since v0.2.13, `record_hash`/`record_subtree_hash` (SHA256,
+  a dedup key — not identity; `content_hash` before the rename, and
+  conditional on the node having content before v0.2.13 generalised it —
+  `docs/design-total-mapping.md`). Edges carry a `guid` too in this version.
+  A pure content-hash identity for edges
   is attractive and may come later as an optional `identity_hash`, but only
   once the hash input is pinned down; until then a guid cannot lose
   information to an unforeseen edge case.
@@ -592,9 +595,10 @@ So the rule is: **a hash says what the record claims, never when or by what it
 was written.** `schema_version` is excluded for the same reason — two records
 stating one fact across a format change must still match.
 
-Note the node hash is a *different function* — a positional array
-`[type, params, content]`, with no skip list — and the two are not comparable.
-Same field name, different inputs.
+Note the node hash (`record_hash` since v0.2.13; `content_hash` before the
+rename) is a *different function* — a positional array
+`[type, params, content]`, with no skip list — and the two are not
+comparable. They no longer even share a field name.
 
 ## `content_hash` is evidence, not a mechanism
 

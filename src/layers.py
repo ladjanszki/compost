@@ -30,14 +30,17 @@ from . import store as S
 def _entity(b, type_, params=None):
     """`b.node()`, plus provenance as top-level keys, never inside `params`.
 
-    Only `alias` and `unresolved_citation` need this today — both carry no
-    `content_hash`, whose input is `canonical([type, params, content])` and
-    so is blind to whatever else a record carries. Putting created_at and
-    tool_version in `params` would work for these two but set a precedent
-    that breaks the first time a *hashed* type needs provenance. Decided
-    once, here, while it is free — general node types keep Builder.node()'s
-    existing shape, since the grammar (record-grammar.md §2) already gives
-    nodes no provenance fields and this release does not extend that.
+    Only `alias` and `unresolved_citation` need this today. Both carry
+    `record_hash`/`record_subtree_hash` like every other node since v0.2.13
+    (they carried no hash at all before that), and that hash's input is
+    `canonical([type, params, content])` — so it stays blind to whatever else
+    a record carries. Putting created_at and tool_version in `params` would
+    work for these two but set a precedent that breaks the first time a node
+    type whose hash genuinely needs to see top-level fields comes along.
+    Decided once, here, while it is free — general node types keep
+    `Builder.node()`'s existing shape, since the grammar (record-grammar.md
+    §2) already gives nodes no provenance fields and this release does not
+    extend that.
     """
     guid = b.node(type_, params)
     n = b.records[-1]
@@ -63,7 +66,7 @@ def _citation(recs, name, by):
         e["schema_version"] = R.SCHEMA_VERSION
         e["layer"], e["by"] = name, by
         e["created_at"], e["tool_version"] = R._now(), __version__
-        e["content_hash"] = R.edge_hash(e)
+        e["record_hash"] = R.edge_hash(e)
 
     # One alias and one placeholder per *distinct* value in this build. Two
     # citations of the same missing handle share one placeholder.
@@ -75,6 +78,11 @@ def _citation(recs, name, by):
             b.edge("names", al, ph, name, by=by)
             seen[value] = ph
         b.edge("cites", source, seen[value], name, by=by)
+    # A layer is a writer like any other, so the nodes it mints — here,
+    # `unresolved_citation` and `alias` placeholders — get folded the same
+    # way `digest` folds a document. Both are UNCONTAINED, so both are leaves:
+    # a whole-graph walk is not needed, `b.records` alone is the tree.
+    R.stamp_hashes(b.records)
     return {"cites": len(edges) + sum(1 for _ in unresolved),
             "placeholders": len(seen),
             "records": edges + b.records,
@@ -134,7 +142,7 @@ def _kg8hex(recs, name, by):
         found = targets.get(handle) or set()
         if len(found) == 1:
             # Straight through Builder.edge, which is where schema_version,
-            # created_at, tool_version and content_hash already live. The
+            # created_at, tool_version and record_hash already live. The
             # uuid-link path decorates raw dicts only because citation_edges
             # predates all four.
             b.edge("cites", source, next(iter(found)), name, by=by)
@@ -154,6 +162,7 @@ def _kg8hex(recs, name, by):
         b.edge("cites", source, seen[value], name, by=by)
         n_cites += 1
 
+    R.stamp_hashes(b.records)
     return {"cites": n_cites, "placeholders": len(seen),
             "records": b.records, "unresolved": sorted(seen),
             "ambiguous": ambiguous}

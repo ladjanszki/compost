@@ -92,19 +92,18 @@ sides, not merely the same count.
 | `check_dangling_edges.sql` | "edge `{g}` has a dangling source/destination" |
 | `check_parent_counts.sql` | all three parent-count branches at once: an `UNCONTAINED` node contained by something, a root node with a parent, and anything else without exactly one |
 | `check_launched_multiple.sql` | "session `{g}` is launched by N tool calls" |
-| `check_content_hash.sql` | "`content_hash` should be present/absent" |
+| `check_record_hash.sql` | "`{g}`: missing record_hash or record_subtree_hash" |
 | `check_schema_version.sql` | "`{g}` is schema N; this tool writes 1" |
 
-`check_parent_counts.sql` and `check_content_hash.sql` hand-copy `UNCONTAINED`,
-`ROOT_TYPES` and `TEXT_IN_PARAMS` from `src/records.py` as literal SQL lists,
-and `check_schema_version.sql` hand-copies `SCHEMA_VERSION`. None of the four
-is a shared source with the Python original — if one changes there and not
-here, `tests/test_query.py` is what notices, on whichever fixture base
-exercises the branch that moved.
+`check_parent_counts.sql` hand-copies `UNCONTAINED` and `ROOT_TYPES` from
+`src/records.py` as a literal SQL list, and `check_schema_version.sql`
+hand-copies `SCHEMA_VERSION`. Neither is a shared source with the Python
+original — if one changes there and not here, `tests/test_query.py` is what
+notices, on whichever fixture base exercises the branch that moved.
 
 ### Not mirrored, on purpose
 
-Three of `check()`'s branches have no SQL twin here, and the gap is
+Four of `check()`'s branches have no SQL twin here, and the gap is
 deliberate rather than an oversight:
 
 - **"handle shared by two nodes"** cannot fire under the current format.
@@ -125,3 +124,11 @@ deliberate rather than an oversight:
   without mitigation" already notes these are safe today "by accident" for
   unrelated reasons (`_next` being layer-blind) — worth revisiting together
   with that note, not separately.
+- **The hash-recompute check** — check()'s eleventh assertion, and the first
+  that verifies content rather than structure — is a fold over
+  `contains`/`next`, the same shape of graph-path problem as the two above.
+  `record_hash` alone (no children) could in principle be recomputed in SQL,
+  but `record_subtree_hash` cannot be checked without it, and a mirror that
+  covers only the leaf half would report "recomputes" on every container node
+  whether or not its fold was ever right — worse than no mirror at all. Left
+  with the other two, for the same reason and the same future work.

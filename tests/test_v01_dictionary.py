@@ -42,6 +42,7 @@ def base_with_handles(tmp: Path):
                     {"t": "Str", "c": "{#a1b2c3d4}"}])
     kids.append(citer)
     b.children(doc, kids)
+    R.stamp_hashes(b.records)
     st.write("old.jsonl", b.records)
     return st, citer
 

@@ -251,45 +251,65 @@ times, or asynchronously.
 
 ---
 
-## 6c. SETTLED — what a hash can and cannot do
+## 6c. SETTLED — what a hash can and cannot do, revised in v0.2.13
 
-Both hashes are kept, because they answer different questions:
+**This section was wrong as originally written, and the error was the table.**
+The three-question table below named `content_hash` as answering "is this the
+same *value*" — but v0.2.13 shipped a `record_hash` that answers a different,
+narrower question, and the value question was not built at all. Both changes
+are deliberate, and both are argued in full in `docs/design-total-mapping.md`;
+this section states the outcome and keeps the measurements, which still stand.
 
 | | answers |
 |---|---|
-| **`content_hash`** | is this the same *value* |
-| **`subtree_hash`** (Merkle fold) | is this the same *subtree* |
+| **`record_hash`** | is this the same *record* — mechanically, `H([type, params, content])`, unconditional on every node |
+| **`record_subtree_hash`** (the fold) | is this the same *subtree* — reads `contains`/`next` only |
 | **`guid`** | is this the same *thing* |
+
+**"Is this the same value" is not answered here, and is not scheduled here.**
+`record_hash` looks like a value hash and is not one: two genuinely identical
+empty `thinking` blocks now hash *differently* the moment `signature` is
+stored on both, correctly, because they are the same value at different
+moments carrying different provenance. That question is a query-time
+projection, belongs in a layer, and is catalogued in `TODO-equality-layers.md`
+— nothing in v0.2.13 schedules it.
 
 Measured on the 6,193-node session:
 
 | | nodes sharing their hash with another |
 |---|---|
-| content hash | 2,228 — **36.0%** |
-| Merkle fold | 1,762 — **28.5%** |
+| content hash (pre-fold, v0.2.12 measurement) | 2,228 — **36.0%** |
+| Merkle fold (pre-fold, v0.2.12 measurement) | 1,762 — **28.5%** |
 
 **The fold helps for containers and not at all for leaves.** `Cell` collisions
 drop 633 → 438 and `Row` 217 → 110, because their children differ. But the 229
 empty `thinking` nodes have **one** distinct content hash and **one** distinct
 fold — a leaf has no children, so its fold *is* its content hash. `Plain` (428)
-and `logline` (405) are likewise unmoved.
+and `logline` (405) are likewise unmoved. (v0.2.13 changed the *count* here —
+`thinking` now also stores `signature`, so the 229 empty markers are no longer
+identical to one another — but not the shape of the argument: a leaf's fold is
+still exactly its own hash.)
 
-**This is not a defect and no hash will fix it.** 229 empty thinking markers are
-genuinely the same value. What makes them different *blocks* is where they sit.
-That is what the guid is for, and why content-addressed naming was rejected:
-identity is positional, equality is content-derived, and conflating them merges
-things that are only accidentally alike.
+**This is not a defect and no hash will fix it.** Two blocks with the same
+`record_hash` are not necessarily "the same value" either — see above — but
+even under the older, narrower reading the point held: what makes two blocks
+different is sometimes only where they sit, which is what the guid is for, and
+why content-addressed naming was rejected. Identity is positional, equality is
+content-derived, and conflating them merges things that are only accidentally
+alike.
 
-**Hash choice, settled:** `guid` stays **UUIDv4**; `content_hash` and
-`subtree_hash` are both **SHA-256**. UUIDv5 is a truncated MD5/SHA-1 namespace
-hash — weaker, shorter, and designed for naming rather than comparison. Using
-one family for identity and another for equality also makes it visible at a
-glance which is which, which is worth more than uniformity.
+**Hash choice, settled:** `guid` stays **UUIDv4**; `record_hash` and
+`record_subtree_hash` are both **SHA-256**. UUIDv5 is a truncated MD5/SHA-1
+namespace hash — weaker, shorter, and designed for naming rather than
+comparison. Using one family for identity and another for equality also makes
+it visible at a glance which is which, which is worth more than uniformity.
 
-**Whitelist, not blacklist.** The fold and the content hash take a **named list
-of params they include**, per node type. An exclusion list means a param added
-later silently joins the hash and every existing node stops matching itself —
-the failure would look like "everything changed" and have no obvious cause.
+**The whitelist/blacklist question below (§8) is superseded, not answered.**
+§8 asked which named list of params the fold and the hash should include, per
+node type. v0.2.13 did not pick a list — it removed the question: total
+mapping (`docs/design-total-mapping.md`) makes the *mapping* the whitelist, so
+there is no second list to keep in sync with it. §8 is deleted rather than
+amended; that document is where the reasoning now lives.
 
 ---
 
@@ -335,36 +355,22 @@ true — someone cited that text and they did.
 
 ---
 
-## 8. SETTLED in principle — a per-type whitelist, written in the grammar
+## 8. DELETED — see `docs/design-total-mapping.md`
 
-The live question was one field: does `lines` on a session root participate? It
-was the sole reason a re-ingested transcript's root failed to match itself
-(§6b). Under a whitelist the question dissolves — `lines` is simply not in the
-list, because it is a count of the file, not a property of the conversation.
+This section proposed a per-type whitelist of params the fold and the hash
+would include, hand-written and kept in the grammar. v0.2.13 shipped without
+one: `docs/design-total-mapping.md` replaces the whole question with a
+mechanical rule — the mapping is the whitelist, so there is nothing left to
+write down and keep in sync with the code. Deleted rather than amended,
+per `docs/roadmap.md`, "v0.2.13 — the fold", build step 7 — the reasoning this
+section held now lives there instead, and this is a pointer rather than a
+summary so it cannot drift from it.
 
-**Whitelist, never blacklist.** An exclusion list means a param added later
-silently joins the hash and every existing node stops matching itself. The
-symptom would be *"everything changed"* with no obvious cause, discovered long
-after the release that caused it. A whitelist fails the other way: a param that
-should count and was not listed is invisible to the hash, which is a wrong
-answer you can find by asking *"why did this not change?"* — a question someone
-actually asks.
-
-**Per node type, not one global list.** A `turn`'s identity lives in its `log`;
-a `document` root's does not have a `log` at all. One list covering both would
-be a list of everything, which is a blacklist wearing a hat.
-
-**Three fields are never in any list**, because they are about the record rather
-than the thing: `guid`, `created_at`, `tool_version`.
-
-**The lists themselves are the deliverable of the fold release**, and they
-belong in the grammar rather than in code comments — stated once, with a reason
-per entry, in the same document that already states the two existing hash
-functions side by side. That is one of the things the whitepaper exists to hold.
-
-**Rejected: hashing the raw pandoc AST node.** Tempting and wrong — it makes
-pandoc's grammar, not ours, decide when two blocks are the same, and a pandoc
-upgrade would silently re-identify the whole base.
+One rejection from the original text is worth keeping here, since
+`design-total-mapping.md` does not repeat it: **hashing the raw pandoc AST
+node was considered and rejected.** It makes pandoc's grammar, not ours,
+decide when two blocks are the same, and a pandoc upgrade would silently
+re-identify the whole base.
 
 ---
 
@@ -427,10 +433,12 @@ Each version is provable alone, and nothing waits on a decision still open.
 |---|---|
 | **v0.2.10** | the index page — **shipped 2026-09-01** |
 | **v0.2.11** | **the whitepaper** — `docs/` revamped into one structured document: the invariants, the shape, the grammar |
-| **v0.2.12** | **the grammar, untangled** — a JSON Schema replaces the markdown-scraping test — plus the fold: `content_hash` on every node type, `subtree_hash`, and the per-type whitelists as schema annotations |
-| **v0.2.13** | **AoTA** — `mutability` declared and checked, positional alignment, delta ingest |
-| **v0.2.14** | the ledger — retraction, provenance, replay as a filter |
-| **v0.2.15** | **TA** — `revision_of` on roots, full-tree revisions |
+| **v0.2.12** | **the grammar, untangled** — a JSON Schema replaces the markdown-scraping test. The fold was *specced* here and did **not** ship here; see below |
+| **v0.2.13** | **the fold** — `record_hash` on every node unconditionally, `record_subtree_hash`, total mapping as a tested property. Not the per-type whitelists: `docs/design-total-mapping.md` removed the question rather than answering it |
+| **v0.2.14** | **the recursion made explicit** — one markdown digestor, delegated inputs stored as blobs |
+| **v0.2.15** | **AoTA** — `mutability` declared and checked, positional alignment, delta ingest |
+| **v0.2.16** | the ledger — retraction, provenance, replay as a filter |
+| **v0.2.17** | **TA** — `revision_of` on roots, full-tree revisions |
 | **v0.3.0** | the first semantic layer, over all of it |
 
 **v0.2.12 absorbed the grammar untangling**, and the two belong together: its

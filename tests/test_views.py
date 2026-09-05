@@ -338,6 +338,7 @@ def main():
         b1 = R.Builder()
         dn1 = b1.node(V.DISPLAY_NAME_TYPE, {"value": "The Curated Title"})
         b1.edge("names", dn1, note01, V.DISPLAY_LAYER)
+        R.stamp_hashes(b1.records)   # a leaf, same fold `compost-name` runs
         st3.write("display-1.jsonl", b1.records)
         pages_before = {f.name for f in (st3.views / "default-html").glob("*.html")}
         recs3, g3, idx3, names3 = _render3()
@@ -363,12 +364,14 @@ def main():
             b_old = R.Builder()
             dn_old = b_old.node(V.DISPLAY_NAME_TYPE, {"value": "An Older Name"})
             b_old.edge("names", dn_old, note01, V.DISPLAY_LAYER)
+            R.stamp_hashes(b_old.records)
             st3.write("display-old.jsonl", b_old.records)
 
             R._now = lambda: "2030-01-01T00:00:00Z"
             b_new = R.Builder()
             dn_new = b_new.node(V.DISPLAY_NAME_TYPE, {"value": "A Newer Name"})
             b_new.edge("names", dn_new, note01, V.DISPLAY_LAYER)
+            R.stamp_hashes(b_new.records)
             st3.write("display-new.jsonl", b_new.records)
         finally:
             R._now = orig_now
@@ -391,6 +394,7 @@ def main():
             b4 = R.Builder()
             dn4 = b4.node(V.DISPLAY_NAME_TYPE, {"value": "Check Target"})
             b4.edge("names", dn4, note01, V.DISPLAY_LAYER)
+            R.stamp_hashes(b4.records)
             test_recs = recs3 + b4.records
             clean = [p for p in R.check(test_recs) if dn4 in p]
             original = R.UNCONTAINED

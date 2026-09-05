@@ -26,7 +26,9 @@
       "required": [
         "record",
         "guid",
-        "type"
+        "type",
+        "record_hash",
+        "record_subtree_hash"
       ],
       "properties": {
         "record": {
@@ -83,8 +85,13 @@
           "type": "object"
         },
         "content": {},
-        "content_hash": {
-          "$ref": "#/$defs/sha256"
+        "record_hash": {
+          "$ref": "#/$defs/sha256",
+          "description": "SHA-256 over canonical JSON of [type, params, content]. Unconditional — every node carries it, whether or not it has content of its own. Stamped by records.stamp_hashes(); never in params, which would put a hash inside its own input."
+        },
+        "record_subtree_hash": {
+          "$ref": "#/$defs/sha256",
+          "description": "The fold: SHA-256 over [record_hash, [children's record_subtree_hash in `next` order]]. Reads `contains` and `next` only. A leaf's fold is H([record_hash, []])."
         },
         "created_at": {
           "type": "string",
@@ -158,7 +165,7 @@
         "tool_version": {
           "type": "string"
         },
-        "content_hash": {
+        "record_hash": {
           "$ref": "#/$defs/sha256"
         }
       },
@@ -575,7 +582,6 @@
         "params": {
           "type": "object",
           "properties": {
-            "lines": {},
             "route": {},
             "session_id": {},
             "source": {},
@@ -583,7 +589,6 @@
             "agent": {}
           },
           "required": [
-            "lines",
             "route",
             "session_id",
             "source",
@@ -598,11 +603,13 @@
           "type": "object",
           "properties": {
             "empty": {},
-            "text": {}
+            "text": {},
+            "signature": {}
           },
           "required": [
             "empty",
-            "text"
+            "text",
+            "signature"
           ],
           "additionalProperties": false
         },
@@ -614,7 +621,8 @@
           "properties": {
             "input": {},
             "name": {},
-            "tool_use_id": {}
+            "tool_use_id": {},
+            "caller": {}
           },
           "required": [
             "input",

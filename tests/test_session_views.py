@@ -10,6 +10,7 @@ from a document.
 """
 import contextlib
 import io
+import json
 import os
 import re
 import subprocess
@@ -147,7 +148,13 @@ def main():
             text = "\n".join(djot.values())
             dropped = 0
             for o in outs:
-                first = o["params"]["text"].strip().split("\n")[0][:40]
+                raw = o["params"]["text"]
+                # List-shaped content (v0.2.13, total mapping: a list-shaped
+                # `tool_result.content` is stored whole rather than flattened)
+                # is rendered as pretty JSON, same as the view does.
+                rendered = (json.dumps(raw, indent=1, ensure_ascii=False)
+                           if isinstance(raw, list) else raw)
+                first = rendered.strip().split("\n")[0][:40]
                 if first and first not in text:
                     dropped += 1
             return outs and not dropped, \

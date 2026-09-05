@@ -3,6 +3,83 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.13-rc — the fold
+
+Every node now carries `record_hash` and `record_subtree_hash`. The release was
+specced as something else entirely — a human marking up 59 params, one column,
+*is this content?* — and that input turned out to be the wrong thing to ask for.
+
+**A per-type whitelist does not have a fixed cost.** It costs one discretionary
+decision per param per type per digestor, and cstlib, graphviz and a filesystem
+digestor would each bring dozens of types. The digestor already decides what a
+thing is made of, in code that is reviewed and under test. Asking a second time,
+in a table, is asking in a worse place. So: **the mapping is the whitelist**, the
+hash covers the record, and to change what counts you change the code.
+
+That rule has one hole, and closing it is most of this release. "Hash the
+record" and "hash the source" only agree if the mapping drops nothing — and it
+dropped three things: `signature` on 492 `thinking` blocks, `caller` on 902
+`toolcall`s, and the structure inside a list-shaped `tool_result`. The first had
+a visible consequence nobody noticed for four minor versions: every empty
+`thinking` node in a base hashed identically, **491 into 1**, because the only
+thing distinguishing them was the field the mapping threw away.
+
+**The file-level round trip could never have caught it.** Every line is kept
+verbatim in the parent turn's `params["log"]`, so
+`records_to_session(session_to_records(lines)) == lines` stayed green while the
+nodes were impoverished. The file was whole and the graph was not, and only one
+of those was tested. `tests/test_mapping_totality.py` tests the other: every key
+of every object a digestor reads must be a param, the node type, or descended
+into as children.
+
+### Two measurements that decided the shape
+
+**The fold earns its place on documents, not transcripts.** A container's whole
+substance is its children, so its own hash says nothing: all **417
+`BulletList`s** in the corpus share one `record_hash`, all 159 `BlockQuote`s, all
+1,040 `Cell`s. `record_subtree_hash` cuts those to 144, 60 and 988. It was nearly
+cut from this release on the grounds that it had no job; that was measured on
+transcripts and did not generalise.
+
+**One derived param defeated alignment single-handed.** `params["lines"]` on the
+session root is a count of the file. Truncate `session-04` to 70% and re-read:
+the identical prefix is **0 of 2,306** with it and **2,306 of 2,306** without,
+because the root is position 0 and a root that fails to match empties the prefix.
+Hence the rule — *a derived param may be a function of the node itself, never of
+its subtree* — and `lines` is deleted. Re-measured across six sessions under the
+new hash: **8,848 of 8,848, 100.0000%**, which is v0.2.15's foundation, taken a
+release early rather than assumed.
+
+### What it costs
+
+**Every base written before this release fails `check`, one problem per node**,
+and `render` refuses when `check` fails. Re-digesting is not an escape: guids are
+minted fresh and every citation would break. `tools/migrate_0_2_13.py` is a
+whole-file rewrite — the only honest form of change to immutable records — that
+stamps both hashes, renames an edge's `content_hash` to `record_hash`, drops the
+old per-node `content_hash` and drops `lines`. It requires the base path
+explicitly and refuses to walk up the tree looking for one. It does **not**
+retro-fit the mapping fixes, so a migrated base is *valid*, not identical to a
+re-digest, and that distinction stays visible.
+
+`check()` makes **eleven** assertions now. The eleventh is the first that
+verifies content rather than structure: both hashes recompute from the record and
+its children.
+
+### The whitepaper is now a versioned artifact
+
+`docs/compost.md` carries its version in the status line, and every past version
+is frozen unedited under `docs/whitepaper/`. The path of the live document never
+moves — `tools/build_whitepaper.py` and two suites hardcode it, and a generator
+pointed at a frozen copy would rewrite the history it was keeping.
+
+`DEVELOPMENT.md`'s *"Closing a version"* gains the step that was missing: bring
+the whitepaper up to date before tagging. Only its generated appendix is guarded
+by a test, so nothing else would have caught a release that changed what a hash
+means shipping a paper describing the old one. That step is also where a design
+document earns its deletion — anything in `docs/design-*.md` worth keeping has to
+reach the whitepaper first or it leaves with the file.
+
 ## v0.2.12 — 2026-09-03 — the grammar, untangled
 
 A **markdown document** was the source of truth for what a valid record is, and

@@ -4,7 +4,7 @@ test_layer.py — what `compost layer citation` promises.
 
 Two separate bases, because mixing them breaks property 2: a placeholder gets
 a fresh guid every build, so two builds' `cites` edges into a placeholder have
-different `destination` and therefore different `content_hash` — the pairing
+different `destination` and therefore different `record_hash` — the pairing
 property only holds when every citation in the base actually resolves.
 
 **Base A** — every citation resolves. Properties 1-3.
@@ -128,6 +128,7 @@ def add_dictionary(st, value: str, target: str, scheme: str = "kg-8hex"):
     al = b.node("alias", {"value": value, "scheme": scheme,
                           "generated_by": "tests/test_layer.py"})
     b.edge("names", al, target, "citation", by=scheme)
+    R.stamp_hashes(b.records)
     st.write(f"dictionary-{value}-{target[:8]}.jsonl", b.records)
 
 
@@ -161,12 +162,12 @@ def main():
         def pair_by_hash():
             recs, _ = st_a.load()
             cites = _cites(recs)
-            hashes = [e["content_hash"] for e in cites]
+            hashes = [e["record_hash"] for e in cites]
             guids = {e["guid"] for e in cites}
             return (len(cites) == 2 and hashes[0] == hashes[1]
                     and len(guids) == 2,
                     f"{len(cites)} edges, {len(set(hashes))} distinct hash(es)")
-        case("the two sets pair up by content_hash, distinct guids",
+        case("the two sets pair up by record_hash, distinct guids",
              pair_by_hash)
 
         def hash_ignores_provenance():
@@ -174,9 +175,9 @@ def main():
             e = _cites(recs)[0]
             other = dict(e, created_at="1970-01-01T00:00:00Z",
                         tool_version="0.0.0")
-            return (R.edge_hash(other) == e["content_hash"],
-                    "content_hash unchanged by created_at/tool_version")
-        case("content_hash ignores created_at and tool_version",
+            return (R.edge_hash(other) == e["record_hash"],
+                    "record_hash unchanged by created_at/tool_version")
+        case("record_hash ignores created_at and tool_version",
              hash_ignores_provenance)
 
         # -- Base B: some citations do not resolve ---------------------------

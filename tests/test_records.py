@@ -81,13 +81,17 @@ def invariants(recs, root):
             problems.append(str(e))
             break
 
-    # content_hash present exactly when the node has content of its own
+    # record_hash and record_subtree_hash present on every node, and both
+    # recompute — the fold, docs/roadmap.md "v0.2.13 — the fold".
     for r in recs:
         if r["record"] != "node":
             continue
-        want = "content" in r or r["type"] in R.TEXT_IN_PARAMS
-        if want != ("content_hash" in r):
-            problems.append(f"{r['type']}: content_hash presence is wrong")
+        if "record_hash" not in r or "record_subtree_hash" not in r:
+            problems.append(f"{r['type']}: missing record_hash or "
+                            f"record_subtree_hash")
+            break
+        if r["record_hash"] != R.record_hash(r):
+            problems.append(f"{r['type']}: record_hash does not recompute")
             break
     return problems
 

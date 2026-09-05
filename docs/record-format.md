@@ -67,7 +67,8 @@ render.
   "type": "Para",
   "params": {},
   "content": [{"t":"Str","c":"An"},{"t":"Space"},{"t":"Emph","c":[...]}],
-  "content_hash": "99355172b2735ba755232245ff002d8fe64742851cbb347f2862aff3a4be2fee"
+  "record_hash": "99355172b2735ba755232245ff002d8fe64742851cbb347f2862aff3a4be2fee",
+  "record_subtree_hash": "8b39ff1a859a214b5814643391f835fe67e9716697c2b9de1a19b034079e35c"
 }
 ```
 
@@ -81,7 +82,9 @@ render.
   bag: for `Para` it is empty, for `Header` it is exactly the level and `Attr`.
   What goes in it is decided by pandoc's grammar, not by us.
 - `content` — the inline array, raw. Absent for constructors that have none.
-- `content_hash` — a dedup key, *not* identity. See below.
+- `record_hash` / `record_subtree_hash` — a dedup key, *not* identity, on
+  every node unconditionally. See below (v0.2.13 renamed and generalised what
+  this section used to call `content_hash`).
 
 ## Edge
 
@@ -96,7 +99,7 @@ render.
   "destination": "d826c4dd-eb36-4da9-acab-f6f424a90803",
   "created_at": "2026-08-24T12:00:00Z",
   "tool_version": "0.2.4",
-  "content_hash": "…"
+  "record_hash": "…"
 }
 ```
 
@@ -114,14 +117,14 @@ Edges carry a `guid` in this version, as decided: an `identity_hash` for
 free deduplication is attractive but has to wait until the hash input is
 pinned down, and a guid cannot lose information to an unforeseen case.
 
-**The hash input is pinned down now, as of v0.2.4** — `content_hash` on an
+**The hash input is pinned down now, as of v0.2.4** — `record_hash` on an
 edge is `sha256(canonical(record − EDGE_HASH_SKIP))`, where `EDGE_HASH_SKIP`
-excludes `record`, `guid`, `schema_version`, `content_hash`, `created_at` and
+excludes `record`, `guid`, `schema_version`, `record_hash`, `created_at` and
 `tool_version` (`src/records.py`). It answers the question this paragraph
 left open, but not the way "for free deduplication" imagined: the hash makes
 two edges stating the same fact *findable*, it does not collapse them. Guids
 still stay minted, never derived — see `docs/decisions.md`, "Guids stay
-UUIDv4, including for derived records" — and `content_hash` is evidence a
+UUIDv4, including for derived records" — and the edge `record_hash` is evidence a
 future dedup design can use, not a mechanism anything acts on today.
 
 ## Ordering: `next` edges, in the `pandoc-ast` layer
@@ -318,9 +321,9 @@ it follows the edge. The extension is carried only so a file pulled back out
 of `storage/` is still usable by hand — nothing reads it to decide anything.
 
 `bytes_sha256` is the hash of the **raw ingested bytes** and is a different
-thing from `content_hash`, which hashes the canonical JSON of a single node.
+thing from `record_hash`, which hashes the canonical JSON of a single node.
 Two hashes, two questions: "are these the same file" and "are these the same
-block".
+record".
 
 **`blob` and `file` are not the same node and are deliberately not merged.**
 A `file` is a *path a session touched* — it may not exist, and no bytes are
@@ -345,42 +348,57 @@ not on its output, and it is currently a param on the root node. The day two
 imports of one file need comparing, an `ingestion` node is the shape to reach
 for.
 
-## Defining `content_hash`
+## Defining `record_hash` and `record_subtree_hash`
 
-**This section is about the node form.** As of v0.2.4 an edge carries a
-`content_hash` too, computed by a *different* function over a different
-input — see the Edge section above and `docs/record-grammar.md` §5, which
-states both side by side and says why they are not comparable. Nothing below
-this line changed for nodes.
+**This section is about the node form**, and was rewritten in v0.2.13
+(`docs/roadmap.md`, "v0.2.13 — the fold"; the reasoning is in
+`docs/design-total-mapping.md`). An edge also carries a `record_hash`, renamed
+alongside this one in v0.2.13 — the same concept, but computed by a
+*different* function over a different input, so the two are not comparable.
+See the Edge section above and `docs/record-grammar.md` §5.
 
-The hash input must be specified exactly or a different JSON encoder silently
-duplicates every record. Proposal:
+The hash input is specified exactly, or a different JSON encoder silently
+duplicates every record:
 
 ```
-content_hash = SHA256( canonical_json([type, params, content]) )
+record_hash = SHA256( canonical_json([type, params, content]) )
 
 canonical_json: sort_keys=True, separators=(',', ':'),
                 ensure_ascii=False, encoded UTF-8
 ```
 
-Children are excluded — they have their own identity, and including them makes
-every ancestor's hash change when a leaf is edited.
+Children are excluded from `record_hash` — they have their own identity, and
+including them makes every ancestor's hash change when a leaf is edited. The
+fold is the companion that *does* cover children:
 
-**A node with no content gets no `content_hash`.** Container nodes —
-`BulletList`, `BlockQuote`, `Div`, the table structure — have nothing of their
-own to hash, and a field that is the same constant on every container is worse
-than an absent one. Its absence is the honest statement that this node's
-meaning lives entirely in its children.
+```
+record_subtree_hash = SHA256( canonical_json(
+    [record_hash, [child.record_subtree_hash, … in `next` order]]))
+```
 
-The hash answers "is this the same paragraph", not "is this the same subtree".
-If subtree comparison is wanted later, add a separate `subtree_hash` as a
-Merkle fold; do not redefine this one.
+reading `contains` and `next` only — no other edge type may move it. A leaf's
+fold is `H([record_hash, []])`.
+
+**Every node carries both, unconditionally — including a container with no
+content of its own.** Through v0.2.12 a node with no `content` got no hash at
+all, on the reasoning that a constant value on every container is worse than
+an absent one. v0.2.13 reversed that: without a hash, a container node's
+*own* identity was undecidable from the record alone — `record_hash` alone
+never distinguished one `BulletList` from another; only the fold did, and the
+fold needs every node in the tree to have stamped its own `record_hash`
+first, containers included. All 417 `BulletList`s in the corpus shared one
+hash before the fold; the fold alone cuts that to 144.
+
+`record_hash` answers "is this the same record", not "is this the same
+value" and not "is this the same subtree" — the fold answers the second, and
+"same value" is deliberately not answered by anything built in v0.2.13; see
+`docs/design-0.3.0.md` §6c and `TODO-equality-layers.md`.
 
 **Duplicate imports are expected to sit side by side.** Importing the same
-document twice mints fresh guids and produces identical `content_hash` values,
-and both copies stay. Recognising them as multiples of one thing is a later
-layer, not a constraint on the importer, and nothing here should try to be
-clever about it in advance.
+document twice mints fresh guids and produces identical `record_hash`/
+`record_subtree_hash` values, and both copies stay. Recognising them as
+multiples of one thing is a later layer, not a constraint on the importer, and
+nothing here should try to be clever about it in advance.
 
 ## Settled
 
@@ -392,7 +410,9 @@ clever about it in advance.
    cheap, but a node that is never the thing anyone means is not worth minting.
 3. **Order is a `next` chain in the `pandoc-ast` layer**, one direction only,
    with three loader checks replacing what an index made impossible.
-4. **No `content_hash` on a node with no content.**
+4. **`record_hash` and `record_subtree_hash` on every node, unconditionally**
+   — v0.2.13 reversed the earlier rule here ("no hash on a node with no
+   content"); see "Defining `record_hash` and `record_subtree_hash`" above.
 5. **The three pandoc defects are recorded and not worked around.** This costs
    nothing here, and the reason is worth stating: they live in pandoc's
    *writer*, downstream of everything this document describes. Our property is
@@ -423,9 +443,9 @@ Extend `tools/roundtrip.py` with a second stage, reusing every fixture:
 4. Assert no `guid` appears twice with different content.
 5. Assert a collapsed `ListItem` re-expands to the wrapper it came from, and
    that a tight list never comes back loose.
-6. Assert a re-import of an unchanged file produces identical `content_hash`
-   values and *different* `guid`s — the expected behaviour, not a defect, until
-   re-import identity is answered.
+6. Assert a re-import of an unchanged file produces identical `record_hash`/
+   `record_subtree_hash` values and *different* `guid`s — the expected
+   behaviour, not a defect, until re-import identity is answered.
 
 **Result.** 526/526 documents round-trip to the identity with the corpus
 fetched — a curated corpus, 478 documents of `rust-book`, and one hand-built

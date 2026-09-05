@@ -49,7 +49,7 @@ bytes, mean 412 B), `"schema_version":1,` adds 20 bytes each — **+5.1%**. This
 the cheapest of the three options and the least clever.
 
 That figure covers this field **alone**. The whole v0.2.4 record change —
-`schema_version` everywhere plus `created_at`, `tool_version` and `content_hash`
+`schema_version` everywhere plus `created_at`, `tool_version` and `record_hash`
 on edges — costs **+27.1% overall and +78.8% on edges**, because three fields land
 on a record whose mean size is 213 B. An earlier draft published the 5% and not
 the 27%, which is the flattering half of a number in a project that measures
@@ -81,7 +81,7 @@ existed changes meaning or type:
 
 By that rule the v0.2.4 work — the `alias` and `unresolved_citation` node
 types, the `names` edge, and the `by`, `created_at`, `tool_version` and
-`content_hash` fields on edges — is **all additive, and schema stays 1.** A
+`record_hash` fields on edges — is **all additive, and schema stays 1.** A
 version that increments every release carries no information; this one is meant to
 be readable years later.
 
@@ -102,7 +102,8 @@ node     ::= { "record": "node"
              , "type":   NODE_TYPE
              , "params": OBJECT        ; optional, omitted when empty
              , "content": ARRAY        ; optional, pandoc inlines
-             , "content_hash": SHA256  ; present iff required — see §5.9
+             , "record_hash": SHA256          ; present, unconditionally — v0.2.13
+             , "record_subtree_hash": SHA256  ; present, unconditionally — v0.2.13
              }
 
 edge     ::= { "record": "edge"
@@ -120,7 +121,7 @@ edge     ::= { "record": "edge"
                                         ; citation-layer edges
              , "created_at": TIMESTAMP ; present, ISO 8601 UTC
              , "tool_version": STRING  ; present, the writer's own version
-             , "content_hash": SHA256  ; present — see §5, the edge form
+             , "record_hash": SHA256  ; present — see §5, the edge form
              }
 
 GUID     ::= [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
@@ -304,13 +305,16 @@ target is not in the base cannot become an edge — a dangling endpoint fails
 ```
 
 **Provenance is top-level on both, exactly as on an edge — never inside
-`params`.** Neither type carries a `content_hash` (§5.9), so putting
-`created_at`/`tool_version` in `params` would have worked for these two, but
-it would set a precedent that breaks the first time a *hashed* node type
-needs provenance, since node hashing is positional over
-`[type, params, content]` and blind to anything else the record carries.
-This is decided once, here; it does not apply to any other node type, whose
-shape (§2, §3.1–3.3) is unchanged by this release.
+`params`.** As of v0.2.13 both types carry `record_hash`/
+`record_subtree_hash` like every other node (§5.9) — they did not before,
+which is the historical reason this paragraph exists — so putting
+`created_at`/`tool_version` in `params` would have worked for these two only
+by accident, and it would set a precedent that breaks the first time a node
+type whose hash is genuinely blind to top-level fields needs provenance,
+since node hashing is positional over `[type, params, content]` and blind to
+anything else the record carries. This is decided once, here; it does not
+apply to any other node type, whose shape (§2, §3.1–3.3) is unchanged by this
+release.
 
 **One alias and one placeholder per distinct unresolved value, per build.**
 Two citations of the same missing handle in one run of `compost layer
@@ -420,26 +424,28 @@ of a graph that fails any of them is refused, not rendered.**
 8. **No two nodes share a handle.** Vacuous while `HANDLE_LEN == 36`, since a
    handle is the guid; it exists so that shortening handles cannot silently
    introduce collisions.
-9. **`content_hash` is present exactly when required** — this assertion is about
-   **nodes only**: present when the node has `content`, or its type is in
-   `TEXT_IN_PARAMS` (`CodeBlock`, `RawBlock`); absent otherwise. Edges are not
-   inspected by it.
+9. **`record_hash` and `record_subtree_hash` are present on every node,
+   unconditionally** (v0.2.13 — through v0.2.12 this assertion allowed a
+   content-free node to omit the field, which is why older revisions of this
+   document describe a conditional rule). `check()` also recomputes both from
+   the record and its children — the eleventh assertion, and the first that
+   verifies content rather than structure.
 10. **`schema_version`, when present, is not greater than the one this tool
     writes.** Absent means 1 by definition, so this can never fire on an
     existing base; it fires the first time a newer tool's records are loaded
     by an older one — the only reason the field is read as well as written.
 
-### The two `content_hash` functions
+### The node and edge `record_hash` are not comparable
 
-They share a field name and are **not comparable**. A query grouping by
-`content_hash` across record kinds is comparing nothing.
+They answer related but different questions, over different shapes, and a
+query grouping by one across record kinds is comparing nothing.
 
-| | node | edge |
+| | node `record_hash` | edge `record_hash` |
 |---|---|---|
 | input | `[type, params, content]` | the record minus a skip list |
 | shape | a positional **array** | an **object** |
-| excludes | `record`, `guid` — by not being in the array | `record`, `guid`, `schema_version`, `content_hash`, `created_at`, `tool_version` |
-| present | only when the node has content | always |
+| excludes | `record`, `guid` — by not being in the array | `record`, `guid`, `schema_version`, `record_hash`, `created_at`, `tool_version` |
+| present | always, on every node (v0.2.13) | always |
 
 Both are `sha256(canonical(…))`, where `canonical` is JSON with sorted keys, no
 spaces, and `ensure_ascii=False`.
@@ -449,11 +455,13 @@ what the edge *claims*, never when or by what it was written, or the same fact
 rebuilt tomorrow would not match the one written today — which is the only thing
 the hash is for. See `docs/decisions.md`.
 
-**Neither reaches everything.** Transcript node types, `alias` and
-`unresolved_citation` carry no hash at all; and an edge pointing at a placeholder
-hashes differently on every build, because the placeholder's guid is fresh each
-time. `content_hash` is evidence for a future dedup design, not a mechanism
-anything acts on.
+**`record_hash` answers "is this the same record", not "is this the same
+value".** Two genuinely identical empty `thinking` blocks hash *differently*
+once `signature` is stored on both — correctly, under that reading; see
+`docs/design-0.3.0.md` §6c. And an edge pointing at a placeholder hashes
+differently on every build, because the placeholder's guid is fresh each
+time. Neither hash is a mechanism anything acts on today — both are evidence
+for a future dedup or equality design.
 
 ---
 
