@@ -265,6 +265,14 @@ this section states the outcome and keeps the measurements, which still stand.
 | **`record_hash`** | is this the same *record* — mechanically, `H([type, params, content])`, unconditional on every node |
 | **`record_subtree_hash`** (the fold) | is this the same *subtree* — reads `contains`/`next` only |
 | **`guid`** | is this the same *thing* |
+| **a class `alias`** | is this the same *X* — **and it names which X** (`docs/design-naming.md`) |
+
+**The fourth row is the one that carries its own question.** The first three are
+answers: a hash tells you two things match and nothing about what was compared,
+because the projection that produced it lives outside the record. A class alias
+stores the projection's *name* beside the hash, which is what makes a wrong merge
+diagnosable and, for the first time, checkable. `docs/design-naming.md` is that
+design; it changes nothing about the three rows above it.
 
 **"Is this the same value" is not answered here, and is not scheduled here.**
 `record_hash` looks like a value hash and is not one: two genuinely identical

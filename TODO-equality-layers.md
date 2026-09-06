@@ -8,6 +8,11 @@ that fixes it would have to ignore.
 
 Nothing here is a decision. It is the material for designing a layer builder.
 
+**As of 2026-09-06 the design that reads this file is `docs/design-naming.md`**,
+and it settles §4's emit question and three of §5's five. Where the two disagree
+about a measurement, that document is later and measured on two bases rather than
+one — §3.2 and §3.6 below are annotated with what it found.
+
 ---
 
 ## 1. The picture, and it is a physics picture
@@ -97,6 +102,15 @@ keeping `{name, input}`, answers *"how many times have I run this exact
 command"* and *"which commands always produce the same output"*. This is the
 most obviously useful layer in the catalogue and the cheapest to build.
 
+**Right conclusion, wrong denominator — and the correction is large.** Those
+counts are the *corpus*, where the layer merges **0.7%** of `toolcall` nodes. On
+a lived-in base of 42,072 nodes it merges **85.3%**, 2,370 calls into 1,288
+classes, largest class 11; `tooloutput` goes from 14.9% to 86.6%. A command
+vocabulary is small and fixed, so repetition grows with how much history a base
+holds and barely shows in seven transcripts. **The corpus is a sample of
+documents, not a sample of a working life**, and every merge rate in this file is
+a lower bound because of it. `docs/design-naming.md` §4.1.
+
 ### 3.3 The positional identifier — `Header.attr[0]`
 Pandoc generates a heading's id from its text and disambiguates repeats
 positionally: `notes`, `notes-1`, `notes-2`. **6 of 1,546 headings, in 2 of 518
@@ -119,12 +133,24 @@ Worth noting this is the one type where a careful hand-written whitelist gave a
 catastrophic answer — `{author}` alone merges all 2,839 into two classes — which
 is why it is a layer and not a param rule.
 
-### 3.6 Normalisation — not measured, and it should be
+### 3.6 Normalisation — measured, and it is nothing ✗ retired
 Two `Para` nodes differing only in trailing whitespace, or in a smart quote that
-one reader produced and another did not. This is the classic equality layer and
-we have **no measurement** for it. Someone should count, over the corpus, how
-many `Para` nodes become equal under (a) whitespace stripping, (b) Unicode NFC,
-(c) both. Until that number exists this case is folklore.
+one reader produced and another did not. This was called the classic equality
+layer and had **no measurement**. It has one now, over `Para` and `Plain`:
+whitespace collapsing merges **3 nodes in 12,841**, and Unicode NFC merges
+**exactly zero**, on both bases. pandoc's AST tokenises runs of whitespace and
+normalises the text before we ever see it, so the case was closed before it was
+written. **Delete this rather than schedule it.**
+
+**What the measurement found one rung up is worth building.** Going from the
+inline JSON to the *plain text* — dropping the markup, keeping the words —
+collapses **1,093 classes of 7,469** on the corpus and 354 of 5,571 on a working
+base, two orders of magnitude more than the case catalogued here. The projection
+is `records.plain_text()`, which already exists and is already used by `lookup`
+and the views, so this is the cheapest layer in the catalogue and it was not in
+it. **Hazard:** `plain_text` erases `Link`s, so a paragraph that cites and one
+that does not become equal under it; that layer must never be used to reason
+about citations. `docs/design-naming.md` §4.5.
 
 ### 3.7 The non-case — the same value in two documents
 Two `# Braindump` headings, two identical `Para`s in different notes: same
@@ -148,17 +174,48 @@ From the cases above, a layer is fully specified by four things:
 The last one is the only real design question, and it should be settled by
 measuring the largest class a plausible layer produces before choosing.
 
+**Settled: a class node, and it is an `alias`.** Measured — §3.1's class is 491
+members on the corpus and **1,382** on a working base, so the pairwise form is
+954,271 edges for that one class against 1,382 `names` edges. The class node
+needs no new type either: `alias {value, scheme}` is already a name that leads to
+a node, `names` is already the edge, and `lookup` already resolves it.
+`docs/design-naming.md` §5.1 and §5.3.
+
 ## 5. Open
 
 1. **Is a layer's projection declared in the schema, or passed on the command
    line?** `compost layer citation --by=uuid-link` already has the shape of an
    answer.
+
+   **Sharpened, not closed.** It is no longer a convenience question: a class
+   alias stores the *name* of its projection and not the projected value — the
+   value is recoverable from any member — so `scheme` has to resolve to something
+   **executable**, or a class can be neither explained nor checked. Code first
+   (a `BUILDERS` entry), with the scheme name recorded in every alias from the
+   first release so a declarative form can be attached later. `docs/design-naming.md`
+   §5.2 and §6.
+
 2. **Does a layer accumulate like `cites` does?** Re-running `layer citation`
    accumulates on purpose. For equivalence classes that is probably wrong, and
    "delete the file the run wrote" is the only inverse the design offers.
+
+   **It is fine, and needs no new mechanism.** Two runs mint two aliases with the
+   same `value`, which is exactly what two builds of the citation layer already
+   do, and `lookup` already prints every one rather than picking silently —
+   tested, `tests/test_lookup.py`, *"two aliases with one value both appear"*.
+
 3. **Can a layer be wrong in a way `check` catches?** Today `check` verifies
    structure and would not notice an equivalence class containing two obviously
    different things.
+
+   **Yes, and cheaply.** A class alias's `value` must equal
+   `scheme + ":" + sha256(canonical(projection(m)))` for *every* member `m` it
+   names. That recomputes from records alone — no source file, no importer
+   version — which is the same shape as `check()`'s eleventh assertion, and it
+   catches the one failure that matters, since a wrong merge is the irreversible
+   direction. `docs/design-naming.md` §5.4.
+
 4. **Does the physics parallel earn a place in the whitepaper**, or is it a
    thinking aid that should stay in this file? It is genuinely load-bearing for
-   §2, which is a real theorem about the design.
+   §2, which is a real theorem about the design. **Still open, still the human's
+   call.**
