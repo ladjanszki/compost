@@ -66,6 +66,18 @@ re-digest, and that distinction stays visible.
 verifies content rather than structure: both hashes recompute from the record and
 its children.
 
+### `lookup` no longer drops what an alias names
+
+`lookup` indexed `names` edges into a dict keyed by the alias, so an alias with
+two of them reported one target and said nothing about the other. Nothing the
+tool writes makes that shape — the citation layer mints exactly one `names` edge
+per alias — but that is its convention and not an invariant: `check()` does not
+count `names` edges, and an alias with two of them loads with **0 problems**,
+verified against a real base. *Anything may write records*; a reader that assumes
+more than `check` enforces is the reader that is wrong. Found while designing a
+layer that wants one alias to name a whole equivalence class
+(`docs/design-naming.md`), and fixed apart from it.
+
 ### The whitepaper is now a versioned artifact
 
 `docs/compost.md` carries its version in the status line, and every past version

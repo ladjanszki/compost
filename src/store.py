@@ -550,8 +550,20 @@ def main(argv):
                 by_value.setdefault(n.get("params", {}).get("value"),
                                     []).append(n)
 
-        names = {e["source"]: e["destination"] for e in edges
-                 if e["type"] == "names"}
+        # alias -> every node it names. A *list*, not one destination: the
+        # citation layer mints exactly one `names` edge per alias
+        # (docs/record-grammar.md §3.4), but that is its convention and not an
+        # invariant — `records.check()` does not count `names` edges, so an
+        # alias with two of them loads and passes `check` with 0 problems.
+        # This was a dict keyed by alias guid until v0.2.13, which meant the
+        # second edge silently overwrote the first and `lookup` reported one
+        # target of two with nothing to say it had dropped anything. Anything
+        # may write records (docs/decisions.md); a reader that assumes more
+        # than `check` enforces is the reader that is wrong.
+        names: dict[str, list[str]] = {}
+        for e in edges:
+            if e["type"] == "names":
+                names.setdefault(e["source"], []).append(e["destination"])
         cites_by_dest: dict[str, list[dict]] = {}
         for e in edges:
             if e["type"] == "cites":
@@ -578,8 +590,7 @@ def main(argv):
             direct = cites_by_dest.get(guid, [])
             indirect = []
             for al in by_value.get(guid, []):
-                ph = names.get(al["guid"])
-                if ph is not None:
+                for ph in names.get(al["guid"], []):
                     indirect.extend(cites_by_dest.get(ph, []))
 
             def show(label, es):
@@ -619,16 +630,21 @@ def main(argv):
         print(f"  {handle!r} is not a guid in this base; resolved via "
               f"{len(matches)} alias{plural}")
         for al in matches:
-            target_guid = names.get(al["guid"])
+            targets = names.get(al["guid"], [])
             scheme = al.get("params", {}).get("scheme", "?")
-            print(f"\n  alias {al['guid']}  (scheme {scheme})")
-            target = nodes.get(target_guid)
-            if target is None:
-                print(f"    -> {target_guid}  (missing)")
+            named = f", names {len(targets)}" if len(targets) != 1 else ""
+            print(f"\n  alias {al['guid']}  (scheme {scheme}{named})")
+            if not targets:
+                print("    -> names nothing")
                 continue
-            print_node(target_guid, target, indent="    ")
-            print()
-            print_citers(target_guid)
+            for target_guid in targets:
+                target = nodes.get(target_guid)
+                if target is None:
+                    print(f"    -> {target_guid}  (missing)")
+                    continue
+                print_node(target_guid, target, indent="    ")
+                print()
+                print_citers(target_guid)
         return 0
 
     if cmd == "check":

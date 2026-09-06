@@ -204,6 +204,31 @@ def main():
         case("a guid cited only through a placeholder still reports that "
              "citer", forward_cited_through_placeholder)
 
+        def alias_naming_two_nodes():
+            # One alias, two `names` edges. The citation layer never writes
+            # this, but nothing stops it: `check` does not count `names`
+            # edges, so the graph is sound and `lookup` has to say so. It
+            # used to index `names` by alias guid into a plain dict, which
+            # dropped every target but the last with no sign that it had.
+            b = R.Builder()
+            al = b.node("alias", {"value": "class:demo",
+                                  "scheme": "demo-class"})
+            R.stamp_hashes(b.records)          # a leaf; no edges yet, on purpose
+            b.edge("names", al, guid, "citation", by="demo-class")
+            b.edge("names", al, other_guid, "citation", by="demo-class")
+            st.write("two-names.jsonl", b.records)
+            recs, _ = st.load()
+            problems = R.check(recs)
+            code, out = run(tmp, "lookup", "class:demo")
+            (st.graph / "two-names.jsonl").unlink()
+            named = set(re.findall(R.HANDLE_RE, out))
+            return (not problems and code == 0
+                    and {guid, other_guid} <= named,
+                    f"check clean, {len(named & {guid, other_guid})} of 2 "
+                    f"targets printed")
+        case("an alias naming two nodes is legal, and both are printed",
+             alias_naming_two_nodes)
+
         def no_arg():
             code, out = run(tmp, "lookup")
             return code == 2 and "usage:" in out, out.strip()
