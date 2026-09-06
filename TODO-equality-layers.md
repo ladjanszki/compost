@@ -13,6 +13,10 @@ and it settles §4's emit question and three of §5's five. Where the two disagr
 about a measurement, that document is later and measured on two bases rather than
 one — §3.2 and §3.6 below are annotated with what it found.
 
+**A `§` here is this file. A `DN:§` is `docs/design-naming.md`**, which numbers
+its own §3, §4 and §5 on the same subject, so an untagged number would be
+ambiguous rather than merely terse.
+
 ---
 
 ## 1. The picture, and it is a physics picture
@@ -109,7 +113,7 @@ classes, largest class 11; `tooloutput` goes from 14.9% to 86.6%. A command
 vocabulary is small and fixed, so repetition grows with how much history a base
 holds and barely shows in seven transcripts. **The corpus is a sample of
 documents, not a sample of a working life**, and every merge rate in this file is
-a lower bound because of it. `docs/design-naming.md` §4.1.
+a lower bound because of it. DN:§4.1.
 
 ### 3.3 The positional identifier — `Header.attr[0]`
 Pandoc generates a heading's id from its text and disambiguates repeats
@@ -130,8 +134,13 @@ layer needs no design, only a query. Listed so nobody designs it twice.
 `timestamp` and `log`. A turn's *value*, though, is essentially its children. The
 layer projects `{author}` plus `record_subtree_hash` and ignores the rest.
 Worth noting this is the one type where a careful hand-written whitelist gave a
-catastrophic answer — `{author}` alone merges all 2,839 into two classes — which
-is why it is a layer and not a param rule.
+catastrophic answer — `{author}` alone merges all 2,839 into **three** classes,
+largest 1,779, one per author value — which is why it is a layer and not a param
+rule. (This said *two* until it was re-measured; `envelope` is an author too.)
+
+**And the projection as written merges nothing at all on the corpus** — 2,839
+turns, 2,839 classes. It needs a base with re-ingested history to have any
+effect, where it merges 83.9%. DN:§4.2.
 
 ### 3.6 Normalisation — measured, and it is nothing ✗ retired
 Two `Para` nodes differing only in trailing whitespace, or in a smart quote that
@@ -150,7 +159,7 @@ is `records.plain_text()`, which already exists and is already used by `lookup`
 and the views, so this is the cheapest layer in the catalogue and it was not in
 it. **Hazard:** `plain_text` erases `Link`s, so a paragraph that cites and one
 that does not become equal under it; that layer must never be used to reason
-about citations. `docs/design-naming.md` §4.5.
+about citations. DN:§4.5.
 
 ### 3.7 The non-case — the same value in two documents
 Two `# Braindump` headings, two identical `Para`s in different notes: same
@@ -179,7 +188,7 @@ members on the corpus and **1,382** on a working base, so the pairwise form is
 954,271 edges for that one class against 1,382 `names` edges. The class node
 needs no new type either: `alias {value, scheme}` is already a name that leads to
 a node, `names` is already the edge, and `lookup` already resolves it.
-`docs/design-naming.md` §5.1 and §5.3.
+DN:§5.1 and DN:§5.3.
 
 ## 5. Open
 
@@ -192,8 +201,8 @@ a node, `names` is already the edge, and `lookup` already resolves it.
    value is recoverable from any member — so `scheme` has to resolve to something
    **executable**, or a class can be neither explained nor checked. Code first
    (a `BUILDERS` entry), with the scheme name recorded in every alias from the
-   first release so a declarative form can be attached later. `docs/design-naming.md`
-   §5.2 and §6.
+   first release so a declarative form can be attached later. DN:§5.2 and
+   DN:§6.
 
 2. **Does a layer accumulate like `cites` does?** Re-running `layer citation`
    accumulates on purpose. For equivalence classes that is probably wrong, and
@@ -213,7 +222,7 @@ a node, `names` is already the edge, and `lookup` already resolves it.
    names. That recomputes from records alone — no source file, no importer
    version — which is the same shape as `check()`'s eleventh assertion, and it
    catches the one failure that matters, since a wrong merge is the irreversible
-   direction. `docs/design-naming.md` §5.4.
+   direction. DN:§5.4.
 
 4. **Does the physics parallel earn a place in the whitepaper**, or is it a
    thinking aid that should stay in this file? It is genuinely load-bearing for

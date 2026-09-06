@@ -9,6 +9,22 @@ It answers four of the seven questions left open in `TODO-equality-layers.md`,
 retires one of its six catalogued cases, and replaces it with a cheaper one
 nobody had listed. §7 says which.
 
+**How to read a `§` here.** A bare one is **this document**. Anything else
+carries a tag, so a reference resolves where you are reading it and never by
+scrolling back here. The tags are needed rather than decorative:
+TEQ numbers its own sections 3, 4 and 5 on this same subject, so an untagged
+`§3.2` would be ambiguous rather than merely terse.
+
+| tag | file | what this document takes from it |
+|---|---|---|
+| **TEQ** | `TODO-equality-layers.md` | the catalogue of candidate layers, and the open questions answered in §7 |
+| **D030** | `docs/design-0.3.0.md` | D030:§3, identity stays UUIDv4; D030:§6c, what each hash answers |
+| **DTM** | `docs/design-total-mapping.md` | DTM:§1, *the code is the whitelist*; why the terms are faithful |
+| **RG** | `docs/record-grammar.md` | RG:§3.4, what an `alias` is; RG:§6, the `scheme` vocabulary |
+
+Two of TEQ's sections are numbered *lists* rather than subsections, so
+**TEQ:§4.4** means item 4 of its §4.
+
 ---
 
 ## 1. Three names for one object
@@ -18,8 +34,8 @@ not notice they were one thing:
 
 - **`record_hash`** — v0.2.13, *is this the same record*.
 - **`record_subtree_hash`** — v0.2.13, *is this the same subtree*.
-- **the naming layer** — `TODO-equality-layers.md` §4, unbuilt, *is this the
-  same thing I mean*, and stuck on what it should emit.
+- **the naming layer** — TEQ:§4, unbuilt, *is this the same thing I mean*, and
+  stuck on what it should emit.
 
 The object is a **Skolem function**: a deterministic map from a record's
 meaningful content to a name, chosen so that two records denoting the same thing
@@ -50,9 +66,8 @@ its argument, and the `names` edge is the evaluation.
 
 **Total mapping is what makes the terms faithful.** `docs/design-total-mapping.md`
 makes the mapping lose nothing, so `record(type, params, content)` is isomorphic
-to the source object. That is `TODO-equality-layers.md` §2's *only false
-negatives* theorem restated: digest is injective, so equal terms imply equal
-sources.
+to the source object. That is TEQ:§2's *only false negatives* theorem restated:
+digest is injective, so equal terms imply equal sources.
 
 ## 3. What a term buys, and what it costs
 
@@ -86,9 +101,9 @@ Everything below was measured twice.
   nodes, 71,401 edges**. Counts only; nothing of its content appears here.
 
 **They disagree by two orders of magnitude on the number that matters.** The
-`toolcall` layer — the one `TODO-equality-layers.md` §3.2 calls *"the most
-obviously useful layer in the catalogue"* — merges **0.7%** of nodes on the
-corpus and **85.3%** on the working base.
+`toolcall` layer — the one TEQ:§3.2 calls *"the most obviously useful layer in
+the catalogue"* — merges **0.7%** of nodes on the corpus and **85.3%** on the
+working base.
 
 The catalogue is not wrong; it measured the corpus, and the corpus is a sample of
 *documents*, not a sample of a working life. A command vocabulary is small and
@@ -105,11 +120,11 @@ largest class:
 
 | layer | corpus | working base |
 |---|---|---|
-| §3.1 `thinking` by text | 491 → **1** (largest 491) | 1,382 → **1** (largest 1,382) |
-| §3.2 `toolcall` by `{name,input}` | 900 → 897, 3 classes >1, largest 2 | 2,370 → 1,288, 940 >1, largest 11 |
-| §3.2 `tooloutput` by `{text,is_error}` | 900 → 808, 42 >1, largest 10 | 2,370 → 1,175, 858 >1, largest 33 |
-| §3.3 `Header` dropping `attr[0]` | 1,757 → 1,054, 460 >1, largest 42 | 1,085 → 712, 248 >1, largest 9 |
-| §3.5 `turn` by `{author}` + subtree | 2,839 → **2,839, nothing merges** | 7,330 → 4,147, 2,968 >1, largest 4 |
+| TEQ:§3.1 `thinking` by text | 491 → **1** (largest 491) | 1,382 → **1** (largest 1,382) |
+| TEQ:§3.2 `toolcall` by `{name,input}` | 900 → 897, 3 classes >1, largest 2 | 2,370 → 1,288, 940 >1, largest 11 |
+| TEQ:§3.2 `tooloutput` by `{text,is_error}` | 900 → 808, 42 >1, largest 10 | 2,370 → 1,175, 858 >1, largest 33 |
+| TEQ:§3.3 `Header` dropping `attr[0]` | 1,757 → 1,054, 460 >1, largest 42 | 1,085 → 712, 248 >1, largest 9 |
+| TEQ:§3.5 `turn` by `{author}` + subtree | 2,839 → **2,839, nothing merges** | 7,330 → 4,147, 2,968 >1, largest 4 |
 | **new** — `Para`/`Plain` by plain text | 12,841 → 6,376, 3,292 >1, largest 894 | 9,101 → 5,217, 1,921 >1, largest 512 |
 | *control* — `turn` by `{author}` alone | 2,839 → **3**, largest 1,779 | 7,330 → **3**, largest 4,726 |
 
@@ -123,13 +138,14 @@ Share of nodes landing in a class with more than one member:
 | `Header` | 66.2% | 57.2% |
 | `turn` + subtree | 0.0% | **83.9%** |
 
-Three things follow. **§3.1 is not a layer, it is a single class** — one class,
-every member, on both bases; a layer that produces one class for a whole node
-type is telling you the projection kept nothing, not that the base is uniform.
-**§3.5 needs a lived-in base to exist at all** — zero merges on the corpus.
+Three things follow. **TEQ:§3.1 is not a layer, it is a single class** — one
+class, every member, on both bases; a layer that produces one class for a whole
+node type is telling you the projection kept nothing, not that the base is
+uniform.
+**TEQ:§3.5 needs a lived-in base to exist at all** — zero merges on the corpus.
 And the *control* line is the reason this is a layer and not a param rule: a
 hand-written whitelist of `{author}` alone gives three classes and merges
-everything, exactly as `TODO-equality-layers.md` §3.5 warned.
+everything, exactly as TEQ:§3.5 warned.
 
 ### 4.3 Term size — the cost of storing the term
 
@@ -175,11 +191,11 @@ This is why Merkle hashing exists, and it settles the general rule: **the term i
 the definition, the hash is the index, and for a recursive term the definition is
 the graph itself.** Nothing needs to store it, because the graph already is it.
 
-### 4.5 §3.6 is retired, and something cheaper replaces it
+### 4.5 TEQ:§3.6 is retired, and something cheaper replaces it
 
-`TODO-equality-layers.md` §3.6 calls whitespace-and-Unicode normalisation *the
-classic equality layer* and notes it has no measurement. Measured now, as a
-ladder over `Para` and `Plain`:
+TEQ:§3.6 calls whitespace-and-Unicode normalisation *the classic equality layer*
+and notes it has no measurement. Measured now, as a ladder over `Para` and
+`Plain`:
 
 | | corpus | working base |
 |---|---|---|
@@ -191,7 +207,7 @@ ladder over `Para` and `Plain`:
 **Whitespace normalisation is worth three nodes in 12,841. NFC is worth exactly
 zero, on both bases.** pandoc's AST has already tokenised runs of whitespace and
 normalised the text, so the case the catalogue was saving room for was closed
-before it was written. §3.6 should be deleted, not scheduled.
+before it was written. TEQ:§3.6 should be deleted, not scheduled.
 
 What the ladder found instead is the step above it: **dropping the inline markup
 and keeping the words** collapses 1,093 classes on the corpus and 354 on the
@@ -218,10 +234,10 @@ direction.
 ```
 
 plus one `names` edge to every member. **No new node type, no new edge type, no
-schema change** — `scheme` is already an open vocabulary (`docs/record-grammar.md`
-§6), `names` already exists, `layers._entity()` already writes exactly this shape
-for the citation layer, and `lookup` already resolves an alias by its `value` and
-already prints every alias sharing one.
+schema change** — `scheme` is already an open vocabulary (RG:§6), `names` already
+exists, `layers._entity()` already writes exactly this shape for the citation
+layer, and `lookup` already resolves an alias by its `value` and already prints
+every alias sharing one.
 
 The `value` is `scheme + ":" + sha256` rather than a bare hash so that a class is
 addressable by the resolver that exists, with the whole hash and no prefix —
@@ -251,14 +267,14 @@ it. That is §6, and it is the one fork left.
 
 ### 5.3 Not pairwise edges
 
-`TODO-equality-layers.md` §4 left this open: `equivalent_to` edges between
-members, or a class node. **Class node**, and the numbers are not close — the
-largest class alone, in `names` edges against pairwise ones:
+TEQ:§4 left this open: `equivalent_to` edges between members, or a class node.
+**Class node**, and the numbers are not close — the largest class alone, in
+`names` edges against pairwise ones:
 
 | | class node | pairwise |
 |---|---|---|
-| §3.1 `thinking`, working base | 1,382 | **954,271** |
-| §3.1 `thinking`, corpus | 491 | 120,295 |
+| TEQ:§3.1 `thinking`, working base | 1,382 | **954,271** |
+| TEQ:§3.1 `thinking`, corpus | 491 | 120,295 |
 | §4.5 `Para`/`Plain`, corpus | 894 | 399,171 |
 
 A class node is also the only one of the two that has somewhere to put the
@@ -272,9 +288,9 @@ branch in every reader.
 
 ### 5.4 A layer can now be wrong in a way `check` catches
 
-`TODO-equality-layers.md` §5.3 asked whether it could. **Yes, and cheaply**:
-`value` must equal `scheme + ":" + sha256(canonical(projection(m)))` for *every*
-member `m` the alias names. That recomputes from records alone, needs no source
+TEQ:§5.3 asked whether it could. **Yes, and cheaply**: `value` must equal
+`scheme + ":" + sha256(canonical(projection(m)))` for *every* member `m` the
+alias names. That recomputes from records alone, needs no source
 file, and is the same shape as `check()`'s eleventh assertion. It catches a class
 holding two things that are not equal under the projection it claims — the one
 failure mode of a layer that matters, because a wrong merge is the irreversible
@@ -296,14 +312,14 @@ It needs `scheme` to be executable, which is again §6.
   never arises. This is the one place the worked example should not be copied.
 - **Not `display_name`.** Opposite direction — an alias answers *what does this
   name resolve to*, a display name *what should be shown for this node*
-  (`docs/record-grammar.md` §3.4).
+  (RG:§3.4).
 - **Not for a human to type.** A citation names a block; a class alias is reached
   from a member or by scheme.
-- **Not a change to `guid`.** Identity stays UUIDv4 and positional
-  (`docs/design-0.3.0.md` §3). Content-addressed naming would merge 633 empty
-  cells into one node and is still declined.
+- **Not a change to `guid`.** Identity stays UUIDv4 and positional (D030:§3).
+  Content-addressed naming would merge 633 empty cells into one node and is
+  still declined.
 
-### 5.6 The fourth row for `docs/design-0.3.0.md` §6c
+### 5.6 The fourth row for D030:§6c
 
 | | answers |
 |---|---|
@@ -317,14 +333,14 @@ is the whole point of the shape.
 
 ## 6. The one fork left — is a projection code, or data?
 
-`TODO-equality-layers.md` §5.1 asked whether a layer's projection is declared in
-the schema or passed on the command line. §5.2 and §5.4 above turn that from a
+TEQ:§5.1 asked whether a layer's projection is declared in the schema or passed
+on the command line. §5.2 and §5.4 above — of *this* document — turn that from a
 convenience question into a requirement: `scheme` must resolve to something
 executable, or a class cannot be explained or checked.
 
-**As code**, registered like `BUILDERS["citation"]` in `src/layers.py`. Consistent
-with `design-total-mapping.md` §1 — *the code is the whitelist* — reviewed, under
-test, and the first three projections are one-liners. Reproducing an old class
+**As code**, registered like `BUILDERS["citation"]` in `src/layers.py`.
+Consistent with DTM:§1 — *the code is the whitelist* — reviewed, under test, and
+the first three projections are one-liners. Reproducing an old class
 needs the old code, which is why the alias already carries `tool_version`.
 
 **As data**, a declarative projection spec — the JSON-transformation language
@@ -344,13 +360,13 @@ of the design leans on.
 
 | | was | now |
 |---|---|---|
-| §3.2 "most useful layer" | 3 repeat groups in 900 | 0.7% on the corpus, **85.3%** on a working base — right conclusion, wrong denominator (§4.1) |
-| §3.6 normalisation | folklore, unmeasured | **measured and retired**: 3 nodes in 12,841, NFC zero. Replaced by plain-text (§4.5) |
-| §4.4 what a layer emits | open, edges vs class node | **class alias + `names`** (§5.1, §5.3) |
-| §5.1 projection: schema or CLI | open | must be *executable*; code first, name recorded (§6) |
-| §5.2 does a layer accumulate | open | yes, harmlessly — two runs mint two aliases with one value, which `lookup` already prints both of, tested |
-| §5.3 can `check` catch a wrong layer | open | **yes** — recompute `value` from every member (§5.4) |
-| §5.4 does the physics parallel belong in the whitepaper | open | untouched — still the human's call |
+| TEQ:§3.2 "most useful layer" | 3 repeat groups in 900 | 0.7% on the corpus, **85.3%** on a working base — right conclusion, wrong denominator (§4.1) |
+| TEQ:§3.6 normalisation | folklore, unmeasured | **measured and retired**: 3 nodes in 12,841, NFC zero. Replaced by plain-text (§4.5) |
+| TEQ:§4.4 what a layer emits | open, edges vs class node | **class alias + `names`** (§5.1, §5.3) |
+| TEQ:§5.1 projection: schema or CLI | open | must be *executable*; code first, name recorded (§6) |
+| TEQ:§5.2 does a layer accumulate | open | yes, harmlessly — two runs mint two aliases with one value, which `lookup` already prints both of, tested |
+| TEQ:§5.3 can `check` catch a wrong layer | open | **yes** — recompute `value` from every member (§5.4) |
+| TEQ:§5.4 does the physics parallel belong in the whitepaper | open | untouched — still the human's call |
 
 ## 8. Still open
 
