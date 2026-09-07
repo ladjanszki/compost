@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.13-rc — the fold
+## v0.2.13 — 2026-09-07 — the fold
 
 Every node now carries `record_hash` and `record_subtree_hash`. The release was
 specced as something else entirely — a human marking up 59 params, one column,
