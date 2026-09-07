@@ -2283,6 +2283,13 @@ something honest about them, so it gains a row naming them as superseded and
 not yet reviewed, rather than as *"worth reading for intent"*, which currently
 sits four lines from the claim that `docs/` is what is true now.
 
+**Superseded 2026-09-07.** The row and its read-me-first requirement are gone
+with the files, which are in the notes repository under
+`superseded-v0.2-drafts/`. A requirement that a human read three stale drafts
+before they could be moved was a queue nobody was going to clear, and it kept
+`docs/` holding what is merely old for the sake of a promise. They are versions
+of thinking that became something else, which is what the base is for.
+
 **`record-grammar.md`'s headings must not be renamed in this release.**
 `tests/test_grammar.py` discovers the grammar by splitting on the literal
 strings `## 3. Node types` and `## 4. Edge types`. Renaming either does not
@@ -2430,7 +2437,7 @@ status as the machine-read source. A header says so, and points at the schema.
 whitelists. That input is no longer needed and the table is not the deliverable.
 
 Three days of measurement replaced it with a mechanical rule. The reasoning is
-in `docs/compost.md` (principle 1); the short form is that a per-type whitelist
+in `design-total-mapping.md`; the short form is that a per-type whitelist
 costs one discretionary decision per param per type per importer, and the next
 three importers on the list — cstlib, graphviz, the filesystem — would each
 bring dozens of types. A design whose cost grows with every graph the tool
@@ -2545,7 +2552,7 @@ re-digest, and that distinction stays visible.
 **7. `docs/design-0.3.0.md` §6c rewritten.** Its three-question table is wrong
 as written: `content_hash` is renamed and answers a different question, and the
 third question moves out of the record into a layer. §8 — the per-type
-whitelist — is deleted, not amended; `docs/compost.md` (principle 1) replaces it.
+whitelist — is deleted, not amended; `design-total-mapping.md` replaces it.
 
 ### Guarantees
 
@@ -2593,7 +2600,7 @@ edit to the notes reader.
 
 **A digestor that meets content it does not own delegates to the digestor that
 does, and the delegated input is stored as a blob** exactly like any other
-digestor input. That is the whole release. `docs/compost.md` (principle 1) §4 has
+digestor input. That is the whole release. `design-total-mapping.md` §4 has
 the reasoning; the rule it produces is one sentence with no exceptions:
 
 > Every digestor's input is stored as a blob. Every key of that input is a
@@ -2630,7 +2637,7 @@ in exactly the sense that type already means, and `records_to_ast` handles it
 unchanged.
 
 **3. `src/store.py`** — storing a fragment that has no filename. Decide what
-`original_name` says; see `docs/compost.md` (principle 1) §9.2.
+`original_name` says; see `design-total-mapping.md` §9.2.
 
 **4. `src/views.py` and `src/draw.py`** — descend the extra level. Every view
 that walks `turn → blocks` now walks `turn → document → blocks`. Citations are

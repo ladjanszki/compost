@@ -2,7 +2,7 @@
 """
 test_mapping_totality.py — every key a digestor reads is accounted for.
 
-`docs/compost.md` (principle 1): hashing the record is only the same thing as
+`design-total-mapping.md`: hashing the record is only the same thing as
 hashing the source object if the record holds everything the object held.
 Where the mapping drops a key, the two diverge invisibly — the dropped key is
 not in the record to be missed. Three such drops were found and fixed in

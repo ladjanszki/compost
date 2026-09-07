@@ -189,7 +189,7 @@ inheriting the second.
   identity) and, since v0.2.13, `record_hash`/`record_subtree_hash` (SHA256,
   a dedup key — not identity; `content_hash` before the rename, and
   conditional on the node having content before v0.2.13 generalised it —
-  `docs/compost.md` (principle 1)). Edges carry a `guid` too in this version.
+  `design-total-mapping.md`). Edges carry a `guid` too in this version.
   A pure content-hash identity for edges
   is attractive and may come later as an optional `identity_hash`, but only
   once the hash input is pinned down; until then a guid cannot lose

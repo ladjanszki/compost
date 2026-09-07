@@ -19,7 +19,7 @@ immutable records (`CLAUDE.md`):
   3. drops the old per-node `content_hash`, which v0.2.13 replaced;
   4. drops `lines` from `session` roots — a derived param that is a function
      of the subtree, which is why a re-ingested transcript's root failed to
-     match itself. See `docs/compost.md` (principle 1) §6.
+     match itself. See `design-total-mapping.md` §6.
 
 **What it deliberately does not do.** It does not retro-fit the v0.2.13
 mapping fixes: `signature` and `caller` are recoverable from the parent turn's

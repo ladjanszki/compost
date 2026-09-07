@@ -23,9 +23,10 @@ measured rather than remembered.
 **Section 4's grammar paragraph was rewritten in v0.2.12**: the per-type
 grammar's machine-read source moved from `record-grammar.md` prose to
 `tools/record-schema-1.json`, validated by `jsonschema`; `record-grammar.md`
-keeps the prose and the reasons. Still deferred: splitting `migration.md`, and
-deciding what becomes of `spec.md`, `spec-review.md` and `design-answers.md`,
-which stay in place until read.
+keeps the prose and the reasons. Still deferred: splitting `migration.md`. The
+superseded v0.2 drafts were waiting on a review that was never going to happen
+on a schedule; in v0.2.13 they moved to the notes repository with everything
+else that is merely old, to be ingested rather than triaged.
 
 ---
 

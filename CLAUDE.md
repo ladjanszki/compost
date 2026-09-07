@@ -107,7 +107,9 @@ base's own content is **the records**, never a corpus.
 
 **`docs/` holds four different kinds of thing, and the table says which.** It
 used to claim one status for the whole directory while calling `spec.md`
-historical four lines later; both could not be true.
+historical four lines later; both could not be true. The superseded v0.2 drafts
+that row named are in the notes repository now, with everything else that is
+merely old.
 
 | Source | Status |
 |---|---|
@@ -117,7 +119,6 @@ historical four lines later; both could not be true.
 | `docs/man-compost.md` | **what is true now**, and held against the program by `tests/test_manpage.py`. |
 | `docs/roadmap.md`, `docs/design-*.md` | **what is being decided now.** A design document that has served its purpose moves to the notes repository rather than being deleted — it is a revision of something, and once TA ships it becomes a document in the base like any other. |
 | `docs/migration.md` | the v0.1 corpus migration. **Part shipped, part never built** — the handle dictionary and `kg-8hex` exist; the routes are still a proposal. Describes files not on this disk. |
-| `docs/spec.md`, `docs/spec-review.md`, `docs/design-answers.md` | **superseded v0.2 drafts, not yet reviewed.** Kept for intent, deliberately left in place until read. Not evidence of anything current. |
 | `CHANGELOG.md` | what happened, and what it cost. Append-only in spirit. |
 | the **v0.1 corpus** | **not in this repository.** It was personal notes and was removed from the history, not merely deleted. It is kept privately as the input for a migration that has not been written. |
 

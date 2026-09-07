@@ -19,7 +19,7 @@ TEQ numbers its own sections 3, 4 and 5 on this same subject, so an untagged
 |---|---|---|
 | **TEQ** | `TODO-equality-layers.md` | the catalogue of candidate layers, and the open questions answered in §7 |
 | **D030** | `docs/design-0.3.0.md` | D030:§3, identity stays UUIDv4; D030:§6c, what each hash answers |
-| **DTM** | `docs/compost.md` (principle 1) | DTM:§1, *the code is the whitelist*; why the terms are faithful |
+| **DTM** | `design-total-mapping.md` | DTM:§1, *the code is the whitelist*; why the terms are faithful |
 | **RG** | `docs/record-grammar.md` | RG:§3.4, what an `alias` is; RG:§6, the `scheme` vocabulary |
 
 Two of TEQ's sections are numbered *lists* rather than subsections, so
@@ -64,7 +64,7 @@ and `alias {value, scheme}`, written in v0.2.4 for a completely different reason
 is already the right shape for a term: `scheme` is the function symbol, `value`
 its argument, and the `names` edge is the evaluation.
 
-**Total mapping is what makes the terms faithful.** `docs/compost.md` (principle 1)
+**Total mapping is what makes the terms faithful.** `design-total-mapping.md`
 makes the mapping lose nothing, so `record(type, params, content)` is isomorphic
 to the source object. That is TEQ:§2's *only false negatives* theorem restated:
 digest is injective, so equal terms imply equal sources.

@@ -257,7 +257,7 @@ times, or asynchronously.
 The three-question table below named `content_hash` as answering "is this the
 same *value*" — but v0.2.13 shipped a `record_hash` that answers a different,
 narrower question, and the value question was not built at all. Both changes
-are deliberate, and both are argued in full in `docs/compost.md` (principle 1);
+are deliberate, and both are argued in full in `design-total-mapping.md`;
 this section states the outcome and keeps the measurements, which still stand.
 
 | | answers |
@@ -315,7 +315,7 @@ it visible at a glance which is which, which is worth more than uniformity.
 **The whitelist/blacklist question below (§8) is superseded, not answered.**
 §8 asked which named list of params the fold and the hash should include, per
 node type. v0.2.13 did not pick a list — it removed the question: total
-mapping (`docs/compost.md` (principle 1)) makes the *mapping* the whitelist, so
+mapping (`design-total-mapping.md`) makes the *mapping* the whitelist, so
 there is no second list to keep in sync with it. §8 is deleted rather than
 amended; that document is where the reasoning now lives.
 
@@ -363,11 +363,15 @@ true — someone cited that text and they did.
 
 ---
 
-## 8. DELETED — see `docs/compost.md` (principle 1)
+## 8. DELETED — see `design-total-mapping.md`
+
+*(In the notes repository under `design-docs/`, with its section numbers intact.
+It is not in `docs/`: a design document that has served its purpose moves there
+rather than being deleted, and is ingested once TA ships.)*
 
 This section proposed a per-type whitelist of params the fold and the hash
 would include, hand-written and kept in the grammar. v0.2.13 shipped without
-one: `docs/compost.md` (principle 1) replaces the whole question with a
+one: `design-total-mapping.md` replaces the whole question with a
 mechanical rule — the mapping is the whitelist, so there is nothing left to
 write down and keep in sync with the code. Deleted rather than amended,
 per `docs/roadmap.md`, "v0.2.13 — the fold", build step 7 — the reasoning this
@@ -375,7 +379,7 @@ section held now lives there instead, and this is a pointer rather than a
 summary so it cannot drift from it.
 
 One rejection from the original text is worth keeping here, since
-`docs/compost.md` (principle 1) does not repeat it: **hashing the raw pandoc AST
+`design-total-mapping.md` does not repeat it: **hashing the raw pandoc AST
 node was considered and rejected.** It makes pandoc's grammar, not ours,
 decide when two blocks are the same, and a pandoc upgrade would silently
 re-identify the whole base.
@@ -442,7 +446,7 @@ Each version is provable alone, and nothing waits on a decision still open.
 | **v0.2.10** | the index page — **shipped 2026-09-01** |
 | **v0.2.11** | **the whitepaper** — `docs/` revamped into one structured document: the invariants, the shape, the grammar |
 | **v0.2.12** | **the grammar, untangled** — a JSON Schema replaces the markdown-scraping test. The fold was *specced* here and did **not** ship here; see below |
-| **v0.2.13** | **the fold** — `record_hash` on every node unconditionally, `record_subtree_hash`, total mapping as a tested property. Not the per-type whitelists: `docs/compost.md` (principle 1) removed the question rather than answering it |
+| **v0.2.13** | **the fold** — `record_hash` on every node unconditionally, `record_subtree_hash`, total mapping as a tested property. Not the per-type whitelists: `design-total-mapping.md` removed the question rather than answering it |
 | **v0.2.14** | **the recursion made explicit** — one markdown digestor, delegated inputs stored as blobs |
 | **v0.2.15** | **AoTA** — `mutability` declared and checked, positional alignment, delta ingest |
 | **v0.2.16** | the ledger — retraction, provenance, replay as a filter |

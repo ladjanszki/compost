@@ -94,7 +94,7 @@ def _result_text(block):
     """`tool_result.content`, mapped without dropping anything.
 
     A string body is prose-shaped and is kept as a string. A list-shaped body
-    is **stored whole** — total mapping (docs/compost.md (principle 1)): the
+    is **stored whole** — total mapping (design-total-mapping.md): the
     old code joined only the `text` key of each dict element, so an element
     with no `text` key (a `tool_reference`, say) vanished without a trace.
     Measured at 2 occurrences in the whole corpus, and both are now exact:
@@ -174,7 +174,7 @@ class SessionImporter:
         # re-ingested transcript's root failed to match itself — measured on
         # session-04.jsonl truncated to 70% and re-read, the identical prefix
         # was 0 of 2,306 nodes with `lines`, 100.00% without. See
-        # docs/compost.md (principle 1) §6.
+        # design-total-mapping.md §6.
         # A sidechain's `.meta.json` sidecar, stored verbatim on the root. It
         # carries `toolUseId`, which names the `Agent` call in the *parent*
         # that launched this agent, plus `spawnDepth`, `agentType`, `model` and
@@ -236,7 +236,7 @@ class SessionImporter:
                     # the part the transcript actually records. `signature` is
                     # stored too, total mapping: it was dropped until now, and
                     # dropping it is what made every empty `thinking` node
-                    # hash identically (docs/compost.md (principle 1)). `empty`
+                    # hash identically (design-total-mapping.md). `empty`
                     # stays a derived param — it is `f(text)`, never a
                     # function of the node's subtree, so it cannot move the
                     # fold the way `lines` on `session` did.

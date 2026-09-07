@@ -22,7 +22,7 @@ whole before writing any code: seven numbered build steps naming file and
 function, then eight guarantees each stated as a property.
 
 Read also, in this order: **`CLAUDE.md`** (the rules, and they override
-everything here), **`docs/compost.md` (principle 1)** (why this release is shaped
+everything here), **`design-total-mapping.md`** (why this release is shaped
 this way — the reasoning is not repeated in the spec), and **`DEVELOPMENT.md`**
 (the module map and the conventions).
 
