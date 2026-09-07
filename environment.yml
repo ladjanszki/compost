@@ -6,10 +6,25 @@ dependencies:
   # rather than assumed on the system PATH: pandoc installed in conda base is
   # not visible to `conda run -n compost`.
   #
-  # 3.10 is what the suites are verified against. Earlier 3.x will not do:
-  # `alerts` (GitHub callouts) arrived in 3.2, and the djot writer's behaviour
-  # is what the views depend on.
-  - pandoc>=3.10
+  # Pinned exactly, like graphviz and duckdb below, and for a reason this
+  # project paid for on 2026-09-07: the env was destroyed and rebuilt from
+  # this file, `pandoc>=3.10` resolved to 3.11, and the toolchain a release
+  # had been measured on changed without a word. A floor on the one tool
+  # whose output every flag in `docs/decisions.md` is measured against is a
+  # trap — the three known pandoc defects, the round-trip property and the
+  # djot writer's behaviour are all statements about a specific pandoc.
+  #
+  # Everything in v0.2.13 was verified against 3.11: 526/526 round-trip, 22
+  # suites, the clean-room gate. Earlier 3.x will not do — `alerts` (GitHub
+  # callouts) arrived in 3.2 — but "not earlier" was never the whole
+  # requirement, and saying only that is what let the version drift up.
+  - pandoc=3.11
+  # Left at the minor version deliberately, unlike the four tools above.
+  # Python's patch releases do not change what this program *outputs* — no
+  # measurement in `docs/decisions.md` is a statement about 3.12.14 — and
+  # pinning a patch means a security release cannot be taken without editing
+  # this file. The distinction that matters is whether a version change can
+  # move a recorded number, and for CPython it cannot.
   - python=3.12
   - pip
 
@@ -36,10 +51,14 @@ dependencies:
   # optional like graphviz and duckdb: the schema replaces a markdown-scraping
   # test that quietly asserted less every time the prose it scraped was
   # renamed (TODO-code-review.md), and a validator that might not be there
-  # validates nothing. Floored rather than pinned — nothing here measures
-  # jsonschema's version the way graphviz's and duckdb's are measured, so
-  # there is nothing yet to protect by pinning exactly.
-  - jsonschema>=4.26
+  # validates nothing.
+  #
+  # Pinned exactly as of v0.2.13. The old floor argued that nothing measures
+  # jsonschema's version, so there was nothing to protect — but a validator
+  # that silently changes which records it accepts is the same class of
+  # problem as a writer that silently changes its output, and "no measurement
+  # yet" is a reason to pin rather than a reason not to.
+  - jsonschema=4.26.0
 
 # No pip dependencies beyond pandoc, graphviz, duckdb and jsonschema.
 #

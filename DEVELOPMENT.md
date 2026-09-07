@@ -165,7 +165,12 @@ Both commands are in `.gitignore` too.
 
 ## Requirements
 
-Python 3.12, pandoc 3.10+. Nothing from PyPI. Node is not needed.
+Python 3.12, pandoc 3.11 exactly. Nothing from PyPI. Node is not needed.
+The pandoc pin is not a formality: v0.2.13 lost its env, rebuilt from
+`environment.yml`, and a `>=3.10` floor moved the toolchain to 3.11 without
+saying so. Every flag in `docs/decisions.md` is measured against a specific
+pandoc, so a floor there is a number that can drift out from under a
+measurement.
 
 ```bash
 conda env create -f environment.yml   # or `conda env update -f environment.yml`

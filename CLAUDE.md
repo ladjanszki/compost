@@ -8,7 +8,7 @@ things are temporarily out of step. Read this before assuming either.
 
 ```bash
 conda env create -f environment.yml   # once; later, conda env update -f …
-conda activate compost                # pandoc 3.10 — base has 3.8 and won't say so
+conda activate compost                # pandoc 3.11 — base has 3.8 and won't say so
 pip install -e .                      # puts `compost` on PATH
 ./tests/run.sh                        # twenty-two suites, all should pass
 compost --help
@@ -16,7 +16,7 @@ compost ls                            # what is in the base here, if there is on
 ```
 
 Outside that env there is no `compost`, and the suites pass under the base env's
-pandoc 3.8 without ever mentioning they ran below the 3.10 floor — so check
+pandoc 3.8 without ever mentioning they ran below the pinned 3.11 — so check
 which env a green run came from. `python3 -m src.cli` runs the CLI from a
 checkout either way.
 
