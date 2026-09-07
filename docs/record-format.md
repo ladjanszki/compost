@@ -352,7 +352,7 @@ for.
 
 **This section is about the node form**, and was rewritten in v0.2.13
 (`docs/roadmap.md`, "v0.2.13 — the fold"; the reasoning is in
-`docs/design-total-mapping.md`). An edge also carries a `record_hash`, renamed
+`docs/compost.md` (principle 1)). An edge also carries a `record_hash`, renamed
 alongside this one in v0.2.13 — the same concept, but computed by a
 *different* function over a different input, so the two are not comparable.
 See the Edge section above and `docs/record-grammar.md` §5.

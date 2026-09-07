@@ -3,13 +3,16 @@
 *A local-first knowledge base where a conversation and a document are the same
 kind of thing, and every paragraph has a name.*
 
-**Version 0.2.13.** Every earlier version of this document is frozen under
-`docs/whitepaper/`, unedited, so that the paper explaining this project can
-eventually be digested *by* it — one revision chain over its own history, once
-v0.2.17 lands `revision_of`. The version lives in this line and not in the
-filename: `docs/compost.md` never moves, because three call sites hardcode it
-and a generator pointed at a frozen copy would rewrite the history it was
-keeping.
+**Version 0.2.13.** Every earlier version of this document is kept, unedited, in
+the notes repository — because the paper explaining this project is going to be
+digested *by* it: one revision chain over its own history, once v0.2.17 lands
+`revision_of`. They are not in `docs/`, and there is no procedure for putting
+them there. A checklist telling a person which markdown file to copy where is a
+policy standing in for the system this project exists to build, and it would
+have to be maintained until the day it became unnecessary.
+
+The version lives in this line and not in the filename: `docs/compost.md` never
+moves, because the appendix build and two suites hardcode the path.
 
 **First assembled in v0.2.11** from `CLAUDE.md`,
 `decisions.md`, `record-format.md`, `record-grammar.md` and the roadmap. Where

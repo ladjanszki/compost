@@ -116,21 +116,10 @@ The order:
    the gate pick the rc as newest, find no matching heading, and fail.
 2. `./tests/run.sh`, then `./tests/clean-room.sh --with-agent`. Both now pass.
 3. fix what they find; `git tag -f vX.Y.Z-rc`; repeat 2.
-4. bump `src/__init__.py` and the man page's `Version` line; **bring
-   `docs/compost.md` up to date and set its version line**; rename the heading
+4. bump `src/__init__.py` and the man page's `Version` line; rename the heading
    to `## vX.Y.Z — DATE — …`; commit as `chore:`.
-
-   The whitepaper step is not optional and was missing until v0.2.13, which is
-   how a release that changed what a hash *means* nearly shipped with a paper
-   describing the old one. Only its generated appendix is guarded by a test;
-   the prose is not, so nothing else will catch it. The same step is where a
-   design document earns its deletion: `docs/design-*.md` is deleted when its
-   version ships, so anything in it worth keeping has to reach the whitepaper
-   *first* or it leaves with the file.
 5. `git tag -a vX.Y.Z`, **delete the rc in the same breath**, push branch and
-   tags. Then freeze the whitepaper — `git show vX.Y.Z:docs/compost.md >
-   docs/whitepaper/compost-vX.Y.Z.md` — which has to happen *after* the tag,
-   because by the next commit the working copy has already moved on. Forgetting the delete leaves the rc sorting above the release — git
+   tags. Forgetting the delete leaves the rc sorting above the release — git
    orders `v0.2.7-rc` *above* `v0.2.7` by default — so the gate looks for the
    rc's heading, which no longer exists, and fails. That is the failure telling
    you to finish the cleanup, and it is why the delete is part of step 5 rather

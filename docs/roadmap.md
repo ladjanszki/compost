@@ -1794,7 +1794,7 @@ stems `render_all` has emitted since v0.2: no dates, no grouping, no counts, and
 **nine of twenty-nine rows named by a raw uuid**. Finding anything is the one
 daily task the tool still does not help with.
 
-The full question-and-answer record is `docs/design-0.2.10.md`; this section is
+The full question-and-answer record is the v0.2.10 design note, in the notes repository; this section is
 what was decided and what to build.
 
 ### The sections are generated from `ROOT_TYPES`, never hardcoded
@@ -1836,7 +1836,7 @@ split leaves 23 of 29 rows homeless with one section empty:
 
 **The code's words are deliberate, and the point is that they chafe.** A page
 reading `Documents: 23` in a word nobody thinks in is a standing reminder the
-vocabulary is unfinished. The drift is not one-sided: `docs/design-0.2.10.md`
+vocabulary is unfinished. The drift is not one-sided: the v0.2.10 design note, in the notes repository
 spent six sections saying *conversations* while `render_all` says `session`, so
 neither the human nor the agent was using the code's own words. Putting them on
 the page is the cheapest way to keep noticing.
@@ -2148,7 +2148,7 @@ there and they are four different kinds of thing:
 | what is true now | `decisions.md`, `record-format.md`, `record-grammar.md`, `man-compost.md`, `queries.md` |
 | superseded drafts, kept for intent | `spec.md`, `design-answers.md`, `spec-review.md` |
 | describes material not in this repo | `migration.md` |
-| live working design | `roadmap.md`, `design-0.3.0.md`, `design-0.2.10.md` |
+| live working design | `roadmap.md`, `design-0.3.0.md` |
 
 One rule covering four categories describes none of them, and a reader who takes
 the table literally believes `spec.md` is current.
@@ -2236,11 +2236,17 @@ nothing — this was asked for explicitly. Where it moves, it moves whole.
 ### Decided, 2026-09-03
 
 **`roadmap.md` and `design-*.md` stay in `docs/`.** They are documents and their
-names say what they are; a second directory would be ceremony. What makes them
-not-a-fourth-category is a **lifecycle rule**, now explicit: **a design document
-is deleted when its version ships.** `design-0.3.0.md` goes when v0.3.0 does,
-leaving `design-0.3.1.md` as the only planning file. So `docs/` holds *what is
-true now* plus *what is being decided now*, and nothing that is merely old.
+names say what they are; a second directory would be ceremony. `docs/` holds
+*what is true now* plus *what is being decided now*, and nothing that is merely
+old.
+
+**Superseded 2026-09-07: a design document is not deleted when its version
+ships — it moves to the notes repository.** The deletion rule was a policy
+standing in for a system. A design document is a *revision* of the thinking that
+became the whitepaper, the whitepaper is a revision of itself release over
+release, and both are exactly what `revision_of` is for. Deleting them to keep a
+directory tidy destroys the material the tool is being built to hold. They wait
+in the notes repository until TA ships and are ingested then.
 
 **`migration.md` stays, and is split along a seam it already has.** It is not
 the legacy-citation document — it is the v0.1 corpus migration plan. Part of it
@@ -2424,7 +2430,7 @@ status as the machine-read source. A header says so, and points at the schema.
 whitelists. That input is no longer needed and the table is not the deliverable.
 
 Three days of measurement replaced it with a mechanical rule. The reasoning is
-in `docs/design-total-mapping.md`; the short form is that a per-type whitelist
+in `docs/compost.md` (principle 1); the short form is that a per-type whitelist
 costs one discretionary decision per param per type per importer, and the next
 three importers on the list — cstlib, graphviz, the filesystem — would each
 bring dozens of types. A design whose cost grows with every graph the tool
@@ -2539,7 +2545,7 @@ re-digest, and that distinction stays visible.
 **7. `docs/design-0.3.0.md` §6c rewritten.** Its three-question table is wrong
 as written: `content_hash` is renamed and answers a different question, and the
 third question moves out of the record into a layer. §8 — the per-type
-whitelist — is deleted, not amended; `docs/design-total-mapping.md` replaces it.
+whitelist — is deleted, not amended; `docs/compost.md` (principle 1) replaces it.
 
 ### Guarantees
 
@@ -2587,7 +2593,7 @@ edit to the notes reader.
 
 **A digestor that meets content it does not own delegates to the digestor that
 does, and the delegated input is stored as a blob** exactly like any other
-digestor input. That is the whole release. `docs/design-total-mapping.md` §4 has
+digestor input. That is the whole release. `docs/compost.md` (principle 1) §4 has
 the reasoning; the rule it produces is one sentence with no exceptions:
 
 > Every digestor's input is stored as a blob. Every key of that input is a
@@ -2624,7 +2630,7 @@ in exactly the sense that type already means, and `records_to_ast` handles it
 unchanged.
 
 **3. `src/store.py`** — storing a fragment that has no filename. Decide what
-`original_name` says; see `docs/design-total-mapping.md` §9.2.
+`original_name` says; see `docs/compost.md` (principle 1) §9.2.
 
 **4. `src/views.py` and `src/draw.py`** — descend the extra level. Every view
 that walks `turn → blocks` now walks `turn → document → blocks`. Citations are

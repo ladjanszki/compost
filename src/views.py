@@ -217,7 +217,7 @@ def _render_session(g, n, mode):
     if t == "tooloutput":
         # `params["text"]` is a string for the ordinary case, and — since
         # v0.2.13 stopped flattening a list-shaped `tool_result.content` to
-        # joined text (docs/design-total-mapping.md) — sometimes the list
+        # joined text (docs/compost.md (principle 1)) — sometimes the list
         # itself, stored whole. A `CodeBlock`'s payload has to be a string
         # either way, so a list is shown as the same pretty JSON `contentblock`
         # already uses for a block this importer has no reading for.
