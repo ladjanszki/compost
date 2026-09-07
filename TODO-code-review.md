@@ -88,9 +88,21 @@ Each of these is generalised from the incident above.
    nothing said so, because the only thing that would say so is the number
    itself.
 
-   Both now compute from the checks that actually ran. **Grep every suite for a
-   literal total, a hardcoded count in a summary line, or an assertion count
-   written as a number rather than derived.** Then ask the harder version: which
+   **A third instance, found 2026-09-07 and outside the suites entirely.**
+   `CLAUDE.md` said *"twenty-one suites"* while `tests/run.sh` ran twenty-two;
+   v0.2.13 added `test_mapping_totality.py` and the sentence describing the
+   board did not move. The clean-room gate reads that very line — it asserts
+   `CLAUDE.md` still names the runner — and printed the wrong number in its own
+   passing output without noticing, because it checks that the command is named
+   and never that the count is right. So the pattern is not confined to test
+   summaries: **any number in prose that describes something countable in the
+   repository is the same defect**, and the gate quoting it is not the same as
+   the gate checking it.
+
+   Both suites now compute from the checks that actually ran. **Grep every suite
+   for a literal total, a hardcoded count in a summary line, or an assertion
+   count written as a number rather than derived — then grep the prose for
+   counts of files, suites, subcommands, invariants and principles.** Then ask the harder version: which
    suites *silently skip* under some condition — a missing corpus, an absent
    binary, an import guard — and does the board say so?
 

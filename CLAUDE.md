@@ -10,7 +10,7 @@ things are temporarily out of step. Read this before assuming either.
 conda env create -f environment.yml   # once; later, conda env update -f …
 conda activate compost                # pandoc 3.10 — base has 3.8 and won't say so
 pip install -e .                      # puts `compost` on PATH
-./tests/run.sh                        # twenty-one suites, all should pass
+./tests/run.sh                        # twenty-two suites, all should pass
 compost --help
 compost ls                            # what is in the base here, if there is one
 ```
