@@ -217,6 +217,28 @@ class SessionImporter:
             blocks = content if isinstance(content, list) else []
             prose = _text_of(content)
 
+            # One delegated fragment per turn, and no more — see
+            # TODO-multiple-text-blocks.md. v0.2.14 hands a turn's markdown to
+            # the text digestor and reaches the result through one
+            # `delegates_to` edge; several text blocks would need several, with
+            # nothing ordering them against the turn's other children.
+            #
+            # Measured 0 times in 2,839 corpus turns, so this cannot fire on
+            # any material this project has. It is an error rather than a
+            # warning because the alternative is a silent partial import, which
+            # is exactly what `digest everything` exists to prevent: a base
+            # built from a guess is wrong in a way nothing can detect later.
+            # Soften it to a warning only after it has actually fired.
+            n_text = sum(1 for b in blocks
+                         if isinstance(b, dict) and b.get("type") == "text"
+                         and b.get("text", "").strip())
+            if n_text > 1:
+                raise NotImplementedError(
+                    f"{path.name}: a turn carries {n_text} text blocks, and "
+                    f"delegating more than one fragment per turn is not built "
+                    f"— see TODO-multiple-text-blocks.md. Line uuid "
+                    f"{d.get('uuid')}.")
+
             children: list[str] = []
             orphan_results: list[str] = []
             has_text = bool(prose.strip())

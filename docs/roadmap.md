@@ -2592,85 +2592,174 @@ whitelist — is deleted, not amended; `design-total-mapping.md` replaces it.
 
 **The digestion is recursive and the code pretends it is not.** `src/session.py`
 does not call the text digestor; it reimplements it. Two `READER` constants
-holding one string, two functions turning markdown into blocks, and a reach into
+holding one string, two functions turning markdown into blocks
+(`routes.py:_ast_of_text`, `session.py:_md_blocks`), and a reach into
 `R._block`, a private function, to do what `ast_to_records` does publicly.
-`docs/decisions.md` records that every flag in those invocations is load-bearing
-and measured — so the second copy is a silent divergence waiting for the first
-edit to the notes reader.
+`docs/decisions.md` records every flag in those invocations as load-bearing and
+measured — so the second copy is a silent divergence waiting for the first edit
+to the notes reader.
 
 **A digestor that meets content it does not own delegates to the digestor that
-does, and the delegated input is stored as a blob** exactly like any other
-digestor input. That is the whole release. `design-total-mapping.md` §4 has
-the reasoning; the rule it produces is one sentence with no exceptions:
-
-> Every digestor's input is stored as a blob. Every key of that input is a
-> param, the node type, a child, or delegated to a named digestor — whose input
-> is itself a blob.
+does, and the delegated input is stored like any other digestor input.** That is
+the whole release.
 
 **Cost, measured:** 549 delegated inputs across the seven corpus sessions,
 **376 KB against 10.8 MB of transcript — 3.5%.** Median input 158 bytes.
 
-### This does move the tree, and that is a revision of earlier advice
+### The shape: a delegated document is a root, linked and not contained
 
-The plan had been to group tree-shape changes and land them once, with the
-section container. That is wrong here. A `derived_from` edge needs a node to
-start from, and today a `text` block produces **no node at all** —
-`session.py:206` splices the parsed prose straight into the turn, so a turn with
-two text blocks has no way to say which blocks came from which input.
-Delegation without a node for the delegated document is not addressable.
+The obvious design — hang the produced `document` under the turn — **fails
+`check()` by construction**, because `document` is in `ROOT_TYPES` and a root
+type with a parent is a reported problem. One per fragment, 549 on the corpus,
+against a release that must report zero.
 
-So the level lands here, and the section container stays independent. Blocking a
-required change on an undecided optional one is the wrong dependency —
-`TODO-section-container.md` still says the human can be talked out of sections.
+**The codebase already solved this once.** A subagent session is a `session`
+root that nobody contains; a `toolcall` reaches it through `launched`. Delegation
+is the same shape and takes the same answer:
+
+```
+turn ──contains──> toolcall, thinking, contentblock…
+  └──delegates_to──> document ──contains──> Para, BulletList, CodeBlock…
+                        └──derived_from──> blob(fragment)
+                                              └──derived_from──> blob(transcript)
+```
+
+Verified: `check` reports **0 problems** on this shape. The `Para` has exactly
+one parent, the `document` has none, and `ROOT_TYPES` is untouched. No new node
+type, no invariant changed — one new edge type, `delegates_to`, in the `session`
+layer.
+
+### Borrowed vocabulary, and exactly what is claimed
+
+Two names are adopted from outside rather than invented, because both already
+exist and are precise. **Nothing is claimed that `check` does not enforce.**
+
+**`derived_from` aligns with `prov:wasDerivedFrom`** (W3C PROV-O). It already
+meant this and now says so. PROV's binding constraints are that derivation is
+**irreflexive** and **acyclic**, and that the source pre-exists the target. The
+first two become `check()`'s twelfth assertion. The third is **explicitly not
+enforced and must be recorded as such**: `created_at` is audit metadata, not
+semantics (`docs/design-0.3.0.md` §7), so there is no semantic clock to order by.
+
+**The fragment's location uses W3C Web Annotation selectors.** A fragment has no
+filename — it has a position inside its parent. So `original_name` is **null**,
+and the blob carries instead:
+
+| param | value |
+|---|---|
+| `selector_conforms_to` | `RFC 6901` — JSON Pointer |
+| `selector_value` | e.g. `/3/message/content/2` |
+
+A `.jsonl` blob is addressed as the JSON array of its lines; that convention is
+ours and is written down here rather than inferred. Web Annotation's `refinedBy`
+is the more formal encoding (a line selector refined by a pointer) and is
+deliberately not used yet — one selector is enough for what this release
+addresses.
+
+**Not adopted:** PREMIS `Bitstream`, PRONOM PUIDs, media types. There is no
+problem here yet that they solve.
+
+**Storage does not change.** Fragments land under freshly minted `GUID.json`,
+exactly as files land under `GUID.EXT`. Granularity stops at the JSON object —
+nothing addresses below a whole value.
 
 ### What has to be built
 
-**1. `src/markdown.py` — one digestor, and the only place `READER` exists.**
+**1. `src/markdown.py` — one digestor, the only place `READER` exists.**
 `text_to_records(text, mint, route)` returns `(records, root)`. Both
-`routes.py:_ast_of_text` and `session.py:_md_blocks` are deleted, not wrapped.
+`routes.py:_ast_of_text` and `session.py:_md_blocks` are **deleted, not
+wrapped**, and `session.py` stops importing `R._block`.
 
-**2. `src/session.py` — `_prose` becomes a delegation.** Store the input through
-`Store`, call `text_to_records`, attach the produced root as a child of the
-turn, and mint `derived_from` from that root to the blob. The produced root
-reuses the existing `document` type: a delegated markdown fragment is a document
-in exactly the sense that type already means, and `records_to_ast` handles it
-unchanged.
+**2. `src/session.py` — `_prose` becomes a delegation.** It is called at lines
+232 and 263. For each text block: store the block through `Store` as `.json`,
+call `text_to_records` on its `text` value, mint `delegates_to` from the turn to
+the produced root, `derived_from` from that root to the fragment blob, and
+`derived_from` from the fragment blob to the transcript blob.
 
-**3. `src/store.py`** — storing a fragment that has no filename. Decide what
-`original_name` says; see `design-total-mapping.md` §9.2.
+**3. `src/store.py`** — storing a fragment: `original_name` is null and the two
+selector params are set. No other storage change.
 
-**4. `src/views.py` and `src/draw.py`** — descend the extra level. Every view
-that walks `turn → blocks` now walks `turn → document → blocks`. Citations are
-unaffected: they point at the block guids, which do not move.
+**4. `src/views.py`, `src/draw.py` and `src/store.py`** — follow `delegates_to`.
+Every view that walks `turn → blocks` now walks `turn → document → blocks`.
+`test_session_views` holds 22 guarantees over that walk and they move with it.
+Citations are unaffected: block guids do not move.
 
-**5. Totality extended.** Delegation becomes a fourth valid destination for a
-key, and the v0.2.13 test grows to check it: the delegated value must equal the
-stored blob's bytes.
+**`lookup` breaks without this and it is the daily workflow.** `store.py`'s
+`where()` prints *"in `<file>`"* by walking `contains` parents to a root and
+reading its `source`. After this release a prose block's parent is the delegated
+`document` — a root with no `source` — so every resolved citation would print
+*"in ?"*. **`where()` follows `delegates_to` backwards** when it reaches a
+parentless document, which is the idiomatic answer: the edge is there precisely
+to say where the fragment came from, and reading it is cheaper and more honest
+than copying the parent's `source` onto every fragment.
 
-**6. Schema and docs.** The `(session, derived_from)` edge pair; the storage
-paragraph in `CLAUDE.md` and `docs/compost.md` restated as *every digestor
-input* rather than *the files the human imported*.
+**5. `src/session.py` — one fragment per turn, enforced.** A turn with more than
+one text block raises, naming `TODO-multiple-text-blocks.md`. Already in the
+code as of v0.2.13; the release keeps it and the totality test must not be made
+to swallow it.
+
+**6. Totality extended.** Delegation is a fourth valid destination for a key,
+and `tests/test_mapping_totality.py` grows to check it: the delegated value must
+equal the stored blob's bytes.
+
+**7. Schema and docs.** The `(session, delegates_to)` pair; `derived_from` gains
+`aligns_with`, `enforced` and `not_enforced` annotations, which
+`tools/schema_tables.py` renders into the whitepaper appendix. `derived_from`
+stays in the `ingestion` layer — it is the same relation, minted by one more
+writer. The storage paragraph in `CLAUDE.md` and `docs/compost.md` is restated
+as *every digestor input* rather than *the files the human imported*.
 
 ### Guarantees
 
-1. **`READER` is defined exactly once in `src/`.** Asserted, not assumed —
-   sabotage by adding a second definition and the suite goes red. This is the
-   v0.2.12 pattern: the coupling is gone and the test says so.
-2. **Every delegated input is in `storage/`**, and the node it produced reaches
-   it by exactly one `derived_from` edge.
-3. **The stored bytes equal the input exactly.** `blob` bytes for a delegated
-   fragment are byte-identical to the `text` value in the source line. Sabotage:
-   strip trailing whitespace on the way in.
-4. **Totality holds including delegation.** Sabotage: delegate without storing,
-   and the test must name the key.
-5. **Both round-trips unchanged** — 526/526 and
+1. **`READER` is defined exactly once in `src/`.** Sabotage: add a second
+   definition and the suite goes red. The v0.2.12 pattern — the coupling is gone
+   and a test says so.
+2. **`check` reports 0 problems** on a base built from every fixture, and every
+   record validates against the schema. The delegated `document` has no parent
+   and every produced block has exactly one.
+3. **Every delegated input is in `storage/`**, reachable from the node it
+   produced by exactly one `derived_from` edge, and from there to the transcript
+   blob by one more.
+4. **The stored bytes equal the input exactly.** Sabotage: strip trailing
+   whitespace on the way in.
+5. **The selector resolves.** Applying `selector_value` as a JSON Pointer to the
+   parent blob's line array yields the stored fragment, byte for byte. Sabotage:
+   off-by-one the line index.
+6. **`derived_from` is irreflexive and acyclic** — `check()`'s twelfth
+   assertion. Sabotage: mint a two-edge cycle by hand.
+7. **Every `aligns_with` in the schema names what is enforced and what is
+   not.** A borrowed name without that pair fails the test. This is the guard
+   against claiming semantics the code does not hold.
+8. **Both round-trips unchanged** — 526/526 and
    `records_to_session(session_to_records(lines)) == lines`.
-6. **v0.2.13's guarantee 5 still holds**: truncate every corpus session to 70%,
+9. **`lookup` still names the conversation.** Resolve a citation to a prose
+   block and the header says which transcript it is in, not `?`. Sabotage:
+   remove the `delegates_to` hop from `where()` and the test fails. This is the
+   guarantee closest to the human's daily use of the tool.
+10. **A turn with two text blocks is refused loudly**, naming
+   `TODO-multiple-text-blocks.md`. Sabotage: hand-build such a line and confirm
+   `digest` raises rather than importing part of it.
+11. **v0.2.13's guarantee 5 still holds**: truncate every corpus session to 70%,
    digest both, and the old walk is a clean prefix of the new at **100.00%**.
-   This release changes tree shape, so this is the measurement most likely to
-   move and it must be re-run rather than assumed.
-7. **`check` reports 0 problems** on a base built from every fixture, and every
-   record validates against the schema.
+   This release moves the tree, so it is the measurement most likely to break
+   and must be re-run rather than assumed.
+
+### The one decision still open: what happens to existing bases
+
+Prose blocks move from being a turn's children to a delegated document's
+children, so a transcript digested before this release and one digested after
+have different shapes **in the same base**. Views must walk both, folds differ
+for identical content, and v0.2.15's positional alignment meets two tree shapes.
+
+A migration is feasible and would preserve citations, which is the point: the
+turn's `params["log"]` is lossless, so the text blocks can be re-read, the
+markdown re-parsed, and the resulting blocks **matched positionally against the
+turn's existing children** — inserting new `document` roots above them while
+every existing block keeps its guid. It is more work than v0.2.13's migration,
+which only stamped fields.
+
+Not decided here. The alternative is to accept both shapes and make every reader
+tolerate them, which is cheaper now and more expensive forever.
 
 ---
 
