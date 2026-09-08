@@ -106,6 +106,21 @@ Each of these is generalised from the incident above.
    suites *silently skip* under some condition — a missing corpus, an absent
    binary, an import guard — and does the board say so?
 
+2b. **Which checks silently test something other than what they name?**
+   *Found 2026-09-08.* `tests/clean-room.sh` starts `compost serve`, sleeps 2,
+   and curls `127.0.0.1:7373`. If anything is already on that port — a
+   week-old `compost serve` the human forgot, in the instance that found this —
+   the gate's own server never binds, and the curl tests **the squatter**. It
+   reported `FAIL serve answers` for a release that had not touched `serve`,
+   while `responses are not cacheable` passed against the same stranger.
+
+   This is item 2's shape at the level of a *harness* rather than a count: the
+   check ran, produced a verdict, and the verdict was about the wrong thing.
+   Ask of every check that reaches outside the process — a port, a temp dir, a
+   PATH lookup, an env var — **what happens when it is already occupied?**
+   Failing loudly with "port 7373 is in use" is the cheap fix; binding to an
+   ephemeral port is the real one.
+
 3. **Which documents are load-bearing for code?** A prose file a program parses
    is a schema without a schema's guarantees. Find every `open(...md)` and every
    split on a heading.
