@@ -3,7 +3,7 @@
 *A local-first knowledge base where a conversation and a document are the same
 kind of thing, and every paragraph has a name.*
 
-**Version 0.2.13.** Every earlier version of this document is kept, unedited, in
+**Version 0.2.14.** Every earlier version of this document is kept, unedited, in
 the notes repository — because the paper explaining this project is going to be
 digested *by* it: one revision chain over its own history, once v0.2.17 lands
 `revision_of`. They are not in `docs/`, and there is no procedure for putting

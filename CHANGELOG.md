@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.14-rc — the recursion made explicit
+## v0.2.14 — 2026-09-08 — the recursion made explicit
 
 `src/session.py` did not call the text digestor. It **reimplemented** it: two
 `READER` constants holding one string, two functions turning markdown into
