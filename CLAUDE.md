@@ -115,7 +115,7 @@ merely old.
 |---|---|
 | `docs/compost.md` | **the whitepaper — start here.** Carries its version in the status line; the *path* never moves, because the build and two suites hardcode it. What compost is, the fifteen principles, the shape, the grammar's vocabularies, and the decisions with the measurement behind each. |
 | `docs/record-grammar.md`, `docs/record-format.md`, `docs/queries.md`, `docs/decisions.md` | **what is true now.** Rewritten as understanding improves. Prose and reasons — as of v0.2.12 `record-grammar.md` is **no longer the machine-read source**; that is the schema below. |
-| `tools/record-schema-1.json` | **the record grammar, machine-read.** What a record may be. `tests/test_grammar.py` holds it against a real digest in both directions and validates every record with it. Graph-level invariants are not here — they are `check()`'s eleven. |
+| `tools/record-schema-1.json` | **the record grammar, machine-read.** What a record may be. `tests/test_grammar.py` holds it against a real digest in both directions and validates every record with it. Graph-level invariants are not here — they are `check()`'s twelve. |
 | `docs/man-compost.md` | **what is true now**, and held against the program by `tests/test_manpage.py`. |
 | `docs/roadmap.md`, `docs/design-*.md` | **what is being decided now.** A design document that has served its purpose moves to the notes repository rather than being deleted — it is a revision of something, and once TA ships it becomes a document in the base like any other. |
 | `docs/migration.md` | the v0.1 corpus migration. **Part shipped, part never built** — the handle dictionary and `kg-8hex` exist; the routes are still a proposal. Describes files not on this disk. |
@@ -164,11 +164,17 @@ shaped the way it is, never as a description of the current tool.
   is wrong regardless of what else passes.
 - **A view of a broken graph is worse than no view.** `render` refuses when
   `check` fails, on purpose.
-- **Sources are immutable, and storage is a blob store.** Every file lands
-  under a freshly minted `GUID.EXT`, so `.compost/storage/` never overwrites
-  anything — it refuses a name already in use, which can only mean a uuid
-  repeated itself. The same bytes may legitimately be stored twice; `digest`
-  reports that and does not resolve it.
+- **Sources are immutable, and storage is a blob store.** Every digestor
+  input lands under a freshly minted `GUID.EXT`, so `.compost/storage/`
+  never overwrites anything — it refuses a name already in use, which can
+  only mean a uuid repeated itself. The same bytes may legitimately be
+  stored twice; `digest` reports that and does not resolve it. As of
+  v0.2.14 that is not only the files a human imports: a digestor that meets
+  content it does not own (a transcript turn's markdown prose) delegates to
+  the digestor that does, and the delegated input is stored the same way,
+  under `GUID.json` — no filename of its own, addressed instead by a JSON
+  Pointer into the parent it came from. See `docs/roadmap.md`, "the
+  recursion made explicit".
 - **Nothing about ingestion is inferred from a file extension.** The route is
   named with `--as` or the command refuses. This was dispatch on the suffix
   until v0.2.2, where the fallback was not "markdown" but "anything at all".

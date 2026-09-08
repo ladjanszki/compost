@@ -3,6 +3,85 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.14-rc — the recursion made explicit
+
+`src/session.py` did not call the text digestor. It **reimplemented** it: two
+`READER` constants holding one string, two functions turning markdown into
+blocks, and a reach into `R._block`, a private function, to do what
+`ast_to_records` does publicly. `docs/decisions.md` records every flag in those
+invocations as load-bearing and measured, so the second copy was a silent
+divergence waiting for the first edit to the notes reader.
+
+**A digestor that meets content it does not own delegates to the digestor that
+does, and the delegated input is stored as a blob like any other digestor
+input.** One rule, no exceptions:
+
+> Every digestor's input is stored as a blob. Every key of that input is a
+> param, the node type, a child, or delegated to a named digestor — whose input
+> is itself a blob.
+
+That makes totality compositional: each digestor is total on its own format,
+delegation composes them, and the pipeline is total by induction. 549 delegated
+inputs across seven transcripts, 376 KB against 10.8 MB — 3.5%, median 158 bytes.
+
+### The delegated document is a root nobody contains
+
+The obvious shape — hang the produced `document` under the turn — fails `check`
+by construction, because `document` is in `ROOT_TYPES` and a root with a parent
+is a reported problem. The turn reaches it through a new `delegates_to` edge
+instead, which is the shape a launched subagent session already has: a root
+nobody contains, reached from a `toolcall` by `launched`. No node type added, no
+invariant changed.
+
+### Borrowed names, and what they cost
+
+`derived_from` is aligned with **`prov:wasDerivedFrom`** (W3C PROV-O), and a
+fragment's location uses a **W3C Web Annotation** selector — `RFC 6901` JSON
+Pointer, because the parent is a JSON line. A fragment has no filename, so
+`original_name` is null and the selector says where inside the parent it came
+from. One convention is ours and is written down: a `.jsonl` blob is addressed
+as the JSON array of its lines.
+
+Borrowing a name costs something, and the cost is paid rather than assumed.
+PROV binds derivation to being irreflexive and acyclic, so those became
+**`check()`'s twelfth assertion**. PROV's third constraint — the source
+pre-existing the target — is **explicitly declined**, because `created_at` is
+audit metadata and there is no semantic clock. The schema records both halves
+beside the claim, and a test asserts that every `aligns_with` names what is
+enforced *and* what is not, so no name can be borrowed without saying what it
+honours.
+
+### The measurement that nearly went missing
+
+The alignment property — v0.2.13's guarantee 5, and v0.2.15's foundation — was
+reported as *"100.00%, unchanged"*. It was 100.00% of **half the graph**.
+Delegation moves prose out of `contains`, so a walk over `contains`/`next` alone
+reaches **52.5%** of a digest: 1,695 of 3,569 nodes unreachable on `session-04`,
+among them 348 `Para`, 352 `Plain` and 72 `Header` — precisely the blocks anyone
+cites. Measured that way `session-04` goes from 2,306/2,306 before the release
+to 1,323/1,323 after, and "still 100%" is true and useless.
+
+Following `delegates_to`, the property is intact: **9,217 of 9,217 across six
+sessions, 100.0000%**. The guarantee now asserts two things — the prefix, and
+that the walk still covers at least three quarters of the digest — because a
+perfect prefix over a shrinking tree is exactly how this gets lost quietly.
+
+A second check had weakened the same way: `test_mapping_totality`'s sabotage
+selected its probe fixture on *"has any blocks"*, picked one with no
+`tool_use.caller`, and skipped itself — the board went from 2/2 to 1/1 while the
+proof that the totality check is non-vacuous stopped running.
+
+### Restored: the release checklist
+
+v0.2.13 deleted three markdown rituals as *policies standing in for a system*.
+That was right about where documents go and wrong about the checklist itself,
+and this release paid for it immediately: it shipped a twelfth invariant while
+two documents said eleven, and an edge type `record-format.md` had never heard
+of. `DEVELOPMENT.md`'s *"Closing a version"* has both steps back, with the
+destinations changed rather than the steps removed — a retired design document
+**moves to the notes repository**, it is not deleted, and the whitepaper freeze
+goes there too.
+
 ## v0.2.13 — 2026-09-07 — the fold
 
 Every node now carries `record_hash` and `record_subtree_hash`. The release was

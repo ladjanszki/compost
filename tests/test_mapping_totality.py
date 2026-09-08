@@ -16,18 +16,28 @@ The property, stated once rather than per violation:
     is `thinking`, `tool_use` or `tool_result`, every key that block holds is
     recoverable from the params of the one node `session.py` mints for it.
 
-`text` blocks are excluded on purpose: they are *parsed*, fanning out into
-however many prose nodes the markdown contains, and their own totality is
-what `records_to_session(session_to_records(f)) == lines` already covers via
+`text` blocks are *parsed*, fanning out into however many prose nodes the
+markdown contains, and *that* fan-out's totality is what
+`records_to_session(session_to_records(f)) == lines` already covers via
 `params["log"]` holding the whole line verbatim — a different, stronger
-guarantee this file does not need to repeat.
+guarantee this file does not need to repeat. But v0.2.14 ("the recursion made
+explicit") gives a text block one more node before it fans out at all: the
+fragment `blob` delegation mints to store it, byte for byte, as a digestor
+input like any other. That node's totality — is the whole block recoverable
+from what got minted — is exactly this file's question, so text blocks are
+included after all, checked the fourth way build step 6 names: "the delegated
+value must equal the stored blob's bytes", i.e. `node["content"] == block`,
+rather than a key-by-key `params` comparison like the other three (a `blob`
+node's `params` hold storage metadata, not the block's own fields — the block
+itself lives in `content`).
 
 **Positional correlation, not a second mapping.** `SessionImporter` mints
-exactly one `thinking`/`toolcall`/`tooloutput` node per matching raw block, in
-the order it scans them, and never reorders across a file. So the raw blocks
-of these three types and the nodes of the three matching types can be zipped
-by position rather than re-implemented — checking the real mapping's output
-against the real input, not a second copy of the mapping that could drift
+exactly one `thinking`/`toolcall`/`tooloutput`/`blob` node per matching raw
+block, in the order it scans them, and never reorders across a file. So the
+raw blocks of these four types and the nodes of the four matching types can be
+zipped by position rather than re-implemented — checking the real mapping's
+output against the real input, not a second copy of the mapping that could
+drift
 from the first the way a hand-written SQL mirror can (`docs/queries.md`).
 
 Sabotage, in the `tests/test_sabotage.py` idiom: patch `_tool_use` to stop
@@ -46,12 +56,23 @@ from tests import tier as T     # noqa: E402
 FIXTURES = T.sessions()
 
 # raw block "type" -> the node type session.py mints for it, one each.
+# "text" -> "blob" since v0.2.14: the fragment blob delegation mints for a
+# non-empty text block, not a prose node itself (those fan out from it, and
+# their own totality is `records_to_session` round-trip's job, not this
+# file's — see the module docstring).
 NODE_OF = {"thinking": "thinking", "tool_use": "toolcall",
-          "tool_result": "tooloutput"}
+          "tool_result": "tooloutput", "text": "blob"}
 
 
 def _raw_blocks(path: Path) -> list[dict]:
-    """Every `message.content[]` block of a mapped type, in file order."""
+    """Every `message.content[]` block of a mapped type, in file order.
+
+    A `text` block with nothing but whitespace is skipped: `session.py`'s
+    delegation mints no fragment blob for one either (the same condition
+    `SessionImporter._delegate` uses, `not text.strip()`), so counting it here
+    would break the positional zip against `_mapped_nodes` rather than catch
+    a real drop.
+    """
     out = []
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -62,27 +83,53 @@ def _raw_blocks(path: Path) -> list[dict]:
         if not isinstance(content, list):
             continue
         for b in content:
-            if isinstance(b, dict) and b.get("type") in NODE_OF:
-                out.append(b)
+            if not (isinstance(b, dict) and b.get("type") in NODE_OF):
+                continue
+            if b["type"] == "text" and not (b.get("text") or "").strip():
+                continue
+            out.append(b)
     return out
 
 
+def _is_list_fragment(blob_node: dict) -> bool:
+    """True for a fragment blob delegated out of a `message.content[]` list
+    entry, false for one delegated out of a bare string `content` (a line
+    with no content *list* at all — `/{i}/message/content`, one segment
+    shorter than `/{i}/message/content/{idx}`). `_raw_blocks` only reaches
+    into list-shaped content, matching `message.content[]` in this file's
+    stated property, so a string-content delegation is out of scope here the
+    same way it always was — it is not a `message.content[]` block, it *is*
+    `message.content`."""
+    sel = (blob_node.get("params") or {}).get("selector_value") or ""
+    return sel.count("/") == 4
+
+
 def _mapped_nodes(recs: list) -> list[dict]:
-    """Every thinking/toolcall/tooloutput node, in the order `Builder`
-    appended them — which is scan order, since each is minted the instant
-    its raw block is processed and nothing here reorders afterwards."""
+    """Every thinking/toolcall/tooloutput node, plus every list-shaped-content
+    fragment blob, in the order `Builder` appended them — which is scan
+    order, since each is minted the instant its raw block is processed and
+    nothing here reorders afterwards."""
     return [r for r in recs if r["record"] == "node"
-            and r["type"] in NODE_OF.values()]
+            and r["type"] in NODE_OF.values()
+            and (r["type"] != "blob" or _is_list_fragment(r))]
 
 
 def uncovered_key(block: dict, node: dict) -> str | None:
-    """The first key of `block` not recoverable from `node`'s params, or
-    None if every key is. `type` never counts: it is consumed structurally,
-    by choosing which node type gets minted at all."""
+    """The first key of `block` not recoverable from `node`, or None if every
+    key is. `type` never counts: it is consumed structurally, by choosing
+    which node type gets minted at all."""
     if NODE_OF.get(block.get("type")) != node["type"]:
         return "type"          # positions came out of step; not a key drop
-    p = node.get("params") or {}
     t = block["type"]
+    if t == "text":
+        # Delegation's mapping is not a `params` field-by-field one like the
+        # other three — the whole block is the fragment blob's `content`,
+        # verbatim (build step 6: "the delegated value must equal the stored
+        # blob's bytes"). `store.py`'s `_digest` writes exactly
+        # `records.canonical(node["content"])` to `storage/`, so equality
+        # here is equality there too.
+        return None if node.get("content") == block else "content"
+    p = node.get("params") or {}
     if t == "thinking":
         mapped = {"thinking": p.get("text"), "signature": p.get("signature")}
     elif t == "tool_use":
@@ -134,13 +181,21 @@ def main():
     detail = (f"{total_blocks} blocks over {len(FIXTURES)} files"
              if not all_problems else
              "; ".join(f"{k}: {v[:3]}" for k, v in list(all_problems.items())[:3]))
-    case("every key of every thinking/tool_use/tool_result block is "
+    case("every key of every thinking/tool_use/tool_result/text block is "
          "recoverable from its node", not all_problems and total_blocks > 0,
          detail)
 
     # -- sabotage: prove the check is not vacuous, the test_sabotage.py idiom
     if FIXTURES:
-        probe = next((f for f in FIXTURES if _raw_blocks(f)), FIXTURES[0])
+        # Pick a fixture that actually carries what the sabotage strips.
+        # Selecting on "has any blocks" chose session-slash.jsonl, which has
+        # no `tool_use.caller`, so the sabotage skipped itself and the board
+        # quietly went from 2/2 to 1/1 — a check that weakens without failing
+        # is worse than no check (TODO-code-review.md, item 2).
+        probe = next((f for f in FIXTURES
+                      if any(b.get("type") == "tool_use" and "caller" in b
+                             for b in _raw_blocks(f))),
+                     next((f for f in FIXTURES if _raw_blocks(f)), FIXTURES[0]))
         orig = S.SessionImporter._tool_use
 
         def stripped(self, block):

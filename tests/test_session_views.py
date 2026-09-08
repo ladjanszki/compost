@@ -66,6 +66,16 @@ def main():
         for r in recs:
             if r["record"] == "edge" and r["type"] == "contains":
                 kids.setdefault(r["source"], []).append(r["destination"])
+        # v0.2.14: a turn's prose sits under a delegated `document` reached by
+        # `delegates_to`, not directly among the turn's own `contains`
+        # children — see `docs/roadmap.md`, "the recursion made explicit".
+        # `delegates` is turn guid -> the document(s) it delegated to, so
+        # `shown()` below can still answer "does this turn have anything to
+        # show" without missing the case where prose is all it has.
+        delegates = {}
+        for r in recs:
+            if r["record"] == "edge" and r["type"] == "delegates_to":
+                delegates.setdefault(r["source"], []).append(r["destination"])
         # Read what was rendered, not what was expected to be. Keying off
         # `roots` meant the cases below silently ignored any page the renderer
         # produced from a source this suite did not write itself — which is
@@ -101,13 +111,23 @@ def main():
             for an envelope turn specifically — that case is now just one way
             for every child to be unshown, not a rule of its own). Being in
             the graph and being on the page are different things.
+
+            v0.2.14: a turn's "children" for this purpose also includes
+            whatever a `delegates_to` edge reaches — a delegated document's
+            own `contains` children, which is where the turn's prose actually
+            lives now. Without this, a turn whose only content is delegated
+            prose (no toolcall, no thinking) would look childless here and
+            silently drop out of every case below, even though `views.py`
+            renders it.
             """
             if n["type"] == "thinking" and n["params"].get("empty"):
                 return False
             if n["type"] == "Para" and V._lead_tag(n) == V.SLASH_CAVEAT:
                 return False
             if n["type"] == "turn":
-                kk = kids.get(n["guid"], [])
+                kk = list(kids.get(n["guid"], []))
+                for doc in delegates.get(n["guid"], []):
+                    kk += kids.get(doc, [])
                 return bool(kk) and any(shown(nodes[k]) for k in kk)
             return True
 
@@ -300,8 +320,23 @@ def main():
             raise AssertionError(f"no Para with lead tag {tag!r} found")
 
         def _turn_of(child_guid):
+            """The `turn` a block ultimately belongs to.
+
+            v0.2.14: a `Para`'s `contains` parent is now a delegated
+            `document`, not the turn itself — that document has no `contains`
+            parent of its own (`docs/roadmap.md`, "the recursion made
+            explicit"), so one more step back, through the `delegates_to`
+            edge that reached it, is needed to land on the turn.
+            """
             src = next(s for s, ds in kids2.items() if child_guid in ds)
-            return nodes2[src]
+            node = nodes2[src]
+            if node["type"] == "document":
+                turn_guid = next(
+                    e["source"] for e in recs2
+                    if e["record"] == "edge" and e["type"] == "delegates_to"
+                    and e["destination"] == src)
+                return nodes2[turn_guid]
+            return node
 
         caveat = _para_with_tag(V.SLASH_CAVEAT)
         caveat_turn = _turn_of(caveat["guid"])

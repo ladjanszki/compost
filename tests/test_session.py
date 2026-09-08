@@ -111,10 +111,21 @@ def main():
     def attribution():
         authors = Counter(n["params"]["author"] for n in nodes.values()
                           if n["type"] == "turn")
+        # v0.2.14: a human turn's prose is what makes it "human" at all
+        # (`author` is set from `has_text`, in `SessionImporter.run`), but
+        # that prose is no longer among its `contains` children — it sits
+        # under a delegated `document`, reached by `delegates_to`
+        # (`docs/roadmap.md`, "the recursion made explicit"). A turn that
+        # delegated something has real prose by construction, whatever its
+        # other `contains` children are.
+        delegates = {e["source"] for e in recs
+                    if e["record"] == "edge" and e["type"] == "delegates_to"}
         # every human turn must carry real prose, never only tool results
         bad = 0
         for n in nodes.values():
             if n["type"] != "turn" or n["params"]["author"] != "human":
+                continue
+            if n["guid"] in delegates:
                 continue
             kids = [nodes[k]["type"] for k in g.children(n["guid"])]
             if all(k in ("toolcall", "tooloutput") for k in kids):

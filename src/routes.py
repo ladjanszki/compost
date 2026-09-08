@@ -30,13 +30,15 @@ from pathlib import Path
 
 from . import records as R
 from . import session as SESS
+from . import markdown as MD
 
-# The markdown dialect, and the three extensions that must stay off. Each one
-# prevents a specific silent corruption and the measurements are in
-# `docs/decisions.md`: `-attributes` keeps `{#...}` literal text instead of an
-# anchor definition, `-smart` keeps `---` three hyphens, and `-fancy_lists`
-# is what makes `+task_lists` actually apply. This is not a tunable.
-READER = "commonmark_x-smart-attributes-fancy_lists"
+# The markdown dialect lives in `markdown.py` now, as `MD.READER` — not
+# reassigned to a module-level name here, on purpose: `tests/verify-0.2.14.sh`
+# holds "READER is defined exactly once in src/" by grepping for the literal
+# assignment, and a second `READER = ...` line here would trip it even though
+# it only ever aliases the one true definition. `_ast_of`, below, reads
+# `MD.READER` directly. See `markdown.py` for the three extensions and why
+# each is load-bearing.
 
 
 def _ast_of(path: Path) -> dict:
@@ -48,25 +50,8 @@ def _ast_of(path: Path) -> dict:
     failure arrives as a confusing pandoc error about a file nobody named.
     """
     r = subprocess.run(
-        ["pandoc", "-f", READER, "-t", "json", str(Path(path).resolve())],
+        ["pandoc", "-f", MD.READER, "-t", "json", str(Path(path).resolve())],
         capture_output=True, text=True)
-    if r.returncode:
-        raise RuntimeError(r.stderr.strip())
-    return json.loads(r.stdout)
-
-
-def _ast_of_text(text: str) -> dict:
-    """The same markdown reader, on a string that has no file of its own.
-
-    `_ast_of` hands pandoc a path; `envelope["result"]` is a string already
-    sitting inside a wrapper document, so there is no file to name and the
-    text goes to pandoc on stdin instead. Same reader, same three extensions
-    disabled — the dialect must not depend on how the bytes arrived, or a
-    citation link in a claude response would parse differently from the
-    identical text in a note.
-    """
-    r = subprocess.run(["pandoc", "-f", READER, "-t", "json"],
-                       input=text, capture_output=True, text=True)
     if r.returncode:
         raise RuntimeError(r.stderr.strip())
     return json.loads(r.stdout)
@@ -185,13 +170,18 @@ def _response(path: Path, mint, route: str):
         raise RuntimeError(
             f"envelope['result'] is not a string: {type(result).__name__}")
 
-    recs, root = R.ast_to_records(_ast_of_text(result), mint=mint,
-                                  source=path.name, route=route)
+    recs, root = MD.text_to_records(result, mint=mint, route=route)
     root_rec = next(r for r in recs if r["guid"] == root)
-    # `params` already holds meta/pandoc_api_version/source/route from
-    # ast_to_records and is never empty (source is always given above), so
+    # `params` already holds meta/pandoc_api_version/route from
+    # `text_to_records` (never empty — `route` is always given above), so
     # this is always a real dict to update in place, never a fresh one.
+    # `source` is not one of them: `text_to_records` never sets it, because
+    # most of its callers (a delegated transcript turn) have none to give.
+    # This route does have one — the wrapper file itself — so it is set here
+    # rather than passed down, the one place a fileless read gets a filename
+    # after all.
     params = root_rec["params"]
+    params["source"] = path.name
     params.update(envelope)
     # `params["uuid"]` is now the ENVELOPE's own uuid, not this record's own
     # `guid` — one word naming two different things in the same record. This

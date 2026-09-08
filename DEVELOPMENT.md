@@ -116,10 +116,39 @@ The order:
    the gate pick the rc as newest, find no matching heading, and fail.
 2. `./tests/run.sh`, then `./tests/clean-room.sh --with-agent`. Both now pass.
 3. fix what they find; `git tag -f vX.Y.Z-rc`; repeat 2.
-4. bump `src/__init__.py` and the man page's `Version` line; rename the heading
+4. bump `src/__init__.py` and the man page's `Version` line; **bring
+   `docs/compost.md` up to date and set its version line**; rename the heading
    to `## vX.Y.Z — DATE — …`; commit as `chore:`.
+
+   **The whitepaper step is not optional.** It was missing until v0.2.13, which
+   is how a release that changed what a hash *means* nearly shipped with a paper
+   describing the old one. Only the generated appendix is guarded by a test; the
+   prose is not, so nothing else will catch it. v0.2.14 proved the point twice
+   over by briefly deleting this step: it shipped `check()`'s twelfth assertion
+   while two documents still said eleven, and added an edge type that
+   `record-format.md` had never heard of.
+
+   **The same step is where a design document earns its retirement.** A
+   `docs/design-*.md` whose version has shipped moves to the notes repository —
+   it is *not* deleted, because it is a revision of the thinking that became the
+   whitepaper and the base will hold it once TA lands. But anything in it worth
+   keeping has to reach the whitepaper *first*, or it leaves `docs/` with the
+   file and nobody looks in the notes repo for it.
+
+   **Check the prose counts.** Three releases running, a number in a document
+   went stale the moment something was added: `test_manpage` said 6 while 8
+   checks ran, `test_grammar` said 7, `CLAUDE.md` said twenty-one suites for
+   twenty-two, and `compost.md` said eleven invariants for twelve. Grep for
+   counts of suites, subcommands, invariants and principles before tagging.
+   `TODO-code-review.md` item 2 has the standing version of this.
 5. `git tag -a vX.Y.Z`, **delete the rc in the same breath**, push branch and
-   tags. Forgetting the delete leaves the rc sorting above the release — git
+   tags. Then **freeze the whitepaper into the notes repository** — `git show
+   vX.Y.Z:docs/compost.md > ../notes-repo/whitepaper-versions/compost-vX.Y.Z.md`
+   — which has to happen *after* the tag, because by the next commit the working
+   copy has already moved on. It goes to the notes repo rather than `docs/`
+   because `tools/build_whitepaper.py` and two suites hardcode `docs/compost.md`,
+   and a generator pointed at a frozen copy would rewrite the history it was
+   keeping. Forgetting the delete leaves the rc sorting above the release — git
    orders `v0.2.7-rc` *above* `v0.2.7` by default — so the gate looks for the
    rc's heading, which no longer exists, and fails. That is the failure telling
    you to finish the cleanup, and it is why the delete is part of step 5 rather

@@ -148,8 +148,13 @@ def main():
 
             def storage_name_is_not_the_original():
                 recs, _ = st.load()
+                # v0.2.14: a delegated fragment's `original_name` is null —
+                # it has no filename of its own to keep an extension from
+                # (`docs/roadmap.md`, "the recursion made explicit") — so
+                # this guarantee is only about blobs that had one.
                 blobs = [r for r in recs if r["record"] == "node"
-                         and r["type"] == "blob"]
+                         and r["type"] == "blob"
+                         and R._p(r, "original_name") is not None]
                 same = [b for b in blobs
                         if R._p(b, "stored_as") == R._p(b, "original_name")]
                 kept = [b for b in blobs

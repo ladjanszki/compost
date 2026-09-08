@@ -53,11 +53,24 @@ def node_types_table(schema: dict) -> str:
 
 
 def edge_pairs_table(schema: dict) -> str:
-    """One row per `(layer, type)` pair the schema names."""
+    """One row per `(layer, type)` pair the schema names.
+
+    `aligns_with` is optional and, when present, must carry both `enforced`
+    and `not_enforced` — the pair `tests/test_grammar.py` and
+    `tests/verify-0.2.14.sh` hold against every entry that claims one, so
+    nothing here is claimed that `records.check()` does not actually hold
+    (v0.2.14, "the recursion made explicit").
+    """
     pairs = schema["$defs"]["edge_pairs"]
-    lines = ["| layer | type |", "|---|---|"]
+    lines = ["| layer | type | aligns with |", "|---|---|---|"]
     for p in sorted(pairs, key=lambda p: (p["layer"], p["type"])):
-        lines.append(f"| `{p['layer']}` | `{p['type']}` |")
+        align = p.get("aligns_with")
+        if align:
+            cell = (f"{align} — enforced: {p['enforced']}; "
+                    f"not enforced: {p['not_enforced']}")
+        else:
+            cell = "—"
+        lines.append(f"| `{p['layer']}` | `{p['type']}` | {cell} |")
     return "\n".join(lines)
 
 

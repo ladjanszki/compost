@@ -63,7 +63,7 @@ keeps the binary optional rather than required.
 |---|---|
 | **nodes** | pandoc's own constructor names — `Para`, `Header`, `CodeBlock`, `Table` — plus `ListItem` and two others where pandoc's grammar is anonymous, plus `session`, `turn`, `toolcall`, `tooloutput`, `thinking`, `file`, `document`, `blob`, `alias`, `unresolved_citation` |
 | **edges** | `contains` and `next` per layer, `touches`, `replies_to`, `cites`, `names`, `responds_to` |
-| **identity** | a UUIDv4 per node, and a SHA256 `content_hash` where a node has content of its own; every edge also carries `content_hash`, `created_at` and `tool_version` |
+| **identity** | a UUIDv4 per node, plus a SHA256 `record_hash` on **every** node and a `record_subtree_hash` folding it with its children's; every edge also carries `record_hash`, `created_at` and `tool_version` |
 | **citations** | `[-](#<guid>)` — a link, so a handle quoted inside a code block cannot become an edge. `compost layer citation` turns each into a `cites` edge, or an `alias`/`unresolved_citation` placeholder when the target is not in the base yet |
 
 ## Guarantees, and how they are kept

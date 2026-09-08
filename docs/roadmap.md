@@ -2739,12 +2739,48 @@ as *every digestor input* rather than *the files the human imported*.
 10. **A turn with two text blocks is refused loudly**, naming
    `TODO-multiple-text-blocks.md`. Sabotage: hand-build such a line and confirm
    `digest` raises rather than importing part of it.
-11. **v0.2.13's guarantee 5 still holds**: truncate every corpus session to 70%,
-   digest both, and the old walk is a clean prefix of the new at **100.00%**.
-   This release moves the tree, so it is the measurement most likely to break
-   and must be re-run rather than assumed.
+11. **v0.2.13's guarantee 5 still holds — and the walk still covers the graph.**
+   Truncate every corpus session to 70%, digest both, walk in document order,
+   and the old must be a clean prefix of the new at **100.00%**.
 
-### The one decision still open: what happens to existing bases
+   **The traversal must follow `delegates_to`, and this is the trap the release
+   set.** Delegation moves prose out of a turn's `contains` children, so a walk
+   over `contains`/`next` alone reaches **52.5%** of a digest — 1,695 of 3,569
+   nodes unreachable on `session-04`, among them 348 `Para`, 352 `Plain` and 72
+   `Header`, which are precisely the blocks anyone cites. Measured that way the
+   guarantee reports a tidy 100% and means half of what it did: `session-04`
+   goes from 2,306/2,306 before the release to 1,323/1,323 after, and *"still
+   100%"* is true and useless.
+
+   Following the delegation, the property is intact: **9,217 of 9,217, six
+   sessions, 100.0000%.** So the guarantee asserts **two** things — the prefix,
+   and that the walk reaches at least three quarters of the digest — because a
+   perfect prefix over a shrinking tree is exactly how this would be lost
+   quietly. `docs/decisions.md`'s own lesson: a number reported against the
+   wrong denominator misleads.
+
+### Decided: the base was re-ingested, not migrated
+
+*(2026-09-08.)* Prose blocks move out of a turn's `contains` children, so a
+transcript digested before this release and one digested after have different
+shapes in the same base. The migration was designed and then not needed: the
+human archived the whole v0.2.13 base into the notes repository under
+`base-v0.2.13-2026-09-08/`, committed records and storage, and started an empty
+one. Nothing is left in the old shape, so there is nothing to migrate.
+
+**What made that affordable** was that a base is a complete, self-describing
+artifact — `graph/*.jsonl` is one JSON record per line, `storage/` holds every
+source, and `contains`/`next` carry document order — so the archive stays
+readable by `tools/export_citations.py`, which imports nothing from `src/`. The
+32 citations that pointed into the old base were exported first, keyed on
+`(source, document-order index)` rather than content hash, because 13 of the 32
+share a `record_hash` with another node.
+
+The original text of this section follows, kept because the reasoning is what
+would be needed if a future release moves the tree without an empty base to
+start from.
+
+### The migration that was designed and not needed
 
 Prose blocks move from being a turn's children to a delegated document's
 children, so a transcript digested before this release and one digested after

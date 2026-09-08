@@ -314,6 +314,59 @@ node joined by a `derived_from` edge in the `ingestion` layer:
             "route": "claude-code-transcript"}}
 ```
 
+### A fragment blob, and why it has no name — v0.2.14
+
+Digestion is **delegating**: a digestor meeting content it does not own hands it
+to the digestor that does, and the delegated input is stored like any other
+digestor input. A turn's markdown goes to the text digestor, and the string it
+was handed becomes a blob of its own:
+
+```json
+{"record": "node", "guid": "1c0a…", "type": "blob",
+ "params": {"original_name": null, "stored_as": "1c0a….json",
+            "bytes_sha256": "…", "imported_at": "…", "route": "notes",
+            "selector_conforms_to": "RFC 6901",
+            "selector_value": "/3/message/content/2"}}
+```
+
+**`original_name` is null because a fragment never had a filename.** It was
+lifted out of the middle of a JSON line. What it has instead is a *location
+inside its parent*, and that is what the two selector params say — the
+vocabulary is **W3C Web Annotation**, and `RFC 6901` names the dialect, JSON
+Pointer, because the parent is JSON. One convention here is ours and is written
+down rather than inferred: **a `.jsonl` blob is addressed as the JSON array of
+its lines**, so `/3/…` means line 3.
+
+The derivation is a two-hop chain — the delegated `document` was derived from
+the fragment blob, which was derived from the transcript blob — and
+`derived_from` is aligned with `prov:wasDerivedFrom` (W3C PROV-O). Borrowing
+that name is what puts irreflexivity and acyclicity into `check()` as its
+twelfth assertion; PROV's ordering constraint is declined, and the schema says
+so beside the claim.
+
+### The document is a root that nobody contains
+
+The delegated `document` is **not** a child of the turn. `document` is in
+`ROOT_TYPES` and a root type with a parent is a `check` problem, so the turn
+reaches it through a `delegates_to` edge instead:
+
+```
+turn ──contains──> toolcall, thinking, contentblock…
+  └──delegates_to──> document ──contains──> Para, BulletList…
+```
+
+This is the shape a launched subagent session already has — a root nobody
+contains, reached from a `toolcall` by `launched` — so it is a second use of an
+existing pattern rather than a new one.
+
+**Anything walking a conversation must follow `delegates_to`.** A walk over
+`contains` and `next` alone reaches 52.5% of a digest, missing every `Para`,
+`Plain` and `Header` — which are the blocks anyone cites. `store.py`'s `where()`
+follows it to name the conversation a block belongs to, and the alignment
+property is measured over it: **9,217 of 9,217 nodes, 100.0000%**.
+
+## The `blob` node, and what a path is, continued
+
 `stored_as` is a minted guid plus the original extension, so **the original
 name is not where the file lives**. Reconstructing a storage path from
 `params["source"]` is guessing; `records.blob_of()` is the supported way, and

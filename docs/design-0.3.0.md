@@ -466,7 +466,7 @@ well-formed, and today nothing verifies that — `CLAUDE.md` says so plainly,
 *"this is a trust model and the trust is currently unearned."* A schema without
 a validator would leave that gap open while looking closed.
 
-What a schema **cannot** do stays where it is: the ten invariants are
+What a schema **cannot** do stays where it is: the twelve invariants are
 cross-record — no cycle in `contains`, the `next` chain is a total order,
 exactly one parent — and no per-document validator can express any of them.
 Three layers, each doing what it can: **schema** for what a record may be,

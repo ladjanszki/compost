@@ -688,6 +688,39 @@ def check(records: list) -> list[str]:
     except Exception as e:
         problems.append(f"could not verify record hashes: {e}")
 
+    # Twelfth assertion: `derived_from` is irreflexive and acyclic — the two
+    # of PROV-O's `wasDerivedFrom` binding constraints v0.2.14 holds
+    # (`docs/roadmap.md`, "the recursion made explicit"; the third, that the
+    # source pre-exists the target, is explicitly NOT enforced — `created_at`
+    # is audit metadata, not a semantic clock, so there is nothing to order
+    # by). Checked over every `derived_from` edge in the base, not only the
+    # ones this release mints, because a hand-built or migrated record makes
+    # the same claim and is held to the same two constraints.
+    df: dict[str, list[str]] = {}
+    for e in edges:
+        if e["type"] != "derived_from":
+            continue
+        if e["source"] == e["destination"]:
+            problems.append(f"derived_from {e['guid']} is reflexive: "
+                            f"{e['source']} derived from itself")
+        df.setdefault(e["source"], []).append(e["destination"])
+    df_colour: dict[str, int] = {}
+
+    def df_visit(g):
+        df_colour[g] = 1
+        for k in df.get(g, []):
+            if df_colour.get(k) == 1:
+                return True
+            if not df_colour.get(k) and df_visit(k):
+                return True
+        df_colour[g] = 2
+        return False
+
+    for g_ in list(df):
+        if not df_colour.get(g_) and df_visit(g_):
+            problems.append("cycle in the derived_from graph")
+            break
+
     return problems
 
 

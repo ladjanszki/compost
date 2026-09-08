@@ -126,14 +126,18 @@ def _edge_line(e: dict) -> str:
 
 
 def _tree_reach(recs, root_guid: str) -> set:
-    """Every node under `root_guid` in the containment tree — `contains` plus
-    `launched`, the same pair `records.check` walks together for cycles,
-    because a view renders a launched subagent *inside* the call that ran it.
-    This is "one root's subgraph": the node set a view would show for this
-    root, nothing pulled in from anywhere else in the base."""
+    """Every node under `root_guid` in the containment tree — `contains`,
+    `launched`, and (v0.2.14) `delegates_to`. `launched` reaches a subagent
+    session rendered *inside* the call that ran it; `delegates_to` reaches a
+    delegated document rendered inside the turn that produced it — the same
+    "not `contains`, but still part of this root's picture" reasoning
+    `records.check` and `views.py` already give each. This is "one root's
+    subgraph": the node set a view would show for this root, nothing pulled
+    in from anywhere else in the base."""
     kids: dict[str, list[str]] = {}
     for r in recs:
-        if r["record"] == "edge" and r["type"] in ("contains", "launched"):
+        if r["record"] == "edge" and r["type"] in (
+                "contains", "launched", "delegates_to"):
             kids.setdefault(r["source"], []).append(r["destination"])
     out, stack = set(), [root_guid]
     while stack:

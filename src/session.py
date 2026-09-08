@@ -47,12 +47,13 @@ as parsed blocks. That is accepted. The raw text is the source and the blocks
 are a derivation, which is the same relationship `storage/` has with the whole
 graph, and the alternative is deciding at import which of the two matters.
 """
+import hashlib
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 from . import records as R
+from . import markdown as M
 
 # Structure any transcript source would have. Kept separate from the
 # source-specific layer below so another agent's log format can reuse it
@@ -60,25 +61,19 @@ from . import records as R
 LAYER = "session"
 # Facts particular to this log format: the parentUuid chain.
 SOURCE_LAYER = "claude-code"
+# Same value as `store.py`'s own `INGEST_LAYER` — not imported from there,
+# because `store` imports `routes` imports `session`, and importing `store`
+# from here would close that into a cycle. A layer name is a string, not
+# code; two modules owning the same literal is the accepted cost, the same
+# way `LAYER`/`SOURCE_LAYER` are already each module's own.
+INGEST_LAYER = "ingestion"
 # Line types this importer interprets. Everything else still becomes a node —
 # a `logline` carrying its whole original JSON — because "we have no reading
 # for this yet" and "this can be thrown away" are different statements.
 INTERPRETED = ("user", "assistant")
-READER = "commonmark_x-smart-attributes-fancy_lists"
 
 # Tool inputs that name a file the call touched.
 PATH_KEYS = ("file_path", "path", "notebook_path")
-
-
-def _md_blocks(text: str) -> list:
-    """Markdown text -> pandoc blocks. Empty list if it parses to nothing."""
-    if not text.strip():
-        return []
-    r = subprocess.run(["pandoc", "-f", READER, "-t", "json"],
-                       input=text, capture_output=True, text=True)
-    if r.returncode:
-        raise RuntimeError(r.stderr.strip())
-    return json.loads(r.stdout)["blocks"]
 
 
 def _text_of(content) -> str:
@@ -113,6 +108,7 @@ class SessionImporter:
         self.files: dict[str, str] = {}      # path -> guid, deduped per session
         self.calls: dict[str, str] = {}      # tool_use_id -> toolcall guid
         self.by_uuid: dict[str, str] = {}    # log line uuid -> turn guid
+        self._route: str | None = None       # set in run(); read by _delegate
 
     # -- helpers -----------------------------------------------------------
     def _file_node(self, path: str) -> str:
@@ -120,9 +116,47 @@ class SessionImporter:
             self.files[path] = self.b.node("file", {"path": path})
         return self.files[path]
 
-    def _prose(self, text: str) -> list[str]:
-        """Parsed markdown, as node guids. The text importer, reused whole."""
-        return [R._block(self.b, blk) for blk in _md_blocks(text)]
+    def _delegate(self, text: str, block, selector: str) -> str | None:
+        """One turn's prose, handed to the shared markdown digestor.
+
+        v0.2.14, "the recursion made explicit": a digestor that meets content
+        it does not own delegates to the digestor that does, and the
+        delegated input is stored like any other digestor input. `block` is
+        exactly what sat at `selector` in the source line — the whole
+        `{"type": "text", "text": ...}` dict when a turn's `content` is a
+        list, or the bare string when it is one already — and is stored
+        as-is as a fragment blob's `content`, addressed by `selector` as a
+        JSON Pointer into the parent transcript's line array (ours, not
+        RFC 6901's own convention: a `.jsonl` blob is the JSON array of its
+        lines).
+
+        Returns the delegated document's root guid, or None when there is no
+        text to delegate — the same as the old `_prose` on an empty block,
+        which minted nothing either. The second `derived_from` hop, fragment
+        blob to transcript blob, is not minted here: this importer does not
+        yet know the transcript's own blob guid (that is minted generically,
+        once, in `store.py:_digest`, after every route has returned) — see
+        `store.py`'s per-plan writing loop, which wires it up for every
+        `blob` node any route's own output already carries.
+        """
+        if not text.strip():
+            return None
+        data = R.canonical(block)
+        frag = self.b.mint()
+        self.b.node("blob", {
+            "original_name": None,
+            "stored_as": f"{frag}.json",
+            "bytes_sha256": hashlib.sha256(data).hexdigest(),
+            "imported_at": R._now(),
+            "route": self._route,
+            "selector_conforms_to": "RFC 6901",
+            "selector_value": selector,
+        }, content=block, guid=frag)
+        recs, root = M.text_to_records(text, mint=self.b.mint,
+                                       route=self._route)
+        self.b.records.extend(recs)
+        self.b.edge("derived_from", root, frag, INGEST_LAYER)
+        return root
 
     def _tool_use(self, block: dict) -> str:
         params = {
@@ -161,6 +195,7 @@ class SessionImporter:
 
     # -- the walk ----------------------------------------------------------
     def run(self, path: Path, route: str | None = None) -> tuple[list, str]:
+        self._route = route
         lines = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
         meta = next((d for d in lines if d.get("sessionId")), {})
         params = {
@@ -197,7 +232,7 @@ class SessionImporter:
 
         turns: list[str] = []
         pending: list[tuple[str, str]] = []
-        for d in lines:
+        for i, d in enumerate(lines):
             kind = d.get("type")
 
             # A line type this importer has no reading for is still a line, and
@@ -242,8 +277,9 @@ class SessionImporter:
             children: list[str] = []
             orphan_results: list[str] = []
             has_text = bool(prose.strip())
+            delegated_root: str | None = None
 
-            for blk in blocks:
+            for idx, blk in enumerate(blocks):
                 if not isinstance(blk, dict):
                     children.append(self.b.node("contentblock",
                                                 {"block_type": None,
@@ -251,7 +287,9 @@ class SessionImporter:
                     continue
                 t = blk.get("type")
                 if t == "text":
-                    children += self._prose(blk.get("text", ""))
+                    delegated_root = self._delegate(
+                        blk.get("text", ""), blk,
+                        f"/{i}/message/content/{idx}")
                 elif t == "thinking":
                     # Kept as a node even though these logs carry no text: the
                     # fact that reasoning happened, and where in the turn, is
@@ -282,7 +320,8 @@ class SessionImporter:
                                                 {"block_type": t,
                                                  "block": blk}))
             if isinstance(content, str) and content.strip():
-                children += self._prose(content)
+                delegated_root = self._delegate(
+                    content, content, f"/{i}/message/content")
                 has_text = True
 
             # A user line carrying only tool results is the transcript's
@@ -299,6 +338,13 @@ class SessionImporter:
                 "log": d,
             })
             self.b.children(turn, children + orphan_results, LAYER)
+            if delegated_root is not None:
+                # The delegated document is a root that nobody `contains` —
+                # `document` is in `ROOT_TYPES`, and a root with a `contains`
+                # parent is a reported `check()` problem. The turn reaches it
+                # by this edge instead, the same shape a launched subagent
+                # session already uses (`store.py:_link_agents`).
+                self.b.edge("delegates_to", turn, delegated_root, LAYER)
             turns.append(turn)
             if d.get("uuid"):
                 self.by_uuid[d["uuid"]] = turn

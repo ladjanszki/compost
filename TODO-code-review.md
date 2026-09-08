@@ -115,9 +115,10 @@ Each of these is generalised from the incident above.
    properties and check the machinery underneath them separately.
 
 5. **Which invariants are enforced by attention rather than by a program?**
-   `docs/compost.md` lists fifteen principles and ten invariants — only the ten
-   are checked. For each of the fifteen, ask whether it *could* be checked
-   cheaply, and why it is not.
+   `docs/compost.md` lists fifteen principles and twelve invariants — only the
+   twelve are checked. For each of the fifteen, ask whether it *could* be
+   checked cheaply, and why it is not. (The count in this very item was stale
+   for two releases, which is item 2 again.)
 
 6. **What is asserted by a comment?** Claims in docstrings and comments that no
    test holds. Several have already been found false: `views.py` claiming

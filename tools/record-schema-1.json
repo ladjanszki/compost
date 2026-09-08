@@ -141,6 +141,7 @@
           "enum": [
             "cites",
             "contains",
+            "delegates_to",
             "derived_from",
             "launched",
             "names",
@@ -465,7 +466,13 @@
             "imported_at": {},
             "original_name": {},
             "route": {},
-            "stored_as": {}
+            "stored_as": {},
+            "selector_conforms_to": {
+              "description": "v0.2.14: present on a delegated fragment only. Names the selector convention `selector_value` is written in — always `RFC 6901` (JSON Pointer) as of this release. Absent, along with `selector_value`, on an ordinary file blob, which is addressed by its whole `stored_as` name instead."
+            },
+            "selector_value": {
+              "description": "v0.2.14: a JSON Pointer into the parent blob's lines, read as a JSON array — `/3/message/content/2` means line 3 (0-indexed) of a `.jsonl` blob. Ours, not RFC 6901's own convention; see docs/roadmap.md, \"the recursion made explicit\"."
+            }
           },
           "required": [
             "bytes_sha256",
@@ -476,7 +483,7 @@
           ],
           "additionalProperties": false
         },
-        "carries_content": false
+        "carries_content": true
       },
       "contentblock": {
         "params": {
@@ -539,8 +546,7 @@
           "required": [
             "meta",
             "pandoc_api_version",
-            "route",
-            "source"
+            "route"
           ],
           "additionalProperties": false
         },
@@ -709,7 +715,10 @@
       },
       {
         "layer": "ingestion",
-        "type": "derived_from"
+        "type": "derived_from",
+        "aligns_with": "prov:wasDerivedFrom (W3C PROV-O)",
+        "enforced": "irreflexive (a node is never derived from itself); acyclic (records.check()'s twelfth assertion, v0.2.14)",
+        "not_enforced": "the source pre-existing the target — created_at is audit metadata, not semantics, so there is no semantic clock to order derivation by (docs/design-0.3.0.md §7)"
       },
       {
         "layer": "pandoc-ast",
@@ -722,6 +731,10 @@
       {
         "layer": "session",
         "type": "contains"
+      },
+      {
+        "layer": "session",
+        "type": "delegates_to"
       },
       {
         "layer": "session",

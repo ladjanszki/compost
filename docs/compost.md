@@ -222,6 +222,44 @@ notes.jsonl` reads markdown, because that is what was asked for. A missing or
 unknown `--as` is an error that lists the routes rather than a guess at what was
 meant.
 
+### Digestion is delegating, not recursive-by-accident — v0.2.14
+
+**A digestor that meets content it does not own hands it to the digestor that
+does, explicitly, and the delegated input is stored as a blob like any other
+digestor input.** A transcript's assistant prose is markdown; the transcript
+digestor does not parse markdown, it delegates.
+
+*The incident that produced this:* `session.py` did not call the text digestor,
+it **reimplemented** it — two `READER` constants holding one string, two
+functions turning markdown into blocks, and a reach into a private function to
+do what the public one does. `docs/decisions.md` records every flag in those
+invocations as load-bearing and measured, so the second copy was a silent
+divergence waiting for the first edit to the notes reader.
+
+The rule the release produced has no exceptions:
+
+> Every digestor's input is stored as a blob. Every key of that input is a
+> param, the node type, a child, or delegated to a named digestor — whose input
+> is itself a blob.
+
+That makes totality (principle 1) **compositional**: each digestor is total on
+its own format, delegation composes them, and the pipeline is total by
+induction. It is also why the first version of this rule was wrong: it split
+mappings into "structural" and "interpretive" and asked importers to declare
+which they were, turning a structural problem into a list of exceptions.
+Delegation removes the kinds instead of documenting them.
+
+**Cost, measured:** 549 delegated inputs across seven transcripts, 376 KB
+against 10.8 MB — **3.5%**, median input 158 bytes.
+
+**The delegated document is a root nobody contains**, reached by a
+`delegates_to` edge, because `document` is a `ROOT_TYPES` member and a root with
+a parent fails `check`. This is the shape a launched subagent session already
+has. The consequence worth knowing: **a walk over `contains` and `next` alone
+now reaches 52.5% of a digest** — every `Para`, `Plain` and `Header` lives below
+a delegation — so anything traversing a conversation must follow the edge.
+Missing that is invisible: it reports a tidy 100% of half a graph.
+
 ### Ingestion is two-phase, and that is what makes it safe to re-run
 
 **Nothing is written until every input has been read and parsed.** Storage names
@@ -298,25 +336,31 @@ because a layer's edges are separable from the structure they annotate.
 
 ### Two hash functions that share a name and are not comparable
 
+Both are called `record_hash` — v0.2.13 renamed them from `content_hash`,
+because that name claimed a semantics neither has. They are computed by
+different functions over different shapes and **a query grouping by
+`record_hash` across record kinds is comparing nothing.**
+
 | | node | edge |
 |---|---|---|
 | input | `[type, params, content]` | the record minus a skip list |
 | shape | positional **array** | an **object** |
-| present | only when the node has content | always |
+| present | **always, every node** (v0.2.13) | always |
 
 Both are `sha256(canonical(…))`, where `canonical` is JSON with sorted keys, no
-spaces, `ensure_ascii=False`. **A query grouping by `content_hash` across record
-kinds is comparing nothing.**
+spaces, `ensure_ascii=False`. A node also carries `record_subtree_hash`, the
+fold over its own hash and its children's, in `next` order.
 
 The edge form excludes identity *and provenance* deliberately: a hash must say
 what the edge **claims**, never when or by what it was written, or the same fact
 rebuilt tomorrow would not match the one written today.
 
-**Neither reaches everything**, and this is the honest statement of the gap: the
-transcript node types, `alias` and `unresolved_citation` carry no hash at all,
-and an edge pointing at a placeholder hashes differently on every build.
-`content_hash` is **evidence for a dedup design**, not a mechanism anything acts
-on. Nothing in `src/` reads it to decide anything.
+**`record_hash` answers *is this the same record*, not *is this the same
+value*.** The second question is a projection that differs per question and
+belongs in a layer, where being wrong is a rebuild rather than a migration.
+Nothing in `src/` reads either hash to decide anything yet; they are evidence
+for a dedup design, plus the two things `check` now verifies — that they
+recompute, and that `derived_from` is acyclic.
 
 ### The closed vocabularies
 
@@ -343,7 +387,7 @@ Two more sets are closed in code rather than in prose. **`ROOT_TYPES`** —
 `file`, `alias`, `unresolved_citation`, `display_name` — nodes that are *pointed
 at* rather than contained. Everything else has exactly one `contains` parent.
 
-### The eleven invariants
+### The twelve invariants
 
 What `check()` asserts over a whole loaded graph. **A view of a graph failing any
 of them is refused, not rendered** (principle 11).
@@ -367,6 +411,14 @@ of them is refused, not rendered** (principle 11).
     `record_subtree_hash` from the fold over `contains`/`next` — v0.2.13, and
     the first assertion here that verifies content rather than structure
     (`docs/roadmap.md`, "v0.2.13 — the fold").
+12. **`derived_from` is irreflexive and acyclic.** v0.2.14, and it is here
+    because the edge was aligned with `prov:wasDerivedFrom`: PROV binds
+    derivation to being irreflexive and acyclic, so borrowing the name means
+    enforcing them. PROV's third constraint — that the source pre-exists the
+    target — is **deliberately not enforced**, because `created_at` is audit
+    metadata rather than semantics and there is no semantic clock to order by.
+    The schema records both halves of that, and a test asserts every borrowed
+    name declares what it does and does not honour.
 
 ### Where the per-type grammar lives, now in three layers
 
@@ -618,10 +670,10 @@ render produces, and that running the build again changes nothing.
 | `TableFoot` | `attr` | — | — |
 | `TableHead` | `attr` | — | — |
 | `alias` | `scheme`, `value` | `generated_by`, `pandoc` | — |
-| `blob` | `bytes_sha256`, `imported_at`, `original_name`, `route`, `stored_as` | — | — |
+| `blob` | `bytes_sha256`, `imported_at`, `original_name`, `route`, `stored_as` | `selector_conforms_to`, `selector_value` | yes |
 | `contentblock` | `block`, `block_type` | — | — |
 | `display_name` | `value` | — | — |
-| `document` | `meta`, `pandoc_api_version`, `route`, `source` | `api_error_status`, `duration_api_ms`, `duration_ms`, `fast_mode_disabled_reason`, `fast_mode_state`, `is_error`, `modelUsage`, `num_turns`, `permission_denials`, `result`, `session_id`, `stop_reason`, `subtype`, `terminal_reason`, `time_to_request_ms`, `total_cost_usd`, `ttft_ms`, `ttft_stream_ms`, `type`, `usage`, `uuid` | — |
+| `document` | `meta`, `pandoc_api_version`, `route` | `api_error_status`, `duration_api_ms`, `duration_ms`, `fast_mode_disabled_reason`, `fast_mode_state`, `is_error`, `modelUsage`, `num_turns`, `permission_denials`, `result`, `session_id`, `source`, `stop_reason`, `subtype`, `terminal_reason`, `time_to_request_ms`, `total_cost_usd`, `ttft_ms`, `ttft_stream_ms`, `type`, `usage`, `uuid` | — |
 | `file` | `path` | — | — |
 | `logline` | `line_type`, `log`, `timestamp`, `uuid` | — | — |
 | `session` | `route`, `session_id`, `source`, `version` | `agent` | — |
@@ -631,25 +683,26 @@ render produces, and that running the build again changes nothing.
 | `turn` | `author`, `log`, `timestamp`, `uuid` | — | — |
 | `unresolved_citation` | — | — | — |
 
-**13 `(layer, type)` edge pairs.**
+**14 `(layer, type)` edge pairs.**
 
-| layer | type |
-|---|---|
-| `agent` | `launched` |
-| `citation` | `cites` |
-| `citation` | `names` |
-| `claude-code` | `replies_to` |
-| `conversation` | `next` |
-| `conversation` | `responds_to` |
-| `display` | `names` |
-| `ingestion` | `derived_from` |
-| `pandoc-ast` | `contains` |
-| `pandoc-ast` | `next` |
-| `session` | `contains` |
-| `session` | `next` |
-| `session` | `touches` |
+| layer | type | aligns with |
+|---|---|---|
+| `agent` | `launched` | — |
+| `citation` | `cites` | — |
+| `citation` | `names` | — |
+| `claude-code` | `replies_to` | — |
+| `conversation` | `next` | — |
+| `conversation` | `responds_to` | — |
+| `display` | `names` | — |
+| `ingestion` | `derived_from` | prov:wasDerivedFrom (W3C PROV-O) — enforced: irreflexive (a node is never derived from itself); acyclic (records.check()'s twelfth assertion, v0.2.14); not enforced: the source pre-existing the target — created_at is audit metadata, not semantics, so there is no semantic clock to order derivation by (docs/design-0.3.0.md §7) |
+| `pandoc-ast` | `contains` | — |
+| `pandoc-ast` | `next` | — |
+| `session` | `contains` | — |
+| `session` | `delegates_to` | — |
+| `session` | `next` | — |
+| `session` | `touches` | — |
 
-**60 distinct params.** Which node types each appears on. The third column is a leftover: it was to be filled in by hand, one row at a time, deciding which params counted as content. `v0.2.13` removed that question rather than answering it — the mapping is the whitelist — so nothing reads this column. It is still rendered because the table is generated and an empty column is cheaper than a special case.
+**62 distinct params.** Which node types each appears on. The third column is a leftover: it was to be filled in by hand, one row at a time, deciding which params counted as content. `v0.2.13` removed that question rather than answering it — the mapping is the whitelist — so nothing reads this column. It is still rendered because the table is generated and an empty column is cheaper than a special case.
 
 | param | appears on | content? (unused) |
 |---|---|---|
@@ -693,6 +746,8 @@ render produces, and that running the build again changes nothing.
 | `row_head_columns` | `TableBody` |  |
 | `rowspan` | `Cell` |  |
 | `scheme` | `alias` |  |
+| `selector_conforms_to` | `blob` |  |
+| `selector_value` | `blob` |  |
 | `session_id` | `document`, `session` |  |
 | `signature` | `thinking` |  |
 | `source` | `document`, `session` |  |

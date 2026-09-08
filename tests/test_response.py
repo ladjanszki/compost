@@ -26,6 +26,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from src import markdown as M     # noqa: E402
 from src import records as R     # noqa: E402
 from src import routes as RT     # noqa: E402
 from src import store as S       # noqa: E402
@@ -151,9 +152,12 @@ def main():
 
             def broken(path, mint, route):
                 wrapper = json.loads(path.read_text(encoding="utf-8"))
-                recs, root = R.ast_to_records(
-                    RT._ast_of_text(wrapper["envelope"].get("result", "")),
-                    mint=mint, source=path.name, route=route)
+                recs, root = M.text_to_records(
+                    wrapper["envelope"].get("result", ""),
+                    mint=mint, route=route)
+                root_rec = next(r for r in recs if r["guid"] == root)
+                root_rec["params"]["source"] = path.name
+                R.stamp_hashes(recs)
                 b = R.Builder(mint)
                 b.edge("responds_to", root, wrapper["responds_to"],
                       RT.CONVERSATION_LAYER)
@@ -210,8 +214,8 @@ def main():
             # (wrongly) pass on whatever blocks happened to be left from a
             # prior call, so this proves the parse step is what puts them
             # there rather than some other mechanism.
-            real = RT._ast_of_text
-            RT._ast_of_text = lambda text: {
+            real = M._ast_of_text
+            M._ast_of_text = lambda text: {
                 "pandoc-api-version": [1, 23, 1], "meta": {}, "blocks": []}
             try:
                 with tempfile.TemporaryDirectory() as d2:
@@ -228,7 +232,7 @@ def main():
                     g2 = R.Graph(recs2)
                     empty = g2.children(resp2["guid"]) == []
             finally:
-                RT._ast_of_text = real
+                M._ast_of_text = real
             return (code == 0 and empty,
                     "with the reader stubbed to emit nothing, the response "
                     "root has zero children — the real reader is what "

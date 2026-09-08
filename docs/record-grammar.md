@@ -347,6 +347,7 @@ things that may write records.** Any script or agent emitting valid JSONL under
 | `session` | `contains` | `session`/`turn`/`toolcall` → child | `session.py` |
 | `session` | `next` | line → next line, **log order** | " |
 | `session` | `touches` | `toolcall` → `file` | " |
+| `session` | `delegates_to` | `turn` → the `document` its markdown was digested into | " |
 | `claude-code` | `replies_to` | `turn` → `turn`, **reply order** | " |
 | `ingestion` | `derived_from` | root → `blob` | `store._digest` |
 | `agent` | `launched` | `toolcall` → `session` | `store._link_agents` |

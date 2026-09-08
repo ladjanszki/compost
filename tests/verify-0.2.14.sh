@@ -212,7 +212,13 @@ for f in fs:
     assert R.records_to_ast(recs,root)==a, f
 PY
 
-run GUARD "alignment prefix is 100% of the older tree" <<PY
+run GUARD "alignment prefix is 100%, AND the walk still covers the graph" <<PY
+# Two assertions, and the second is the one v0.2.14 nearly lost. Delegation
+# moves prose out of a turn's `contains` children, so a walk that follows only
+# `contains`/`next` reaches 52.5% of a digest — 100% of a prefix over half the
+# graph, which reads as "unchanged" and is not. The walk must follow
+# `delegates_to`, and the coverage is asserted so a future narrowing cannot
+# pass silently.
 import sys,itertools,tempfile,pathlib,glob; sys.path.insert(0,"$ROOT")
 from src import session as S, records as R
 bad=[]
@@ -223,14 +229,28 @@ for src in (glob.glob("$ROOT/tests/corpus/compost-corpus/curated/sessions/*.json
     (d1/"s.jsonl").write_text("\n".join(lines[:int(len(lines)*0.7)])+"\n")
     (d2/"s.jsonl").write_text("\n".join(lines)+"\n")
     def walk(p):
-        recs,root=S.session_to_records(p); g=R.Graph(recs); out=[]
+        recs,root=S.session_to_records(p); g=R.Graph(recs)
+        deleg={}
+        for e in recs:
+            if e["record"]=="edge" and e["type"]=="delegates_to":
+                deleg.setdefault(e["source"],[]).append(e["destination"])
+        out=[]
         def go(k):
             out.append(g.nodes[k]["record_hash"])
             for c in g.children(k): go(c)
-        go(root); return out
-    a,b=walk(d1/"s.jsonl"),walk(d2/"s.jsonl")
+            for d in deleg.get(k,[]): go(d)
+        go(root)
+        total=sum(1 for r in recs if r["record"]=="node")
+        return out, total
+    (a,ta),(b,tb)=walk(d1/"s.jsonl"),walk(d2/"s.jsonl")
     pre=len(list(itertools.takewhile(lambda t:t[0]==t[1],zip(a,b))))
-    if pre!=len(a): bad.append(f"{pathlib.Path(src).name}: {pre}/{len(a)}")
+    name=pathlib.Path(src).name
+    if pre!=len(a): bad.append(f"{name}: prefix {pre}/{len(a)}")
+    # A walk that stops following delegation reaches ~52% of a digest, so a
+    # floor well above that catches the narrowing while leaving room for the
+    # UNCONTAINED types (blob, file, alias) that are never in the tree.
+    if len(a) < 0.75*ta:
+        bad.append(f"{name}: walk covers {len(a)}/{ta} nodes — the tree is being missed")
 assert not bad, "; ".join(bad)
 PY
 

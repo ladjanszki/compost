@@ -134,20 +134,21 @@ class Store:
             raise
         return dest
 
-    def keep_blob(self, path: Path, name: str) -> Path:
+    def keep_bytes(self, data: bytes, name: str) -> Path:
         """
-        Copy bytes into `storage/<name>`, which must not already exist.
+        Write `data` into `storage/<name>`, which must not already exist.
 
-        `name` is a guid plus the original extension, so a collision is a
-        minted uuid repeating itself and the right response is to stop rather
-        than to merge. That is why this refuses instead of comparing bytes:
-        storage names no longer carry meaning, so two files with the same name
-        is not a conflict about content, it is a broken assumption about
-        uniqueness.
+        `name` is a guid plus an extension, so a collision is a minted uuid
+        repeating itself and the right response is to stop rather than to
+        merge — see `keep_blob`, below, which shares this reasoning and this
+        body. This is the form a source with no file of its own to copy from
+        uses: a delegated fragment (v0.2.14, "the recursion made explicit")
+        has already been read into memory by the digestor that found it, so
+        there is no path to hand over, only the bytes themselves.
 
         Written through a temp file and renamed, for the same reason graph
-        writes are: a half-copied source is a corrupt immutable original, and
-        a crash must not be able to produce one.
+        writes are: a half-written source is a corrupt immutable original,
+        and a crash must not be able to produce one.
         """
         dest = self.storage / name
         if dest.exists():
@@ -156,7 +157,7 @@ class Store:
         fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=".tmp-", suffix=".part")
         try:
             with os.fdopen(fd, "wb") as f:
-                f.write(Path(path).read_bytes())
+                f.write(data)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, dest)
@@ -164,6 +165,10 @@ class Store:
             Path(tmp).unlink(missing_ok=True)
             raise
         return dest
+
+    def keep_blob(self, path: Path, name: str) -> Path:
+        """Copy `path`'s bytes into `storage/<name>`. See `keep_bytes`."""
+        return self.keep_bytes(Path(path).read_bytes(), name)
 
     def blobs(self) -> dict:
         """Bytes hash -> every blob guid carrying those bytes."""
@@ -393,6 +398,25 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
         # them. Its own layer, so the ingestion facts can be reasoned about
         # without touching the structure pandoc found.
         b.edge("derived_from", root, guid, INGEST_LAYER)
+        # A route may have already delegated part of its own input to the
+        # digestor that owns it (v0.2.14, "the recursion made explicit") —
+        # `session.py` does, for a transcript turn's prose. Each delegated
+        # fragment already carries a `derived_from` edge from the document it
+        # produced to its own fragment blob; this is the second hop, fragment
+        # blob to the *whole file's* blob, and it can only be minted here —
+        # this is the first place `guid`, the file's own blob, exists.
+        # Detected structurally, not by route name: any `blob` node already
+        # in the route's own output (`original_name is None` — a fragment,
+        # never a file, since it has no filename of its own) is awaiting
+        # exactly this edge. `recs` at this point is still the route's own
+        # output only, before this plan's own file blob joins it below, so
+        # the check would even be safe without the `original_name` filter —
+        # kept anyway so this loop and the write loop below read the same
+        # discriminator rather than two that happen to agree here.
+        for r in recs:
+            if (r["record"] == "node" and r["type"] == "blob"
+                    and r["params"].get("original_name") is None):
+                b.edge("derived_from", r["guid"], guid, INGEST_LAYER)
         # `blob` is UNCONTAINED — a leaf, and the whole tree `b.records`
         # holds — so this is the same one-node fold `layers.py` does for its
         # own mints.
@@ -432,6 +456,23 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
     total_n = total_e = 0
     for src, stored, recs, root, guid, dup, referrer in plans:
         s.keep_blob(src, stored)
+        # Every delegated fragment this route's own output carries — see the
+        # `derived_from` wiring above. `content` is the fragment exactly as
+        # `session.py` stored it (the whole content-block dict, or the bare
+        # string when a line's `content` was a string already); `R.canonical`
+        # is the same serialisation `record_hash` already trusts, so the
+        # bytes on disk and the bytes the hash was taken over are one
+        # decision, made once.
+        # `recs` here is the route's own output *plus* this plan's own
+        # top-level blob (appended below, before the plan was queued) — so
+        # `original_name is None` is the discriminator, not `type == "blob"`
+        # alone: the top-level blob's bytes were just copied by `keep_blob`
+        # above, and writing it a second time here would collide with itself.
+        for r in recs:
+            if (r["record"] == "node" and r["type"] == "blob"
+                    and r["params"].get("original_name") is None):
+                s.keep_bytes(R.canonical(r.get("content")),
+                            r["params"]["stored_as"])
         # A fresh uuid, unrelated to the blob's. The two names must not be
         # derivable from each other, or something will eventually derive one
         # from the other — which is the suffix-routing mistake wearing a
@@ -531,14 +572,36 @@ def main(argv):
 
         parent = {e["destination"]: e["source"] for e in edges
                   if e["type"] == "contains"}
+        # v0.2.14: a prose block's `contains` chain now ends at a delegated
+        # `document` rather than at a `session` — that document is a root
+        # nobody contains (`docs/roadmap.md`, "the recursion made explicit")
+        # and it carries no `source` of its own. `delegated_by` is the
+        # reverse of the edge that reached it, document guid -> the turn
+        # that delegated to it, so `where` can step back onto the turn's own
+        # `contains` chain and keep going from there.
+        delegated_by = {e["destination"]: e["source"] for e in edges
+                        if e["type"] == "delegates_to"}
 
         def where(g):
-            """The source file of the root that contains `g`."""
+            """The source file of the root that contains `g`.
+
+            Follows `delegates_to` backwards once a parentless `document` is
+            reached — the edge exists precisely to say where a fragment came
+            from, and reading it is cheaper and more honest than copying the
+            transcript's `source` onto every fragment at import time.
+            """
             seen = set()
             while g in parent and g not in seen:
                 seen.add(g)
                 g = parent[g]
-            return nodes.get(g, {}).get("params", {}).get("source", "?")
+            n = nodes.get(g, {})
+            src = n.get("params", {}).get("source")
+            if src is not None:
+                return src
+            turn = delegated_by.get(g)
+            if turn is not None and turn not in seen:
+                return where(turn)
+            return "?"
 
         # value -> every alias node naming it. Several aliases sharing a
         # value is expected, not an error — two builds of the citation layer

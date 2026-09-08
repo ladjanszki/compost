@@ -280,6 +280,18 @@ def _render_session(g, n, mode):
         # whole log line regardless; an empty Div on the page would be 140
         # blank frames saying nothing.
         kids = _session_children(g, guid, mode)
+        # v0.2.14: a turn's prose is no longer among its `contains` children
+        # — it is a `delegates_to` hop away, at a `document` root of its own
+        # (`docs/roadmap.md`, "the recursion made explicit"). Rendered here,
+        # in place, through the same `_session_children` dispatch a turn's
+        # other children already go through — the delegated document's
+        # children are ordinary pandoc blocks (`Para`, `CodeBlock`, ...),
+        # which is exactly what that dispatch's fallback branch already
+        # handles, slash-tag recognition and citation `wrap` included. Put
+        # first: prose is the part of a turn a person reads first, tool use
+        # and thinking after it.
+        for e in g.linked(guid, "delegates_to"):
+            kids = _session_children(g, e["destination"], mode) + kids
         if not kids:
             return None
         return [{"t": "Div", "c": [
@@ -790,9 +802,17 @@ def render_all(st: S.Store):
     # which is correct, because nothing else would show it.
     launched = {r["destination"] for r in recs
                 if r["record"] == "edge" and r["type"] == "launched"}
+    # v0.2.14: a delegated document is also `ROOT_TYPES` — it has to be, or
+    # `check()` would not let it go parentless — but it is rendered inline
+    # inside the turn that reached it (`_render_session`'s "turn" branch,
+    # above), the same way a launched subagent session is rendered inside
+    # the tool call that launched it rather than getting its own page.
+    delegated = {r["destination"] for r in recs
+                if r["record"] == "edge" and r["type"] == "delegates_to"}
     docs = [n for n in g.nodes.values()
             if n["type"] in R.ROOT_TYPES
-            and n["guid"] not in launched]
+            and n["guid"] not in launched
+            and n["guid"] not in delegated]
     names = view_names(docs)
     written = []
     for doc in sorted(docs, key=lambda d: R._p(d, "source") or d["guid"]):
