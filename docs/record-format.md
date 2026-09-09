@@ -378,6 +378,31 @@ thing from `record_hash`, which hashes the canonical JSON of a single node.
 Two hashes, two questions: "are these the same file" and "are these the same
 record".
 
+### A root can carry more than one `derived_from` — v0.2.15
+
+An append-only root (`docs/roadmap.md`, "AoTA") keeps **one root, forever**: a
+later, longer re-ingest of the same file adds `contains`/`next` edges to the
+existing root rather than minting a second one, and mints nodes only for the
+tail. Storage does not deduplicate — the whole grown file is stored again, as
+a second blob (`TODO-storage-revamp.md` has the measurement and why it
+waits) — so the root gains a **second** `derived_from` edge rather than
+replacing the first.
+
+`records.blob_of()` is still the supported way to ask "which bytes", and its
+answer for an appended root is **the current one** — the blob with the latest
+`imported_at`, a domain fact every blob already carries, never `created_at` or
+file load order, neither of which this project treats as meaningful.
+`records.blobs_of()` is the general form, every blob a root was derived from,
+oldest first — the older one stays exactly as reachable as it always was, for
+a caller that wants the history rather than the current bytes.
+
+The alignment measurement below — "the whole reason `records.align()` exists
+as a function rather than a fact anyone re-derives by hand" — is the same walk
+an append's delta-ingest runs before writing anything: `(old_root, new_root) →
+(prefix, total)`, comparing `record_hash` pairwise in document order. The old
+tree must be a genuine, unmodified prefix of the new one or nothing is
+written; `docs/decisions.md` and `docs/roadmap.md` ("AoTA") have the rest.
+
 **`blob` and `file` are not the same node and are deliberately not merged.**
 A `file` is a *path a session touched* — it may not exist, and no bytes are
 held. A `blob` is *bytes that are in `storage/`*. Every vocabulary that has

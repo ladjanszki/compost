@@ -116,6 +116,67 @@ not "markdown" but "anything at all", so a PNG became a pandoc error rather
 than a compost one; and `.jsonl` is a container, not a format, so the suffix
 stops naming a reader the moment a second kind of JSONL exists.
 
+**`--mutability=VALUE` is required at creation** — `immutable`, `append-only`
+or `mutable` — for the same reason `--as` is: a statement of intent the bytes
+do not contain is never guessed. It is set once and never changes; giving it
+together with `--updates` is refused, because `--updates` names a root whose
+mutability was already decided the day it was minted.
+
+**`--updates=GUID` re-ingests a longer version of a file already in the
+base**, naming the root explicitly — "which of fifty `README.md` files" has no
+safe automatic answer, so the tool never guesses it. `GUID` must already be a
+`document` or `session` root; naming anything else, a root declared
+`immutable`, or a root declared `mutable`, is refused. **`mutable` is refused
+because the machinery behind that reading does not exist yet**: revising a TA
+mints a new tree and chains root to root with one `revision_of` edge, which is
+v0.2.17. Routing it through the append path instead would run, and would be
+silently wrong — an appended `mutable` root inherits the head-unchanged
+refusal below, so the one contract that promised "anything here may change"
+would be the one told its start no longer matches. The *flag's* meaning is
+settled now (one flag, read by the target's mutability) so that v0.2.17 does
+not re-litigate it; only the `mutable` behaviour waits.
+
+Against an `append-only` root this mints nodes for
+only the **tail** — the file's own unchanged prefix is not re-minted — adds
+`contains`/`next` edges onto the *existing* root, and rewrites that root's
+`record_subtree_hash` in place (a whole-file rewrite of `graph/*.jsonl`, the
+only honest form of change to an otherwise-immutable record; the root's own
+`record_hash`, what it *claims*, never moves). The file's whole new bytes are
+stored again as a second blob — storage does not deduplicate across a
+re-ingest yet (`TODO-storage-revamp.md`) — so a root can carry more than one
+`derived_from` edge; `records.blob_of()` still returns one blob, the current
+one, and `records.blobs_of()` returns all of them, oldest first.
+
+Both order blobs by `imported_at`, then by guid. **The guid is there for
+determinism, not meaning.** `imported_at` records whole seconds, so two
+ingests inside one second tie, and without a second key the answer was
+decided by whichever `graph/*.jsonl` loaded first — against the standing rule
+that file order carries none. On a tie the guid picks arbitrarily: one base
+always answers the same way, but the answer is not "the newer bytes". It
+cannot be, because nothing in the records says which ingest came last —
+`imported_at` is audit metadata, the same class as `created_at`, which this
+project has already declined to build a contract on. The real answer is a
+`supersedes` edge blob-to-blob, making "current" mean *the blob nothing
+supersedes*; that is a schema change and belongs with the storage work
+(`TODO-storage-revamp.md`).
+
+**Omitting `--updates` mints a second root, silently** — accumulation is the
+standing rule (`docs/decisions.md`), not an error and not (yet) a warning. One
+exception is derivable and printed when it fires: a Claude Code transcript's
+own filename can name the session it already belongs to (`<sessionId>.jsonl`,
+or `agent-<toolUseId>.jsonl` for a subagent), so `digest` prints a note
+suggesting the matching `--updates=GUID` when one exists in the base — advice
+only, never acted on, since acting on it would be exactly the silent behaviour
+change this paragraph just said does not happen.
+
+`check` verifies the contract `--mutability` declares: an `append-only` root
+whose recorded head no longer folds the way it used to is a reported problem,
+and so is an `immutable` root carrying more than one `derived_from` edge. A
+`mutable` root asserts nothing yet — full-tree revisions are `v0.2.17`.
+
+`pandoc-ast` is the narrowest route, not the broadest — there is no reading
+step in it to be wrong, because `ast_to_records` takes exactly that shape.
+
 `pandoc-ast` is the narrowest route, not the broadest — there is no reading
 step in it to be wrong, because `ast_to_records` takes exactly that shape.
 Whatever pandoc invocation produced the file stays outside the tool, where the
@@ -244,7 +305,17 @@ What it enforces:
   loaded by an older one
 - both hashes **recompute**: `record_hash` from `[type, params, content]`,
   `record_subtree_hash` from the fold over `contains`/`next` — the first
-  assertion here that verifies content rather than structure
+  assertion here that verifies content rather than structure. When this fails
+  on a node under a root declared `append-only` or `immutable`, the problem
+  names that root's `mutability` explicitly — the same signal, attributed to
+  the contract it violates, since existing content changing is exactly what
+  both contracts forbid
+- an `immutable` root carries at most one `derived_from` edge — a proxy for
+  "no edges were added after the ingest that created it" rather than that
+  literal claim, which would need a clock this project does not keep
+  (`created_at` is audit metadata, never semantics); a hand-authored edge
+  spliced onto such a root with no second blob to go with it is a real gap
+  this does not catch
 
 ### layer NAME [--by SCHEME]
 

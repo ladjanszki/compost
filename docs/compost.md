@@ -79,11 +79,15 @@ other.
 **These are not invariants, and the distinction matters.**
 
 An **invariant** is a property of the graph that a program checks. `check()`
-makes **ten** assertions and refuses a view when any fails. You cannot violate
-an invariant and ship; you get an error. (Ten assertions, twelve call sites —
-the parent-count rule reports three different ways. Counting `problems.append`
-gives twelve and is the wrong number; `docs/record-grammar.md` §5 enumerates the
-ten, and `tests/test_grammar.py` checks that enumeration against the code.)
+makes **thirteen** assertions and refuses a view when any fails. You cannot
+violate an invariant and ship; you get an error. (Thirteen assertions,
+nineteen call sites — one rule can report several ways, the parent-count rule
+alone in three. Counting `problems.append` gives nineteen and is the wrong
+number; *The thirteen invariants*, below, is the enumeration this document
+keeps current. This paragraph said "ten assertions, twelve call sites" through
+v0.2.15, two releases after the count moved — the same drift the invariant
+list itself shipped at v0.2.14, and the reason a number here is now written
+next to the thing that produces it.)
 
 A **principle** is a rule about how the system is built, enforced by attention.
 You can violate one and everything still passes. Each of the fifteen below was
@@ -387,7 +391,7 @@ Two more sets are closed in code rather than in prose. **`ROOT_TYPES`** —
 `file`, `alias`, `unresolved_citation`, `display_name` — nodes that are *pointed
 at* rather than contained. Everything else has exactly one `contains` parent.
 
-### The twelve invariants
+### The thirteen invariants
 
 What `check()` asserts over a whole loaded graph. **A view of a graph failing any
 of them is refused, not rendered** (principle 11).
@@ -419,6 +423,16 @@ of them is refused, not rendered** (principle 11).
     metadata rather than semantics and there is no semantic clock to order by.
     The schema records both halves of that, and a test asserts every borrowed
     name declares what it does and does not honour.
+13. **An `immutable` root carries at most one `derived_from` edge.** v0.2.15,
+    and the only assertion here that is openly a **proxy**. The contract
+    `mutability` declares is "no edges added to this root after the ingest
+    that created it" — which needs the very clock 12 just explained does not
+    exist. Nodes carry no creation time; `created_at` is audit metadata; load
+    order carries no meaning. What survives without a clock is the structural
+    trace: every ingest path mints exactly one `derived_from` per root, so a
+    second one on an `immutable` root is what such a violation leaves behind.
+    A hand-authored `contains` edge spliced on with no second blob is **not**
+    caught, and that gap is named here rather than left to be discovered.
 
 ### Where the per-type grammar lives, now in three layers
 
@@ -673,10 +687,10 @@ render produces, and that running the build again changes nothing.
 | `blob` | `bytes_sha256`, `imported_at`, `original_name`, `route`, `stored_as` | `selector_conforms_to`, `selector_value` | yes |
 | `contentblock` | `block`, `block_type` | — | — |
 | `display_name` | `value` | — | — |
-| `document` | `meta`, `pandoc_api_version`, `route` | `api_error_status`, `duration_api_ms`, `duration_ms`, `fast_mode_disabled_reason`, `fast_mode_state`, `is_error`, `modelUsage`, `num_turns`, `permission_denials`, `result`, `session_id`, `source`, `stop_reason`, `subtype`, `terminal_reason`, `time_to_request_ms`, `total_cost_usd`, `ttft_ms`, `ttft_stream_ms`, `type`, `usage`, `uuid` | — |
+| `document` | `meta`, `pandoc_api_version`, `route` | `api_error_status`, `duration_api_ms`, `duration_ms`, `fast_mode_disabled_reason`, `fast_mode_state`, `is_error`, `modelUsage`, `mutability`, `num_turns`, `permission_denials`, `result`, `session_id`, `source`, `stop_reason`, `subtype`, `terminal_reason`, `time_to_request_ms`, `total_cost_usd`, `ttft_ms`, `ttft_stream_ms`, `type`, `usage`, `uuid` | — |
 | `file` | `path` | — | — |
 | `logline` | `line_type`, `log`, `timestamp`, `uuid` | — | — |
-| `session` | `route`, `session_id`, `source`, `version` | `agent` | — |
+| `session` | `route`, `session_id`, `source`, `version` | `agent`, `mutability` | — |
 | `thinking` | `empty`, `signature`, `text` | — | — |
 | `toolcall` | `input`, `name`, `tool_use_id` | `caller` | — |
 | `tooloutput` | `is_error`, `text`, `tool_use_id` | — | — |
@@ -702,7 +716,7 @@ render produces, and that running the build again changes nothing.
 | `session` | `next` | — |
 | `session` | `touches` | — |
 
-**62 distinct params.** Which node types each appears on. The third column is a leftover: it was to be filled in by hand, one row at a time, deciding which params counted as content. `v0.2.13` removed that question rather than answering it — the mapping is the whitelist — so nothing reads this column. It is still rendered because the table is generated and an empty column is cheaper than a special case.
+**63 distinct params.** Which node types each appears on. The third column is a leftover: it was to be filled in by hand, one row at a time, deciding which params counted as content. `v0.2.13` removed that question rather than answering it — the mapping is the whitelist — so nothing reads this column. It is still rendered because the table is generated and an empty column is cheaper than a special case.
 
 | param | appears on | content? (unused) |
 |---|---|---|
@@ -734,6 +748,7 @@ render produces, and that running the build again changes nothing.
 | `log` | `logline`, `turn` |  |
 | `meta` | `document` |  |
 | `modelUsage` | `document` |  |
+| `mutability` | `document`, `session` |  |
 | `name` | `toolcall` |  |
 | `num_turns` | `document` |  |
 | `original_name` | `blob` |  |

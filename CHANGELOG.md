@@ -3,6 +3,119 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.15-rc — AoTA: an artifact that grows
+
+An append-only artifact keeps **one root, forever**. A later ingest of a longer
+file adds `contains`/`next` edges to that existing root and mints nodes only for
+the tail — no second root, no `revision_of`, no second copy of the head. A
+transcript that gained forty turns is not a new transcript
+(`docs/design-0.3.0.md` §1).
+
+**What it was worth, measured before it was built:** re-ingesting the six corpus
+sessions re-minted **9,217 of 12,987 nodes for nothing — 71%** — and re-stored
+369 of 546 fragment blobs. Delta ingest is not an optimisation.
+
+### `mutability` is declared, required, and never changes
+
+`immutable` | `append-only` | `mutable`, required at creation and an error
+without it — the same standing `--as` has, and for the same reason: it is a
+statement of intent the bytes do not contain. Set once. `--mutability` on an
+`--updates` call is an error, because a record that could relax its own contract
+is not a contract.
+
+`--updates=GUID` names the root explicitly. "Which of fifty `README.md` files"
+has no safe automatic answer, and `record_subtree_hash` is not robust enough to
+give one — 13 of 32 cited blocks in a real base shared a hash with another node.
+One default *is* derivable and is printed rather than acted on: a transcript is
+`<sessionId>.jsonl`, and with the `agent-<toolUseId>` rule beside it the pair
+covers **18 of 18** archived transcript filenames.
+
+**Omitting `--updates` still mints a second root, silently.** Principle 10.
+
+### The fold is refreshed, and that is the interesting part
+
+Appending changes the root's fold while the root's own record is, correctly,
+untouched — so `check()`'s eleventh assertion fails on every append. The fix is
+to rewrite the root's record as a whole-file rewrite, the only honest form of
+change to an immutable record. It is cheap because exactly one field on exactly
+one node moves: `record_subtree_hash` is *derived*, so refreshing it updates a
+cache rather than changing what any record claims, and the root's `record_hash`
+— what it asserts — never moves. §1's "the root node itself is untouched" is
+amended to "the root's assertions are untouched; its fold is refreshed".
+
+*Rejected: moving the fold to a rebuildable layer.* Cleaner, and it makes the
+only content-verifying assertion conditional.
+
+### Two things the spec asked for that could not be built as written
+
+**`check` cannot assert "no edges added to an `immutable` root after the ingest
+that created it".** That needs a clock this project decided it does not have:
+nodes carry no creation time, `created_at` is audit metadata rather than
+semantics, and load order carries no meaning by construction. Shipped instead as
+a named **proxy** — an `immutable` root carries at most one `derived_from` edge,
+which is the structural trace every such violation made through this tool leaves
+behind. A hand-authored `contains` edge spliced on with no second blob is not
+caught, and the gap is documented rather than treated as covered. This is
+`check()`'s **thirteenth** assertion.
+
+**The roadmap's `n2 < n1 * 1.8` node-count bound is wrong on real material** — a
+correct, verified append of `session-02` grows nodes by **1.92×**. It was a proxy
+for "the head was not re-minted"; the suite asserts the property directly
+instead, that every one of the old nodes is byte-identical in the merged graph.
+
+### `--updates` against a `mutable` root is refused until v0.2.17
+
+The flag's *contract* is settled here — one flag, read by the target's
+mutability — so v0.2.17 does not re-litigate it. The `mutable` *behaviour* waits
+for `revision_of`. Routing it through the append path meanwhile runs and passes
+`check`, and would be silently wrong: an appended `mutable` root inherits the
+head-unchanged refusal, so the one contract promising "anything here may change"
+would be the one told its start no longer matches.
+
+### `blob_of` had to answer "which bytes", and does so by proxy
+
+A re-ingest stores the whole file again and the root gains a second
+`derived_from` (**+10.8 MB per corpus re-ingest**, ~7.7 MB of it bytes already on
+disk — accepted and measured, `TODO-storage-revamp.md`). So `blobs_of()` returns
+all blobs oldest-first and `blob_of()` returns the current one.
+
+Both order by `imported_at`, **then by guid**. `_now()` records whole seconds, so
+two ingests inside one second tied, and the winner fell out of record order —
+reversing the records was enough to flip the answer, against the standing
+guarantee that load order carries no meaning. The guid buys determinism, not
+recency: on a tie it is arbitrary, and says so. The real answer is a `supersedes`
+edge blob-to-blob, which is a schema change and is left to the storage work.
+`docs/design-blob-currency.md` is the open question written up.
+
+### The cost, and the defect found in the release's own tests
+
+**A test naming a guarantee it does not exercise is this project's most repeated
+defect, and this release shipped one before it was caught.** Guarantee 6 — "an
+`append-only` root whose head changed is a reported problem" — is answered by two
+different mechanisms. `_digest_update` aligns the re-read file and *refuses*,
+writing nothing; that is the contract. Inside `check`, a head edited in place
+surfaces as a hash that does not recompute, relabelled with the contract's name —
+the same signal better attributed, not a second check, since `check` holds no
+history and cannot tell a replaced head from ordinary corruption.
+
+Both were built. Only the second was tested. Deleting the ingest refusal outright
+left `test_aota` **15/15** and `verify-0.2.15.sh` **11/0** while a tampered file
+appended silently and grew the base **499 → 958 nodes**. Found by hand-sabotaging
+the implementation after the report said it was fine, which is now the standing
+reason that step exists.
+
+The alignment walk follows `contains`, `next` **and `delegates_to`**, and is pure.
+Re-measured on the older tree: `session-04` **2,379 of 2,481** nodes reached,
+prefix 2,379 of 2,379; the delegation-blind walk reaches **1,323 of 2,481** and
+also reports 100% — the same headline over a denominator 1,056 nodes smaller.
+What neither walk reaches is `blob` and `file` nodes, `UNCONTAINED` by rule: 102
+of 2,481, of which 73 are blobs.
+
+**23 suites green, `test_aota` 18/18, corpus present at 520 documents.** Both
+round-trips unchanged: 526/526 and `records_to_session(session_to_records(lines))
+== lines`, plus a new one — an *appended* session reconstructs the grown file's
+exact original lines.
+
 ## v0.2.14 — 2026-09-08 — the recursion made explicit
 
 `src/session.py` did not call the text digestor. It **reimplemented** it: two

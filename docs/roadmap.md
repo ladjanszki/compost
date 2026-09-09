@@ -2989,8 +2989,37 @@ read `run.sh`'s last line before believing a green board.
    recomputes. Sabotage: skip the rewrite and confirm `check` reports
    *"record_subtree_hash does not recompute"*, which is what it does today.
 6. **An `append-only` root whose head changed is a reported problem.** Sabotage:
-   append a file whose first line was edited.
-7. **An `immutable` root that gains an edge is a reported problem.**
+   append a file whose first line was edited. **Two different mechanisms
+   answer this, and only one of them is the guarantee.** At *ingest*,
+   `_digest_update` aligns the re-read file against the recorded root and
+   refuses when the prefix is short, writing nothing — that is the contract,
+   and the sabotage above is its test. Inside `check`, a head that was edited
+   in place shows up as a hash that does not recompute, relabelled with the
+   contract's name; that is the *same* signal better attributed, not a
+   second, more discriminating check — `check` holds no history and cannot
+   tell a genuinely replaced head from ordinary corruption. Both were built.
+   Only the second was tested at first, and deleting the ingest refusal
+   outright left the whole board green: `test_aota` 15/15 and
+   `verify-0.2.15.sh` 11/0, while a tampered file appended silently and grew
+   the base 499 → 958 nodes. **A test naming a guarantee it does not
+   exercise is this project's most repeated defect**, and it cost nothing to
+   find only because the sabotage was run by hand afterwards.
+7. **An `immutable` root that gains a second `derived_from` edge is a
+   reported problem.** *Rewritten during the build, and this is the
+   interesting finding of the release.* The guarantee was specced as "no
+   edges added to this root **after the ingest that created it**", following
+   §2 — and that cannot be built, because it needs a clock this project has
+   already decided it does not have. Nodes carry no creation time at all;
+   `created_at` on an edge is audit metadata, not semantics (§7), which is
+   exactly why `check`'s twelfth assertion enforces two of PROV's three
+   `wasDerivedFrom` constraints and explicitly declines the ordering one.
+   Load order cannot stand in either — `Store.load()` guarantees it carries
+   no meaning. What *is* checkable without a clock: every ingest path mints
+   exactly one `derived_from` per root, so a second one on an `immutable`
+   root is the structural trace such a violation leaves. **This is a proxy
+   and is documented as one** — a hand-authored `contains` edge spliced onto
+   an immutable root, with no second blob, is not caught. The gap is named
+   rather than treated as covered.
 8. **The alignment walk is pure** — it writes nothing, and follows
    `delegates_to`. Sabotage: drop the delegation hop and the prefix collapses
    from 9,217 to 4,592, which reads as 100% of half the graph.
