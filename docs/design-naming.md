@@ -376,7 +376,13 @@ of the design leans on.
    index; a third occurrence would be the point to make it general.
 2. **Does a class alias want a `by` field**, as citation edges have, or is
    `scheme` enough? They would always agree, which is an argument for one.
-3. **What happens when a member is retracted** (the ledger, v0.2.16 — v0.2.15
-   is AoTA)? A class that
-   named it still does. Probably correct — the class was true when minted — but
+3. **What happens when a member is retracted?** *Moot unless retraction gets
+   built.* This said "v0.2.15's ledger", which was wrong twice over: v0.2.15
+   is AoTA, and as of 2026-09-09 the ledger is not a release at all — it is
+   `TODO-the-clock.md`, lifted out of the line because retraction had no
+   measured customer. **This item is the only mention of retraction in any of
+   the semantic layer's design inputs**, which is part of how that removal was
+   shown to be safe. If retraction never ships there is nothing to retract and
+   the question does not arise. Kept because the answer is worth having ready:
+   a class that named a retracted member still does. Probably correct — the class was true when minted — but
    it should be decided rather than discovered.
