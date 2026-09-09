@@ -72,9 +72,46 @@ conda env create -q -f environment.yml -n "$ENVNAME" >/dev/null 2>&1; check $? "
 conda activate "$ENVNAME"; check $? "env activated"
 echo "  $(python -V 2>&1) | $(pandoc --version | head -1)"
 
+# ABORT here rather than continue, and verify we are where we think we are.
+#
+# Everything below installs into and writes to *the active environment*. If
+# the two steps above failed, the active environment is still whichever one
+# the operator was using when they ran this — and `pip install -e .` then
+# repoints THEIR editable install at $ROOT, a temp directory this script
+# deletes on exit. The result is `compost` on their PATH raising
+# `ModuleNotFoundError: No module named 'src'` from a path that no longer
+# exists, with nothing connecting it to a gate run that reported success.
+#
+# That is not hypothetical: it happened on 2026-09-09, to the env this repo
+# is developed in, and went unnoticed until `compost --version` was run by
+# hand hours later. `check` reports a failure and returns 0, which is right
+# for a gate that wants to report every problem rather than stop at the
+# first — but it means a failed *precondition* silently becomes a wrong
+# action. Preconditions are the exception: they abort.
+#
+# The env name is checked and not just the exit status, because `conda
+# activate` can report success while leaving a different env active, and the
+# cost of being wrong here is damage outside the sandbox.
+ACTIVE="$(basename "${CONDA_PREFIX:-none}")"
+if [ "$ACTIVE" != "$ENVNAME" ]; then
+  echo "  FAIL  refusing to continue: active env is '$ACTIVE', expected '$ENVNAME'"
+  echo "        everything below installs into the active env, and this would"
+  echo "        have repointed '$ACTIVE''s editable install at a temp directory"
+  echo "        that is deleted when this script exits."
+  bad=$((bad+1))
+  printf '\n%d passed, %d failed\n' "$ok" "$bad"
+  exit 1
+fi
+
 step "pip install -e ."
 pip install -q -e . >/dev/null 2>&1; check $? "installed"
 command -v compost >/dev/null; check $? "compost on PATH"
+# The gate is worthless if it tested the operator's checkout instead of the
+# clone, and `pip install -e .` is silently a no-op-shaped success either
+# way. Assert the interpreter resolves `src` from $ROOT.
+SRC="$(python -c 'import src,os;print(os.path.dirname(os.path.dirname(src.__file__)))' 2>/dev/null)"
+case "$SRC" in "$ROOT"/*) true ;; *) false ;; esac
+check $? "src resolves inside the clone, not the operator's checkout"
 
 step "suites on a bare clone"
 out=$(./tests/run.sh); [ $? -eq 0 ]; check $? "green without the corpus"
