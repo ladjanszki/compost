@@ -99,11 +99,48 @@ Recorded so it is not re-derived from nothing:
   `bytes_sha256` as an *index* to find what is already stored leaves names
   minted and is compatible as written.
 
+## The questions a digestor author should have to answer
+
+The human's framing, worth keeping because it generalises past this problem:
+*"it can be expected that if somebody wants to import a new format they know
+enough about it to answer some structural questions."* Collecting those
+questions is itself a deliverable, and the list so far — drawn from what the
+three existing routes had to decide, usually late and under pressure:
+
+1. **What is one input?** A file, a line, an object inside a line? The transcript
+   answered "a line" only in v0.2.14, when delegation forced it.
+2. **What is the unit of change?** Whole-file replacement, an append at the tail,
+   or an edit anywhere. This is `mutability`, and v0.2.15 makes it explicit.
+3. **Can two ingests of this format be recognised as the same artifact, and
+   how?** A transcript can — `<sessionId>.jsonl` plus the `agent-` rule covers
+   18 of 18. A markdown file cannot, which is why `--updates` is a flag.
+4. **Which fields are per-instance rather than per-value?** `signature`, `id`,
+   `tool_use_id`, `uuid`, `timestamp`. Getting this wrong is what made 491 empty
+   `thinking` blocks hash identically for four minor versions.
+5. **What does the format's own spec guarantee?** Claude Code publishes a JSON
+   Schema for the transcript. **Get it before writing this release** — real-world
+   knowledge is not a violation of *digest everything*, it is what makes the
+   filtering decision an informed one rather than a guess.
+6. **What is deterministic, and can its output be stored as evidence?** See
+   `TODO-pandoc-ast-for-notes.md`: a stored artifact is only evidence if the
+   version of the function that produced it is recorded beside it, which is why
+   `environment.yml` pins `pandoc` exactly.
+
 ## Also parked, and where
 
-- **Storing the pandoc AST alongside the text for `notes`** — the human's own
-  sequencing: after v0.3.0, and entangled with deleting the `notes` route
-  entirely in favour of a document digestor that always produces pandoc AST.
+- **`TODO-pandoc-ast-for-notes.md`** — storing the AST beside the text, and
+  collapsing `notes` into a single document digestor. Same slot, same reasoning,
+  and it carries one correction this file depends on: **a pandoc AST is not
+  JSONL**, so the transcript slicing plan does not transfer to documents.
 - **`records.blob_of()` returns one blob** and an AoTA root will have several.
   That one is *not* postponed — v0.2.15 has to answer it, because the append
   creates it.
+
+## One thing this must not break
+
+`tools/export_citations.py` reads a base **with the standard library alone** — no
+compost, nothing imported from `src/` — and that is a deliberate proof that a
+base outlives the tool that wrote it. Any storage change has to keep that true.
+If the revamp makes a base unreadable without the program that wrote it, the
+revamp is wrong, however much disk it saves. Frozen bases in the notes repository
+are the test: `base-v0.2.13-2026-09-08/` must stay readable forever.

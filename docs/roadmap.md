@@ -2925,6 +2925,54 @@ assert. A violated contract is a reported problem like any other.
 **7. Schema and docs.** `mutability` on root types; the man page's `digest`
 section; `docs/record-format.md` on multiple `derived_from` from one root.
 
+### What this release does not do, and why each is deliberate
+
+Named so that hitting one is a known cost rather than a discovery.
+
+**No advisory in `check` for "these two roots look like one artifact."** Every
+problem `check` reports today is a *violated invariant*; an advisory is a
+different class of statement and deserves its own decision, not a smuggled
+precedent. `TODO-code-review.md` is where it goes if it turns out to be wanted.
+
+**No storage deduplication.** A re-ingest costs the whole file again.
+`TODO-storage-revamp.md` has the measurements, the trigger, and the reason it
+waits: the waste is disk rather than correctness, and every byte is still there.
+
+**No route defaults for `mutability`.** A route *may* supply one and none does,
+because no digestor is its own module yet. Requiring the flag first and relaxing
+later is the direction that can be walked back; the reverse is not.
+
+**No `revision_of`.** That is v0.2.17 and TA. `--updates` against a `mutable`
+root is accepted by the flag parser and the edge is minted then, not now — but
+the flag's contract is settled here so v0.2.17 does not have to re-litigate it.
+
+**No handling of a shrinking or reordered AoTA.** If the head changed, `check`
+reports it and the operator decides. Deciding *for* them — merging, forking,
+re-minting — is four unescapable states, which is the same reasoning that
+declined layer-staleness detection.
+
+### Fixtures an implementer will need
+
+The corpus has no *pair* of files representing one artifact at two lengths, and
+this release is entirely about that pair. Build them by truncation rather than
+by hand — `tests/verify-0.2.15.sh` already does, and the suites should too:
+
+```python
+lines = path.read_text().splitlines()
+old   = "\n".join(lines[:int(len(lines)*0.7)])   # the earlier ingest
+new   = "\n".join(lines)                          # the same file, grown
+```
+
+Truncation is the right generator because it produces a **genuine** prefix — the
+property under test — rather than one assembled to pass. For the negative cases,
+edit a line inside the truncated half: that is an `append-only` violation and
+`check` must say so.
+
+Note the smoke set has no session long enough to truncate meaningfully.
+`session-01.jsonl` is 9 lines and is skipped by the existing measurements for
+that reason, so **the corpus-gated guarantees here genuinely need the corpus** —
+read `run.sh`'s last line before believing a green board.
+
 ### Guarantees
 
 1. **`--mutability` is required at creation**, and `digest` refuses without it,
