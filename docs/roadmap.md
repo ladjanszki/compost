@@ -2799,7 +2799,162 @@ tolerate them, which is cheaper now and more expensive forever.
 
 ---
 
-## v0.2.15 → v0.3.0 — skeleton only
+## v0.2.15 — AoTA: an artifact that grows
+
+**An append-only artifact keeps one root, forever.** A later ingest of a longer
+file adds `contains` and `next` edges to that existing root and mints nodes only
+for the tail. No second root, no `revision_of`, no second copy of the head — a
+transcript that gained forty turns is not a new transcript
+(`docs/design-0.3.0.md` §1).
+
+**What it is worth, measured on the current tree shape:** re-ingesting the six
+corpus sessions re-mints **9,217 of 12,987 nodes for nothing — 71%** — and
+re-stores **369 of 546 fragment blobs**. Delta ingest is not an optimisation.
+
+### `mutability` is declared, required, and never changes
+
+Three values: **`immutable`**, **`append-only`**, **`mutable`**. Deliberately not
+the ImTA/AoTA/TA vocabulary of the design document, which is text-specific, and
+this has to survive binary formats later.
+
+```
+compost digest --as=notes --mutability=append-only CHANGELOG.md
+compost digest --as=notes --updates=0420325f-… CHANGELOG.md
+```
+
+**Required at creation**, and an error when absent — the same standing `--as`
+has. A route may supply a default, which is a *declared* default and not
+inference; none does yet, because no digestor is its own module. Requiring it
+first and relaxing later is the order that can be walked back.
+
+**Set once and never changed.** `--mutability` on an `--updates` call is an
+error: the contract was made at creation and a record that could relax its own
+contract is not a contract.
+
+### `--updates=guid` names the root, for both cases
+
+One flag, and what it *means* differs by the target's mutability — documented,
+not renamed:
+
+| target mutability | meaning | edge minted |
+|---|---|---|
+| `append-only` | appended to | none; new `contains`/`next` on the existing root |
+| `mutable` | replaced by | `revision_of`, root to root (v0.2.17) |
+| `immutable` | **refused** | — |
+
+**Why the user names it rather than the tool guessing.** *"We ingested fifty
+`README.md` files, which one do you mean?"* has no safe automatic answer, and
+`record_subtree_hash` is not robust enough to give one: 13 of 32 cited blocks in
+the human's own base shared a hash with another node. The route is named with
+`--as` for the same reason.
+
+**One default is derivable and worth having.** A Claude Code transcript is
+written to `<sessionId>.jsonl`, and the session root already stores
+`session_id` — so the lookup is *which session root has this `session_id`*.
+Measured against the archived base: **6 of 18** match that rule directly, and the
+other 12 are subagent transcripts named `agent-<toolUseId>.jsonl` after the tool
+call that launched them. **Both rules together cover 18 of 18.**
+
+**Omitting `--updates` mints a second root, silently.** That is principle 10 and
+it stays: duplicates accumulate on purpose, and omitting the flag can be a
+decision. An advisory in `check` — *"these two roots look like versions of one
+artifact"* — is a different class from every problem `check` reports today, all
+of which are violated invariants, and is **not** in this release.
+
+### The fold has to be rewritten, and that is the interesting part
+
+`record_subtree_hash` folds a node's children. Appending changes the root's fold
+while the root's own record is, correctly, untouched — so **`check()`'s eleventh
+assertion fails on every append.** Verified: build the shape §1 describes and
+`check` reports *"session …: record_subtree_hash does not recompute"*.
+
+**Option 1, chosen: rewrite the root's record**, as a whole-file rewrite — the
+only honest form of change to immutable records (`CLAUDE.md`).
+
+Two things make it cheap. **Exactly one field on exactly one node moves**: the
+root's `record_hash` is stable because its params do not change, and a turn's
+only ancestor is the session root, since v0.2.14 made delegated documents roots
+that nobody contains. And **`record_subtree_hash` is derived** — recomputable
+from the graph at any time. Rewriting it refreshes a cache; it does not change
+what any record *claims*. §1's *"the root node itself is untouched"* is amended
+to *"the root's assertions are untouched; its fold is refreshed."*
+
+*Rejected: moving the fold to a rebuildable layer.* Architecturally cleaner and
+it preserves immutability strictly, but it makes the only content-verifying
+assertion conditional — *"if the layer is present, it recomputes"* — and inherits
+`docs/roadmap.md`'s standing hazard that nothing tells you a layer is stale.
+
+### Storage does not change in this release
+
+A re-ingest stores the whole new file as a second blob, and the root gains a
+second `derived_from`. That costs **+10.8 MB per re-ingest of the corpus**, of
+which ~7.7 MB is bytes already on disk. It is accepted here and measured, not
+fixed: `TODO-storage-revamp.md` has the numbers, the design as far as it is
+settled, and the trigger that pulls it forward.
+
+**One consequence cannot wait**, because this release creates it:
+`records.blob_of()` returns `dict | None` and an AoTA root will have several
+blobs. It must answer *"which bytes, and as of when"* or return them all.
+
+### What has to be built
+
+**1. `src/store.py` — `--mutability` and `--updates` on `digest`.** Required
+`--mutability` at creation; an error if both `--mutability` and `--updates` are
+given; an error if `--updates` names a node that is not a root, or one whose
+mutability is `immutable`.
+
+**2. `src/session.py` / `src/routes.py` — the transcript default.** Filename
+stem → `session_id`, plus the `agent-<toolUseId>` rule. Printed when used, since
+a default nobody can see is the kind found by accident.
+
+**3. `src/records.py` — the alignment walk, as a function.** `(old_root,
+new_root) → prefix length`, pure, writing nothing, following `contains`, `next`
+**and `delegates_to`**. This is the function v0.2.13 and v0.2.14 measured by
+hand twice; it becomes code here.
+
+**4. Append and delta ingest.** Mint from index N; add `contains`/`next` to the
+existing root; rewrite the root's `record_subtree_hash` in place, whole-file.
+
+**5. `src/records.py` — `check()` verifies the contracts.** `immutable`: no
+edges added to this root after the ingest that created it. `append-only`: the
+head is unchanged — the first N children fold identically. `mutable`: nothing to
+assert. A violated contract is a reported problem like any other.
+
+**6. `records.blob_of()`** — several blobs per root.
+
+**7. Schema and docs.** `mutability` on root types; the man page's `digest`
+section; `docs/record-format.md` on multiple `derived_from` from one root.
+
+### Guarantees
+
+1. **`--mutability` is required at creation**, and `digest` refuses without it,
+   naming the three values. Sabotage: omit it.
+2. **`--mutability` with `--updates` is refused**, and so is `--updates` naming a
+   non-root or an `immutable` root.
+3. **The transcript default resolves 18 of 18** archived-shape filenames — the
+   `<sessionId>.jsonl` rule and the `agent-` rule together. Sabotage: remove
+   either rule and the count drops to 6 or 12.
+4. **An append adds edges and mints only the tail.** Re-ingest a corpus session
+   truncated to 70%, then whole: **one root**, node count grows by the delta
+   only, and the 9,217 prefix nodes are not re-minted.
+5. **`check` is clean after an append** — the root's fold is refreshed and
+   recomputes. Sabotage: skip the rewrite and confirm `check` reports
+   *"record_subtree_hash does not recompute"*, which is what it does today.
+6. **An `append-only` root whose head changed is a reported problem.** Sabotage:
+   append a file whose first line was edited.
+7. **An `immutable` root that gains an edge is a reported problem.**
+8. **The alignment walk is pure** — it writes nothing, and follows
+   `delegates_to`. Sabotage: drop the delegation hop and the prefix collapses
+   from 9,217 to 4,592, which reads as 100% of half the graph.
+9. **`blob_of` handles several blobs** and the older one stays reachable.
+10. **Both round-trips unchanged** — 526/526 and
+    `records_to_session(session_to_records(lines)) == lines`.
+11. **Every record validates against the schema**, and `check` reports 0
+    problems on a base built from every fixture.
+
+---
+
+## v0.2.16 → v0.3.0 — skeleton only
 
 Specced one at a time, each immediately before its agent runs, with the previous
 release's measurements in hand. This is deliberate: v0.2.13 alone moved from
