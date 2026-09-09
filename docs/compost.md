@@ -3,7 +3,7 @@
 *A local-first knowledge base where a conversation and a document are the same
 kind of thing, and every paragraph has a name.*
 
-**Version 0.2.14.** Every earlier version of this document is kept, unedited, in
+**Version 0.2.15.** Every earlier version of this document is kept, unedited, in
 the notes repository — because the paper explaining this project is going to be
 digested *by* it: one revision chain over its own history, once v0.2.17 lands
 `revision_of`. They are not in `docs/`, and there is no procedure for putting
@@ -97,8 +97,8 @@ this is the same kind of thing. Calling them invariants would make them sound
 stronger than they are, and the whole reason to write them down is that nothing
 enforces them.
 
-**Fifteen principles. Ten invariants. They are different lists, they live in
-different documents, and only one of them is enforced by a program.**
+**Fifteen principles. Thirteen invariants. They are different lists, they live
+in different documents, and only one of them is enforced by a program.**
 
 ### On what enters
 
@@ -263,6 +263,51 @@ has. The consequence worth knowing: **a walk over `contains` and `next` alone
 now reaches 52.5% of a digest** — every `Para`, `Plain` and `Header` lives below
 a delegation — so anything traversing a conversation must follow the edge.
 Missing that is invisible: it reports a tidy 100% of half a graph.
+
+### An artifact declares what may happen to it — v0.2.15
+
+**`mutability` is declared at ingest, required, and never changes.** Three
+values — `immutable`, `append-only`, `mutable` — naming exactly one thing:
+*what may be modified in the subgraph under this root.* Nothing, the tail
+only, anything. It is declared rather than inferred for the same reason the
+route is: it is a statement of intent the bytes do not contain. It is set once,
+because a record that could relax its own contract is not a contract.
+
+**An append-only artifact keeps one root, forever.** A later ingest of a longer
+file adds `contains`/`next` to that existing root and mints only the tail —
+there is no second root, no `revision_of`, and no second copy of the head. A
+transcript that gained forty turns is not a new transcript. Re-ingesting six
+corpus sessions the old way re-minted **9,217 of 12,987 nodes for nothing —
+71%**, which is why this is a requirement rather than an optimisation.
+
+What makes it work is that **alignment is positional, and nothing more**: walk
+both trees in document order, compare `record_hash` pairwise, and the old must
+be a prefix. Measured across two sessions, the older tree is a clean prefix of
+the newer one *exactly* — 5,496 of 5,496 and 221 of 221. No Merkle fold, no
+global identity, no way to tell two identical blocks apart is needed. The walk
+must follow `delegates_to`; the section above says what happens when it does
+not, and `align()` covers 2,379 of 2,481 nodes where the blind walk covers
+1,323 and reports the same reassuring 100%.
+
+**The fold is refreshed, and the record is not changed.** Appending moves the
+root's `record_subtree_hash` while the root's own record is, correctly,
+untouched — so `check`'s eleventh assertion fails on every append. The root's
+file is rewritten whole, which is the only honest form of change to an
+immutable record. It is cheap because exactly one field on exactly one node
+moves, and it is not a violation of anything, because the fold is *derived*:
+refreshing it updates a cache rather than changing what the record claims. The
+root's `record_hash` — what it asserts — never moves.
+
+**Where the model outran the records.** `check` was specified to assert that an
+`immutable` root gained no edges *after the ingest that created it*, and it
+cannot: nodes carry no creation time, `created_at` is audit metadata rather
+than semantics, and load order is guaranteed to carry no meaning. The
+thirteenth invariant is therefore an openly named proxy. The same gap decides
+which bytes an appended root's `blob_of` returns, where the ordering is
+`imported_at` then guid — stable, and arbitrary on a tie. **A project that has
+declined three times to build a semantic clock should expect to keep meeting
+the questions that need one**, and the honest form is a proxy that says it is
+one (`docs/design-blob-currency.md`).
 
 ### Ingestion is two-phase, and that is what makes it safe to re-run
 

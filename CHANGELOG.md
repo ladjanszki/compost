@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.15-rc — AoTA: an artifact that grows
+## v0.2.15 — 2026-09-09 — AoTA: an artifact that grows
 
 An append-only artifact keeps **one root, forever**. A later ingest of a longer
 file adds `contains`/`next` edges to that existing root and mints nodes only for

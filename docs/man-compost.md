@@ -9,7 +9,7 @@ views from it
 
 ```
 compost init [DIR]
-compost digest --as=ROUTE FILE...
+compost digest --as=ROUTE (--mutability=VALUE | --updates=GUID) FILE...
 compost ls
 compost check
 compost layer NAME [--by SCHEME]
@@ -22,7 +22,7 @@ compost version
 
 ## STATUS
 
-Version 0.2.14. The ten subcommands below are the whole program.
+Version 0.2.15. The ten subcommands below are the whole program.
 
 `compost` is on PATH inside the `compost` conda env, which `DEVELOPMENT.md`
 describes; from a checkout `python3 -m src.cli` is equivalent.
