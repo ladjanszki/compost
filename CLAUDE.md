@@ -46,8 +46,15 @@ from those records and from nothing else.
 
 ```bash
 compost init             # makes .compost/ here; every other command walks up to it
-compost digest --as=R FILE...   # R is one of notes, claude-code-transcript,
+compost digest --as=R --mutability=M FILE...
+                                # R is one of notes, claude-code-transcript,
                                 # pandoc-ast. Required; never inferred.
+                                # M is immutable | append-only | mutable,
+                                # required at creation and never changed.
+                                # --updates=GUID appends to an existing
+                                # append-only root instead of minting a
+                                # second one; it is refused on immutable
+                                # roots, and on mutable ones until v0.2.17.
                                 # A transcript digest is lossless: every line
                                 # and key is kept, filter at query time. It also
                                 # pulls in the subagent transcripts it names;

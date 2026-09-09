@@ -95,15 +95,30 @@ step "the CLI, end to end"
 W="$ROOT/base"; mkdir -p "$W"; cd "$W" || exit 1
 compost init >/dev/null; check $? "init"
 cp "$ROOT/compost/README.md" .
-compost digest --as=notes README.md >/dev/null; check $? "digest --as=notes"
+# `--mutability` is required at creation as of v0.2.15, and the value is
+# chosen per artifact rather than uniformly: a README is a TA, a transcript
+# only ever grows, and a pandoc AST dump is a snapshot. Naming them honestly
+# here keeps this flow a demonstration of the model rather than three copies
+# of whichever value was shortest to type.
+compost digest --as=notes --mutability=mutable README.md >/dev/null
+check $? "digest --as=notes"
 cp "$ROOT/compost/tests/fixtures/sessions/session-smoke.jsonl" s.jsonl
-compost digest --as=claude-code-transcript s.jsonl >/dev/null
+compost digest --as=claude-code-transcript --mutability=append-only s.jsonl >/dev/null
 check $? "digest --as=claude-code-transcript"
 pandoc -f commonmark_x-smart-attributes-fancy_lists -t json README.md > ast.json
-compost digest --as=pandoc-ast ast.json >/dev/null; check $? "digest --as=pandoc-ast"
+compost digest --as=pandoc-ast --mutability=immutable ast.json >/dev/null
+check $? "digest --as=pandoc-ast"
 # The route is never inferred, so a bare file is a usage error and not a guess.
-if compost digest README.md >/dev/null 2>&1; then false; else true; fi
+if compost digest --mutability=immutable README.md >/dev/null 2>&1; then false; else true; fi
 check $? "digest without --as is refused"
+# ...and neither is the contract. Both are required, and a caller that gives
+# one without the other gets an error rather than a default. This gate found
+# that out the hard way: v0.2.15 made `--mutability` required, these three
+# calls did not have it, all three were refused, and the base they build was
+# left empty — which surfaced as `render`, `lookup` and `serve` failing on a
+# missing directory, four steps downstream of the actual cause.
+if compost digest --as=notes README.md >/dev/null 2>&1; then false; else true; fi
+check $? "digest without --mutability is refused"
 compost ls >/dev/null;    check $? "ls"
 compost check >/dev/null; check $? "check"
 compost render >/dev/null; check $? "render"

@@ -84,7 +84,14 @@ def digest_one(st: S.Store, path: Path, route: str) -> str:
     to share a source name.
     """
     before = set(st.files())
-    if S._digest(st, route, [str(path)], "compost") != 0:
+    # `--mutability` is required at the CLI as of v0.2.15, and this calls
+    # `_digest` directly, which still defaults it to None — so without this
+    # the loop would quietly mint roots that declare no contract at all, and
+    # those can never be appended to (`--updates` refuses a root whose
+    # mutability is unknown). `immutable` is the honest value: every round
+    # writes a *fresh* file, ingested once and never grown.
+    if S._digest(st, route, [str(path)], "compost",
+                 mutability="immutable") != 0:
         raise RuntimeError(f"digest failed for {path}")
     new = set(st.files()) - before
     if len(new) != 1:

@@ -84,6 +84,19 @@ than impossible, and a race that is merely unlikely is still a race. It would
 also change every future `created_at` for a problem that is not really about
 time.
 
+**And the project has already made this exact call once, in the other
+direction.** `tools/loop.py`'s `round_name()` names each round of the
+nvim→compost→claude loop, and its docstring says why it does not use a
+timestamp:
+
+> `date +%s` is one-second resolution and this loop can run faster than that;
+> `round_name()` mints a uuid instead, which cannot repeat in any way that
+> matters.
+
+Same clock, same second, same conclusion — reached in v0.2.6 for filenames and
+not carried over to blobs. Worth noticing that the answer there was *not* a
+finer clock either: it was to stop deriving identity from time at all.
+
 ## The answer I think is right, unbuilt
 
 A **`supersedes` edge, blob to blob.** A re-ingest mints one edge from the new

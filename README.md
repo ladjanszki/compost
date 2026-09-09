@@ -12,8 +12,8 @@ everything, decide later, and make every claim checkable.
 
 ```
 compost init
-compost digest --as=notes notes.md
-compost digest --as=claude-code-transcript ~/.claude/projects/<slug>/*.jsonl
+compost digest --as=notes --mutability=immutable notes.md
+compost digest --as=claude-code-transcript --mutability=append-only ~/.claude/projects/<slug>/*.jsonl
 compost check
 compost layer citation         # mint `cites` edges from the links already there
 compost render
