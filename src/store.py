@@ -816,11 +816,11 @@ def main(argv):
                       f"mutability, so its contract is unknown — refusing "
                       f"rather than guessing")
                 return 1
-            # `mutable` is refused until v0.2.17 builds `revision_of`.
+            # `mutable` is refused until v0.2.16 builds `revision_of`.
             #
             # The flag's *contract* is settled here (docs/roadmap.md, "AoTA":
             # one flag, meaning decided by the target's mutability) so that
-            # v0.2.17 does not re-litigate it. What does not exist yet is the
+            # v0.2.16 does not re-litigate it. What does not exist yet is the
             # machinery behind the `mutable` reading — a revision mints a
             # whole new tree and chains root to root with one `revision_of`
             # edge (docs/design-0.3.0.md §7), and none of that is built.
@@ -836,7 +836,7 @@ def main(argv):
             # started relying on it.
             if tmut == "mutable":
                 print(f"  --updates={updates}: that root is mutable, and "
-                      f"revising one needs `revision_of`, which is v0.2.17 "
+                      f"revising one needs `revision_of`, which is v0.2.16 "
                       f"— refusing rather than appending to it, which is a "
                       f"different contract than the one it declared")
                 return 1

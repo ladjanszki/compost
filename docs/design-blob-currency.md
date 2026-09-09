@@ -114,10 +114,10 @@ It was deliberately not built in v0.2.15: a new edge type is a schema change,
 and slipping one into a release that was already specced is the same smuggled
 precedent the roadmap refuses elsewhere.
 
-## Where this generalises, and why it is worth deciding before v0.2.17
+## Where this generalises, and why it is worth deciding before v0.2.16
 
 The tie is trivial today. It stops being trivial at **TA revision**, which is
-v0.2.17.
+v0.2.16.
 
 A `mutable` root revised twice in quick succession produces two candidate
 trees, and "which is current" becomes a question about *content the human

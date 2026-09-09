@@ -1,8 +1,9 @@
 # TODO — a section container of our own
 
-**Not scheduled. Decide before v0.2.17.** The TA release revises whole trees and
+**Not scheduled. Decide before v0.2.16** — the TA release, renumbered from
+v0.2.17 on 2026-09-09 when the ledger left the line. The TA release revises whole trees and
 compares them by fold; if sections are going to exist, they should exist before
-anything starts folding documents in anger. Nothing before v0.2.17 is blocked by
+anything starts folding documents in anger. Nothing before v0.2.16 is blocked by
 this.
 
 **The human wants one.** This file exists so that the argument against can be
@@ -79,7 +80,7 @@ sections add one inside documents.
    HTML view. There is currently no handle that means *this section*, and it is
    an obvious thing to want.
 3. **`record_subtree_hash` on a section answers "has this section changed."**
-   That is the natural unit for TA revisions (v0.2.17) — far more useful than
+   That is the natural unit for TA revisions (v0.2.16) — far more useful than
    "has this document changed," which is almost always yes.
 4. **Views get the collapse for free.** Collapsing a section is a tree
    operation once the tree exists.

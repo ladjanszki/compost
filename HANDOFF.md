@@ -284,7 +284,7 @@ most want caught.
 | `TODO-storage-revamp.md` | **after v0.3.0, with a trigger.** Measured: 9.1% duplication already, +10.8 MB per re-ingest. Waits because the waste is *recoverable* and its consumer (Skolemization) ships in v0.3.0 |
 | `TODO-pandoc-ast-for-notes.md` | after v0.3.0, the human's own sequencing |
 | `TODO-equality-layers.md` | input for v0.3.0. The catalogue of where `record_hash` is too selective, with the physics framing |
-| `TODO-section-container.md` | decide by v0.2.17 |
+| `TODO-section-container.md` | decide by v0.2.16 — TA, renumbered from v0.2.17 |
 | `TODO-citations-in-transcripts.md` | a decision, not a task. 33 of 35 citations arrive as tool output and are invisible to the citation layer |
 | `TODO-multiple-text-blocks.md` | guarded by a loud error that cannot fire on known material |
 | `TODO-code-review.md` | the weakness blueprint, for after v0.3.0. Item 2 has now fired four times |

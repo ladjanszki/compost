@@ -54,7 +54,7 @@ compost digest --as=R --mutability=M FILE...
                                 # --updates=GUID appends to an existing
                                 # append-only root instead of minting a
                                 # second one; it is refused on immutable
-                                # roots, and on mutable ones until v0.2.17.
+                                # roots, and on mutable ones until v0.2.16.
                                 # A transcript digest is lossless: every line
                                 # and key is kept, filter at query time. It also
                                 # pulls in the subagent transcripts it names;

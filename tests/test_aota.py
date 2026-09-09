@@ -102,7 +102,7 @@ def main():
             case("--updates naming an immutable root is refused",
                  code != 0 and "immutable" in out.lower(), out.strip())
 
-            # `mutable` is refused too, until v0.2.17 builds `revision_of`.
+            # `mutable` is refused too, until v0.2.16 builds `revision_of`.
             # Routing it through the append path instead runs and passes
             # `check`, which is why this is a test and not a comment: a
             # `mutable` root put through delta ingest inherits the
@@ -123,7 +123,7 @@ def main():
             code, out = run("digest", "--as=notes", f"--updates={ta_root}",
                             str(NOTE))
             case("--updates naming a mutable root is refused until "
-                 "revision_of exists (v0.2.17), not silently appended to",
+                 "revision_of exists (v0.2.16), not silently appended to",
                  code != 0 and "revision_of" in out, out.strip())
 
             recs, _ = S.Store.find(tmp).load()

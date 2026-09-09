@@ -129,11 +129,11 @@ safe automatic answer, so the tool never guesses it. `GUID` must already be a
 `immutable`, or a root declared `mutable`, is refused. **`mutable` is refused
 because the machinery behind that reading does not exist yet**: revising a TA
 mints a new tree and chains root to root with one `revision_of` edge, which is
-v0.2.17. Routing it through the append path instead would run, and would be
+v0.2.16. Routing it through the append path instead would run, and would be
 silently wrong — an appended `mutable` root inherits the head-unchanged
 refusal below, so the one contract that promised "anything here may change"
 would be the one told its start no longer matches. The *flag's* meaning is
-settled now (one flag, read by the target's mutability) so that v0.2.17 does
+settled now (one flag, read by the target's mutability) so that v0.2.16 does
 not re-litigate it; only the `mutable` behaviour waits.
 
 Against an `append-only` root this mints nodes for
@@ -172,7 +172,7 @@ change this paragraph just said does not happen.
 `check` verifies the contract `--mutability` declares: an `append-only` root
 whose recorded head no longer folds the way it used to is a reported problem,
 and so is an `immutable` root carrying more than one `derived_from` edge. A
-`mutable` root asserts nothing yet — full-tree revisions are `v0.2.17`.
+`mutable` root asserts nothing yet — full-tree revisions are `v0.2.16`.
 
 `pandoc-ast` is the narrowest route, not the broadest — there is no reading
 step in it to be wrong, because `ast_to_records` takes exactly that shape.
