@@ -2810,10 +2810,22 @@ preceded it.
 
 | version | must achieve | re-measure first | must not foreclose |
 |---|---|---|---|
-| **v0.2.15** AoTA | `mutability` declared and checked, positional alignment, delta ingest | v0.2.13 guarantee 5, after the tree moved | non-append-only sources; async alignment |
+| **v0.2.15** AoTA | `mutability` declared and checked, `--updates`, append, delta ingest | done: 9,217/9,217 under the delegation-following walk | non-append-only sources; async alignment; the storage revamp |
 | **v0.2.16** the ledger | retraction, provenance, replay as a filter | how many records a real base would retract | mutation records — §7 keeps them open |
 | **v0.2.17** TA | `revision_of` on roots, full-tree revisions | the fold's cost on document trees | the section container — `TODO-section-container.md` decides by here |
 | **v0.3.0** | the first semantic layer | the largest equivalence class a plausible layer produces | — |
+| **after v0.3.0** | the storage revamp — `TODO-storage-revamp.md` | duplicate bytes as a fraction of `storage/` | — |
+
+**The storage revamp is deliberately not next**, and the reasoning is in
+`TODO-storage-revamp.md` with its measurements. Short form: v0.2.15 makes
+re-ingestion routine and so makes storage grow by a whole file each time, but
+that cost is **disk rather than correctness** — every byte is still there, twice,
+and `blob.bytes_sha256` makes the duplicates findable by query rather than by
+migration. It is the most recoverable waste in the project. The drops v0.2.13
+found were the opposite and that is why they could not wait. The revamp is also
+preparation for Skolemization, whose consumer is the semantic layer that ships in
+v0.3.0 — designing it first would fix a criterion before the thing that needs it
+exists.
 
 ## Risks accepted without mitigation
 
