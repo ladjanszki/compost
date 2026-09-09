@@ -376,6 +376,7 @@ of the design leans on.
    index; a third occurrence would be the point to make it general.
 2. **Does a class alias want a `by` field**, as citation edges have, or is
    `scheme` enough? They would always agree, which is an argument for one.
-3. **What happens when a member is retracted** (v0.2.15's ledger)? A class that
+3. **What happens when a member is retracted** (the ledger, v0.2.16 — v0.2.15
+   is AoTA)? A class that
    named it still does. Probably correct — the class was true when minted — but
    it should be decided rather than discovered.
