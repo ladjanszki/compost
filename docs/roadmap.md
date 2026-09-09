@@ -3031,6 +3031,70 @@ read `run.sh`'s last line before believing a green board.
 
 ---
 
+## v0.2.16 — the ledger: measured first, not yet specced
+
+**Measured 2026-09-09, before any design.** The skeleton below says to
+re-measure *"how many records a real base would retract"* first. Done, against
+`base-v0.2.13-2026-09-08` (42,613 nodes, 72,218 edges, 47 roots) — the human's
+live base was replaced on 2026-09-08 and is empty, so the archive is the only
+real material there is. The answer redraws the release.
+
+### What a real base would actually retract
+
+| candidate for retraction | found |
+|---|---|
+| nodes under **superseded re-ingest roots** | **11,641 of 42,613 — 27.3%** |
+| duplicate `layer` output (the "rebuilds multiply" risk) | **0** of 35,902 layer edges |
+| `unresolved_citation` placeholders | **7** |
+
+Eight of 37 distinct sources had been ingested more than once, leaving **10
+superseded roots**. Everything else the design anticipated retracting is
+absent: not one duplicated `(type, source, destination)` triple exists in the
+whole base, so `compost layer citation` was evidently run once per base and the
+accumulation risk the roadmap lists never fired here.
+
+**So retraction has exactly one real customer, and it is re-ingestion.**
+
+### And that customer splits cleanly along v0.2.15's own axis
+
+Aligning each superseded root against the survivor that replaced it:
+
+| | |
+|---|---|
+| pairs that are an **exact prefix** | **9 of 10** |
+| total nodes aligning | **11,433 of 11,641 — 98.21% of the older trees** |
+| the one that diverges | `compost.md`, at node **3 of 211** |
+
+Every append-only source — six subagent transcripts and three sessions — is an
+*exact* prefix of its replacement, mechanically collapsible with no human
+judgement involved. **The single divergence is a document that was edited**:
+the whitepaper, which is a TA.
+
+So the 27.3% divides as **98.21% AoTA and 1.79% TA**, and both halves already
+have an owner. v0.2.15 prevents the first from ever accruing again;
+`revision_of` in v0.2.17 is the mechanism for the second. Neither needs a
+tombstone.
+
+### The question this leaves, unanswered on purpose
+
+**If retraction's only measured customer is already handled by the two releases
+either side of it, what is v0.2.16 for?**
+
+Two readings, and the choice is not mine to make:
+
+- **The ledger is mostly provenance and replay**, and retraction is a small
+  part of it that happens to have little to do on today's material. Replay as a
+  *filter over records* is order-free given §7, and provenance is already
+  half-built — `tool_version` on every edge since v0.2.8.
+- **Retraction is for the migration**, not for new bases. Every base built
+  before v0.2.15 carries its 27.3%, and there is currently no way to say "this
+  root was superseded" without deleting the file that holds it — which is the
+  one inverse the design offers and is all-or-nothing.
+
+The second reading makes v0.2.16 a *migration* release for existing bases
+rather than a capability for new ones, which is a different shape of work and a
+different set of guarantees. **Not specced until that is decided.**
+
 ## v0.2.16 → v0.3.0 — skeleton only
 
 Specced one at a time, each immediately before its agent runs, with the previous
