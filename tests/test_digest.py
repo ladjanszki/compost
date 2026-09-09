@@ -78,7 +78,8 @@ def main():
             for route, path in (("notes", note),
                                 ("claude-code-transcript", SESSION),
                                 ("pandoc-ast", ast_file)):
-                code, out = run("digest", f"--as={route}", str(path))
+                code, out = run("digest", f"--as={route}", "--mutability=immutable",
+                                str(path))
                 assert code == 0, f"seeding {route} failed: {out}"
 
             def every_route_dispatches():
@@ -107,7 +108,7 @@ def main():
                 # transcript and produce a session, not a document.
                 liar = tmp / "actually-markdown.jsonl"
                 liar.write_bytes(note.read_bytes())
-                code, _ = run("digest", "--as=notes", str(liar))
+                code, _ = run("digest", "--as=notes", "--mutability=immutable", str(liar))
                 recs, _ = st.load()
                 doc = [r for r in recs if r["record"] == "node"
                        and R._p(r, "source") == liar.name]
@@ -173,7 +174,7 @@ def main():
                 # that landed would come in again under fresh guids.
                 before_g = len(list(st.graph.glob("*.jsonl")))
                 before_s = len(list(st.storage.iterdir()))
-                code, out = run("digest", "--as=pandoc-ast",
+                code, out = run("digest", "--as=pandoc-ast", "--mutability=immutable",
                                 str(ast_file), str(note))
                 after_g = len(list(st.graph.glob("*.jsonl")))
                 after_s = len(list(st.storage.iterdir()))
@@ -186,14 +187,15 @@ def main():
                 sub = tmp / "adir"
                 sub.mkdir(exist_ok=True)
                 (sub / "x.md").write_text("# x\n")
-                code, out = run("digest", "--as=notes", str(sub))
+                code, out = run("digest", "--as=notes", "--mutability=immutable", str(sub))
                 return code == 1 and "directory" in out and "*" in out, \
                     "a directory is refused, pointing at the shell's glob"
             case("directories are refused, not walked", directories_are_refused)
 
             def duplication_is_reported():
-                run("digest", "--as=notes", str(note))
-                code, out = run("digest", "--as=notes", str(note))
+                run("digest", "--as=notes", "--mutability=immutable", str(note))
+                code, out = run("digest", "--as=notes", "--mutability=immutable",
+                                str(note))
                 recs, _ = st.load()
                 sha = hashlib.sha256(note.read_bytes()).hexdigest()
                 blobs = [r for r in recs if r["record"] == "node"
@@ -268,9 +270,12 @@ def main():
                 # slash, so it can never be mistaken for a flag and would not
                 # exercise the bug. `Path("./-dash.md")` normalises to
                 # `-dash.md`, which is exactly what reached pandoc.
-                a, _ = run("digest", "--as=notes", "./-dash.md")
-                b, _ = run("digest", "--as=notes", "--", "-dash.md")
-                c, _ = run("digest", "--as=notes", str(spaced), str(bare))
+                a, _ = run("digest", "--as=notes", "--mutability=immutable",
+                           "./-dash.md")
+                b, _ = run("digest", "--as=notes", "--mutability=immutable",
+                           "--", "-dash.md")
+                c, _ = run("digest", "--as=notes", "--mutability=immutable",
+                           str(spaced), str(bare))
                 recs, _ = st.load()
                 stored = {R._p(r, "stored_as") for r in recs
                           if r["record"] == "node" and r["type"] == "blob"}
@@ -289,7 +294,7 @@ def main():
                 sub = tmp / "sc"
                 sub.mkdir(exist_ok=True)
                 code, out = run("digest", "--as=claude-code-transcript",
-                                str(SIDECHAIN))
+                                "--mutability=append-only", str(SIDECHAIN))
                 st2 = S.Store(tmp)
                 recs, _ = st2.load()
                 roots = [r for r in recs if r["record"] == "node"
@@ -332,7 +337,8 @@ def main():
                 try:
                     run("init")
                     code, out = run("digest", "--as=claude-code-transcript",
-                                    "--no-follow", str(SIDECHAIN))
+                                    "--mutability=append-only", "--no-follow",
+                                    str(SIDECHAIN))
                     recs, _ = S.Store(other).load()
                 finally:
                     os.chdir(here2)
@@ -351,7 +357,7 @@ def main():
                 lone = tmp / "lonely.jsonl"
                 lone.write_bytes(SIDECHAIN.read_bytes())
                 code, out = run("digest", "--as=claude-code-transcript",
-                                str(lone))
+                                "--mutability=append-only", str(lone))
                 return code == 0 and "not here" in out, \
                     "a named file that is absent is reported and skipped"
             case("a referenced file that is gone is reported, not fatal",

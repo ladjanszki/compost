@@ -64,19 +64,47 @@ assert n2 < n1*1.8, f"nodes went {n1}->{n2}: the head looks re-minted, not appen
 PY
 
 run NEW "check is clean after an append — the root's fold is refreshed" <<PY
-import sys; sys.path.insert(0,"$ROOT")
+import subprocess,os,tempfile,json,glob,pathlib,sys
+sys.path.insert(0,"$ROOT")
 from src import records as R
-b=R.Builder()
-root=b.node("session",{"source":"s.jsonl","session_id":"x","version":None})
-k=[b.node("turn",{"author":"human","uuid":f"u{i}","timestamp":"t","log":{}}) for i in (1,2)]
-b.children(root,k,"session"); R.stamp_hashes(b.records)
-k3=b.node("turn",{"author":"human","uuid":"u3","timestamp":"t","log":{}})
-b.edge("contains",root,k3,"session"); b.edge("next",k[1],k3,"session")
-R.stamp_hashes([r for r in b.records if r["guid"]==k3])
 assert hasattr(R,"refresh_fold"), "no records.refresh_fold: the append cannot fix the root"
-R.refresh_fold(b.records, root)
-p=R.check(b.records)
-assert not p, f"check still fails after refreshing the fold: {p[:2]}"
+# Through the CLI, not by calling refresh_fold directly. Calling it directly
+# proves the function works and says nothing about whether the append USES
+# it: with the call site removed this check passed while a real append left
+# the base reporting "record_subtree_hash does not recompute", and a
+# different check caught it. A check must fail for the reason it names.
+w=pathlib.Path(tempfile.mkdtemp()); env={**os.environ,"PYTHONPATH":"$ROOT"}
+cli=lambda *a: subprocess.run(["python3","-m","src.cli",*a],cwd=w,env=env,capture_output=True,text=True)
+lines=[l for l in pathlib.Path("$ROOT/$CORP").read_text().splitlines() if l.strip()]
+d=w/"s.jsonl"; d.write_text("\n".join(lines[:int(len(lines)*0.7)])+"\n")
+cli("init","."); cli("digest","--as=claude-code-transcript","--mutability=append-only",str(d))
+load=lambda: [json.loads(l) for f in glob.glob(str(w/".compost/graph/*.jsonl")) for l in open(f) if l.strip()]
+root=next(r["guid"] for r in load() if r["record"]=="node" and r["type"]=="session")
+d.write_text("\n".join(lines)+"\n")
+r=cli("digest","--as=claude-code-transcript",f"--updates={root}",str(d))
+assert r.returncode==0, r.stdout+r.stderr
+p=R.check(load())
+assert not p, f"check fails after a real append through the CLI: {p[:2]}"
+PY
+
+run NEW "appending a head-edited file is refused, and nothing is written" <<PY
+import subprocess,os,tempfile,json,glob,pathlib
+w=pathlib.Path(tempfile.mkdtemp()); env={**os.environ,"PYTHONPATH":"$ROOT"}
+cli=lambda *a: subprocess.run(["python3","-m","src.cli",*a],cwd=w,env=env,capture_output=True,text=True)
+lines=[l for l in pathlib.Path("$ROOT/$CORP").read_text().splitlines() if l.strip()]
+d=w/"s.jsonl"; d.write_text("\n".join(lines[:int(len(lines)*0.7)])+"\n")
+cli("init","."); cli("digest","--as=claude-code-transcript","--mutability=append-only",str(d))
+load=lambda: [json.loads(l) for f in glob.glob(str(w/".compost/graph/*.jsonl")) for l in open(f) if l.strip()]
+g=load(); n1=sum(1 for r in g if r["record"]=="node")
+root=next(r["guid"] for r in g if r["record"]=="node" and r["type"]=="session")
+t=list(lines); o=json.loads(t[3])
+if isinstance(o.get("message"),dict): o["message"]["content"]="TAMPERED"
+else: o["_tampered"]=True
+t[3]=json.dumps(o); d.write_text("\n".join(t)+"\n")
+r=cli("digest","--as=claude-code-transcript",f"--updates={root}",str(d))
+assert r.returncode!=0, "a head-edited file was appended silently"
+n2=sum(1 for x in load() if x["record"]=="node")
+assert n1==n2, f"refused but still wrote: {n1} -> {n2} nodes"
 PY
 
 run NEW "check reports an append-only root whose head changed" <<PY

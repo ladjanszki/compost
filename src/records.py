@@ -142,6 +142,89 @@ def stamp_hashes(records: list) -> list:
     return records
 
 
+def refresh_fold(records: list, root: str) -> list:
+    """Recompute `record_subtree_hash` (and, idempotently, `record_hash`)
+    for a root's whole file, in place, after an append.
+
+    This is the fix `docs/roadmap.md` ("AoTA") specifies for `check()`'s
+    eleventh assertion failing on every append: appending mints new tail
+    nodes with their own hashes already correct, but the root's own fold
+    summarised only the *old* children, and nothing that reads the graph
+    should have to know that a rewrite is due. `record_subtree_hash` is
+    derived — recomputable from the graph at any time — so "fixing" it is
+    refreshing a cache, not changing what any record claims: the root's own
+    `record_hash` is untouched because its `params` never change, and this
+    call recomputes to that identical value.
+
+    In practice this is exactly the same post-order walk `stamp_hashes`
+    already does, over the file that now includes the new tail — appending
+    changes *which nodes* sit beneath the root, not *how* a fold is
+    computed. Kept as its own name (rather than telling every append
+    caller to call `stamp_hashes` directly) because the call site wants to
+    say "refresh this root's fold", and `root` is checked against the
+    records given so a caller that passes the wrong file's records fails
+    loudly instead of silently folding nothing relevant.
+    """
+    g = Graph(records)
+    if root not in g.nodes:
+        raise ValueError(f"{root}: not a node in the given records")
+    return stamp_hashes(records)
+
+
+def align(old_recs: list, old_root: str, new_recs: list, new_root: str
+          ) -> tuple[int, int]:
+    """
+    How much of `old_root`'s tree is an unchanged prefix of `new_root`'s.
+
+    Pure — writes nothing, and never mutates either records list, so it can
+    be called before any decision is made about what to mint. Walks both
+    trees in the same deterministic order — a node, then its `contains`
+    children in `next` order, then whatever it `delegates_to` — and compares
+    `record_hash` pairwise (never `record_subtree_hash`, which would move
+    the moment a tail is added and falsely report the *whole* ancestor chain
+    as changed). `record_hash` never depends on children, so a node that
+    matches at position *i* in both walks is the same content regardless of
+    what was appended after it.
+
+    Returns `(prefix, total)`, where `total` is the number of nodes the walk
+    reaches in the **older** tree and `prefix` is how many of those matched,
+    from the front, before the first mismatch or the shorter walk ran out.
+    Report this pair, never a bare percentage — `docs/roadmap.md` names the
+    exact failure this project has made four times: reporting `prefix` as a
+    fraction of the *newer* tree, or of nodes reached by a narrower walk,
+    reads as "100%" while covering half the graph.
+
+    **Following `delegates_to` is not optional.** A transcript's turns
+    delegate their markdown prose to a separate document tree each; a walk
+    over `contains`/`next` alone never reaches any of it and silently
+    measures half the graph while reporting the number as if it were whole
+    (docs/roadmap.md, "AoTA", guarantee 8).
+    """
+    def walk(records, root):
+        g = Graph(records)
+
+        def visit(guid):
+            order.append(guid)
+            for k in g.children(guid):
+                visit(k)
+            for e in g.linked(guid, "delegates_to"):
+                visit(e["destination"])
+
+        order: list[str] = []
+        visit(root)
+        return order, g
+
+    old_order, old_g = walk(old_recs, old_root)
+    new_order, new_g = walk(new_recs, new_root)
+
+    prefix = 0
+    for a, b in zip(old_order, new_order):
+        if old_g.nodes[a].get("record_hash") != new_g.nodes[b].get("record_hash"):
+            break
+        prefix += 1
+    return prefix, len(old_order)
+
+
 class Builder:
     """Accumulates records while walking an AST."""
 
@@ -662,6 +745,41 @@ def check(records: list) -> list[str]:
     # above (a cycle, a malformed `next` chain) can make the walk itself
     # raise, and a graph that already has a name for its problem does not
     # need a traceback standing in for one.
+    # `mutability`'s AoTA/ImTA contract (docs/design-0.3.0.md §2) is "existing
+    # content never changes" — which is exactly what a hash-recompute failure
+    # already means. `root_of` attributes a mismatched node to its containing
+    # root so the message can name the *contract* that was violated, rather
+    # than leave the generic phrasing below to stand for both "this base is
+    # corrupt" and "this append-only root's head moved" — the same wording a
+    # hash mismatch always used, whether or not a mutability was ever
+    # declared. This does not make the check more discriminating than it
+    # already was: it is the same signal, better attributed, and it still
+    # cannot tell "the head changed" apart from "unrelated corruption" — both
+    # are "content that used to be true is no longer what its hash claims".
+    parent_of: dict[str, str] = {}
+    for e in edges:
+        if e["type"] == "contains" and e["destination"] not in parent_of:
+            parent_of[e["destination"]] = e["source"]
+
+    def root_of(guid):
+        seen = set()
+        while guid in parent_of and guid not in seen:
+            seen.add(guid)
+            guid = parent_of[guid]
+        n = nodes.get(guid)
+        return guid if n is not None and n["type"] in ROOT_TYPES else None
+
+    def _flag_contract(guid, n):
+        rg = root_of(guid)
+        if rg is None:
+            return
+        mut = (nodes[rg].get("params") or {}).get("mutability")
+        if mut in ("append-only", "immutable"):
+            problems.append(
+                f"{n['type']} {guid}: this violates {rg}'s "
+                f"mutability={mut!r} contract — existing content must never "
+                f"change once recorded")
+
     try:
         memo: dict[str, str] = {}
 
@@ -674,12 +792,14 @@ def check(records: list) -> list[str]:
             if n.get("record_hash") != rh:
                 problems.append(
                     f"{n['type']} {guid}: record_hash does not recompute")
+                _flag_contract(guid, n)
             kids = [_fold(k) for k in g.children(guid)]
             sh = hashlib.sha256(canonical([rh, kids])).hexdigest()
             if n.get("record_subtree_hash") != sh:
                 problems.append(
                     f"{n['type']} {guid}: record_subtree_hash does not "
                     f"recompute")
+                _flag_contract(guid, n)
             memo[guid] = sh
             return sh
 
@@ -721,27 +841,126 @@ def check(records: list) -> list[str]:
             problems.append("cycle in the derived_from graph")
             break
 
+    # Thirteenth assertion, and the one `mutability` (v0.2.15, "AoTA") exists
+    # to make checkable: an `immutable` root is refused a second `--updates`
+    # ingest by the CLI, so nothing this tool's own writers can produce
+    # should ever give one a second `derived_from` edge.
+    #
+    # This is a **proxy**, not the literal contract docs/design-0.3.0.md §2
+    # states — "no edges added to this root after the ingest that created
+    # it". That literal wording needs a clock this project has already
+    # decided it does not have: `created_at` is audit metadata, never
+    # semantics (CLAUDE.md; design-0.3.0.md §7), and `Store.load()`'s own
+    # invariant is that shuffling file order must not change the graph's
+    # meaning, which rules out inferring "before/after" from load order
+    # either. What *is* checkable without a clock: every ingest path this
+    # release builds mints exactly one `derived_from` edge from a root per
+    # digest, so a second one on a root declared `immutable` is the
+    # structural trace every such violation, made through this tool, leaves
+    # behind. A hand-authored `contains` edge spliced straight onto an
+    # immutable root's children, with no second blob to go with it, would
+    # NOT be caught here — a real gap, named rather than silently treated as
+    # covered.
+    df_count: dict[str, int] = {}
+    for e in edges:
+        if e["type"] == "derived_from":
+            df_count[e["source"]] = df_count.get(e["source"], 0) + 1
+    for g_, n in nodes.items():
+        if n["type"] not in ROOT_TYPES:
+            continue
+        if ((n.get("params") or {}).get("mutability") == "immutable"
+                and df_count.get(g_, 0) > 1):
+            problems.append(
+                f"{n['type']} {g_}: immutable root has {df_count[g_]} "
+                f"derived_from edges — its mutability contract permits "
+                f"exactly one ingest")
+
     return problems
 
 
-def blob_of(records, root: str) -> dict | None:
+def blobs_of(records, root: str) -> list:
     """
-    The `blob` node a root was derived from, or None.
+    Every `blob` node a root was derived from, oldest first by `imported_at`.
 
-    This is the only supported way to get from a document back to its bytes.
-    Storage filenames are minted guids, so the original name is *not* where
-    the file lives — `blob.params["stored_as"]` is, and it is reachable only
-    by following the `derived_from` edge. Anything that reconstructs a storage
-    path from `params["source"]` is guessing, and will guess wrong.
+    An AoTA root accumulates one `derived_from` edge per re-ingest — storage
+    does not deduplicate (docs/roadmap.md, "AoTA"): a second ingest stores the
+    whole grown file again as a second blob, and the first stays exactly as
+    reachable as it always was. `blob_of()`, below, is the common case —
+    "which bytes are current" — and this is the general one, for a caller
+    that wants the whole history rather than the current bytes.
     """
     nodes = {r["guid"]: r for r in records if r["record"] == "node"}
+    out = []
     for r in records:
         if (r["record"] == "edge" and r["type"] == "derived_from"
                 and r["source"] == root):
             n = nodes.get(r["destination"])
             if n is not None and n["type"] == "blob":
-                return n
-    return None
+                out.append(n)
+    out.sort(key=_blob_order)
+    return out
+
+
+def _blob_order(b: dict) -> tuple:
+    """The order two blobs on one root are compared in: import time, then guid.
+
+    The guid is there so the answer never depends on **load order**, which
+    `Store.load()` guarantees carries no meaning — filenames are minted and a
+    shuffled read must produce the same graph (CLAUDE.md). `_now()` records
+    whole seconds, so two ingests inside one second carry the *same*
+    `imported_at`, and a sort on that field alone leaves the winner decided by
+    whichever `graph/*.jsonl` happened to be read first. Measured, both
+    answers were reachable from the same records simply by reversing them.
+
+    **On a tie the guid is arbitrary and means nothing.** It is not "the
+    newer blob" — a uuid4 carries no recency — it is only a stable choice, so
+    that the same base always answers the same way. That is the whole of what
+    is being fixed here: determinism, not correctness.
+
+    The reason it can only be arbitrary is worth naming, because it is the
+    same missing clock that stopped `check` asserting the literal `immutable`
+    contract: **the records do not record which ingest came last.**
+    `imported_at` is audit metadata, of the same class as `created_at`, which
+    this project has already refused to build a contract on (docs/design-
+    0.3.0.md §7). Deriving "which bytes are current" from it is a proxy.
+
+    The real answer is a claim the records would carry — a `supersedes` edge
+    from a blob to the one it replaces, making "current" mean *the blob
+    nothing supersedes*: order-independent, and no clock at all. That is a
+    new edge type and a schema change, it belongs with the rest of the
+    storage work, and it is deliberately not smuggled in here.
+    See `TODO-storage-revamp.md`.
+    """
+    p = b.get("params") or {}
+    return (p.get("imported_at") or "", b.get("guid") or "")
+
+
+def blob_of(records, root: str) -> dict | None:
+    """
+    The `blob` node holding a root's *current* bytes, or None.
+
+    This is the only supported way to get from a document back to its bytes.
+    Storage filenames are minted guids, so the original name is *not* where
+    the file lives — `blob.params["stored_as"]` is, and it is reachable only
+    by following a `derived_from` edge. Anything that reconstructs a storage
+    path from `params["source"]` is guessing, and will guess wrong.
+
+    A never-appended root has exactly one `derived_from` edge, and this
+    returns exactly what it always did — every existing caller (`views.py`,
+    the test suite) keeps working unchanged. An AoTA root that has been
+    re-ingested has several (`blobs_of()`, above), and "current" is the last
+    by `_blob_order` — `imported_at`, then guid to break a tie.
+
+    **Read `_blob_order` before relying on this on a re-ingested root.** The
+    ordering is a proxy: `imported_at` is audit metadata, it records whole
+    seconds so two ingests in one second tie, and the guid that breaks that
+    tie is arbitrary. What this guarantees is that one base always gives one
+    answer, never that the answer is the newer bytes.
+    """
+    blobs = blobs_of(records, root)
+    if not blobs:
+        return None
+    return blobs[-1]
 
 
 # --------------------------------------------------------------------------

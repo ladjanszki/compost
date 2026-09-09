@@ -541,7 +541,8 @@
             "ttft_stream_ms": {},
             "type": {},
             "usage": {},
-            "uuid": {}
+            "uuid": {},
+            "mutability": {}
           },
           "required": [
             "meta",
@@ -592,7 +593,8 @@
             "session_id": {},
             "source": {},
             "version": {},
-            "agent": {}
+            "agent": {},
+            "mutability": {}
           },
           "required": [
             "route",

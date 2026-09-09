@@ -218,14 +218,24 @@ class Store:
 # CLI
 # --------------------------------------------------------------------------
 
-def _route_of(argv: list) -> tuple[str | None, list[str], bool, str | None]:
-    """Split `--as=ROUTE` and `--no-follow` out of the argument list.
+# The three values `--mutability` accepts, and the only three — declared at
+# creation, never changed. docs/design-0.3.0.md §0, §2; docs/roadmap.md,
+# "AoTA".
+MUTABILITIES = ("immutable", "append-only", "mutable")
 
-    Returns (route, files, follow, error). The route is never inferred: a
-    missing or unknown `--as` is an error naming the routes, not a guess at
-    what the caller meant. That refusal is the point of the flag.
+
+def _route_of(argv: list):
+    """Split `--as=ROUTE`, `--no-follow`, `--mutability=` and `--updates=`
+    out of the argument list.
+
+    Returns (route, files, follow, mutability, updates, error). The route is
+    never inferred: a missing or unknown `--as` is an error naming the
+    routes, not a guess at what the caller meant. That refusal is the point
+    of the flag, and `--mutability`/`--updates` are named the same way for
+    the same reason — see `main()`'s `digest` branch for what combination of
+    the two is required or refused.
     """
-    route, files, follow, i = None, [], True, 0
+    route, files, follow, mutability, updates, i = None, [], True, None, None, 0
     while i < len(argv):
         a = argv[i]
         if a == "--":
@@ -237,21 +247,25 @@ def _route_of(argv: list) -> tuple[str | None, list[str], bool, str | None]:
             route = a.split("=", 1)[1]
         elif a == "--as":
             if i + 1 >= len(argv):
-                return None, [], True, "--as needs a route"
+                return None, [], True, None, None, "--as needs a route"
             route = argv[i + 1]
             i += 1
         elif a == "--no-follow":
             follow = False
+        elif a.startswith("--mutability="):
+            mutability = a.split("=", 1)[1]
+        elif a.startswith("--updates="):
+            updates = a.split("=", 1)[1]
         elif a.startswith("-"):
-            return None, [], True, f"unknown option {a!r}"
+            return None, [], True, None, None, f"unknown option {a!r}"
         else:
             files.append(a)
         i += 1
     if route is None:
-        return None, files, True, "--as is required"
+        return None, files, True, mutability, updates, "--as is required"
     if route not in RT.ROUTES:
-        return None, files, True, f"unknown route {route!r}"
-    return route, files, follow, None
+        return None, files, True, mutability, updates, f"unknown route {route!r}"
+    return route, files, follow, mutability, updates, None
 
 
 def _link_agents(plans) -> int:
@@ -314,9 +328,21 @@ def _structural_gaps(plans, known_guids: set) -> list[tuple[str, str, str, str]]
 
 
 def _digest(s: Store, route: str, args: list[str], prog: str,
-            follow: bool = True) -> int:
+            follow: bool = True, mutability: str | None = None,
+            updates: str | None = None) -> int:
     """
     Ingest every file in `args` as `route`, plus the files those name.
+
+    `updates` diverts entirely to `_digest_update`, below — appending to an
+    existing AoTA root is a different shape of operation (one file, one
+    target, a delta rather than a batch) and does not share this function's
+    multi-file queue. `mutability` is only meaningful on *this* path, the
+    creation of a fresh root; it is stamped onto every root this batch
+    mints, immediately after the route returns it and before anything else
+    touches `recs` — `main()` guarantees it is one of the three declared
+    values, or `None` for a caller (mostly the test suite, calling this
+    directly) that predates the mutability model and does not care to
+    declare one.
 
     Two phases, and the split is load-bearing. **Nothing is written until
     every input has been read and parsed**, because storage names are now
@@ -338,6 +364,9 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
     base, or nothing is written — see the guid check below, after every file
     has been read.
     """
+    if updates is not None:
+        return _digest_update(s, route, args, updates)
+
     plans, seen = [], {}
     base_recs, _ = s.load()
     base_guids = {r["guid"] for r in base_recs if r["record"] == "node"}
@@ -383,6 +412,16 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
             print(f"  {src.name}: cannot read as {route}: {e}")
             print("  nothing was written")
             return 1
+
+        if mutability is not None:
+            root_rec = next(r for r in recs if r.get("guid") == root)
+            root_rec.setdefault("params", {})["mutability"] = mutability
+            # Only the root's own params changed, but re-stamping is cheap
+            # for one document/session and is the same call every other
+            # writer that patches a root's params after the route returned
+            # it already makes (`routes.py:_response`), rather than a
+            # special case that has to reason about which one node needs it.
+            R.stamp_hashes(recs)
 
         b = R.Builder()
         guid = b.mint()
@@ -500,6 +539,187 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
     return 0
 
 
+def _delta(old_recs: list, old_root: str, new_recs: list, new_root: str) -> list:
+    """
+    The records an appended AoTA root needs added to its existing file.
+
+    Assumes the caller already confirmed, with `records.align`, that the old
+    tree is a genuine, unmodified prefix of the new one — this mints nothing
+    of its own and does not re-check that; it only decides which of
+    `new_recs` (a whole *second*, independent reading of the grown file,
+    with its own freshly minted guids throughout) are the tail, and rewires
+    the handful of edges that would otherwise be wrong once they are moved
+    to sit beside the *old* root instead of `new_root`.
+
+    One rule does all of it: any edge in `new_recs` that touches the tail at
+    either end is kept, with **both** ends passed through the positional
+    correspondence `align()` walks — a prefix guid comes back as its
+    already-in-the-base equivalent, a tail guid comes back unchanged. An
+    edge with both ends in the prefix is old content the base already has
+    and is dropped.
+
+    This one rule quietly covers three things that would otherwise need
+    separate code: the top-level `contains` from `old_root` to each new
+    child (that edge's source in `new_recs` is `new_root`, and `new_root`
+    always maps to `old_root` — they are both position 0 of their own
+    walk); the single `next` edge bridging the old head's last child to the
+    new tail's first (its source is the old boundary child, mapped back to
+    the guid the base already knows it by); and `replies_to`, which can
+    point *backward*, turn to parent turn, at a turn that already exists
+    under `old_root` — under a *different* guid, because `new_recs`
+    re-minted the whole file from scratch rather than reusing anything.
+    Every one of these would dangle on arrival if the prefix end were left
+    as `new_recs` named it.
+    """
+    old_g, new_g = R.Graph(old_recs), R.Graph(new_recs)
+
+    def order_of(g, root):
+        out: list[str] = []
+
+        def visit(guid):
+            out.append(guid)
+            for k in g.children(guid):
+                visit(k)
+            for e in g.linked(guid, "delegates_to"):
+                visit(e["destination"])
+
+        visit(root)
+        return out
+
+    old_order = order_of(old_g, old_root)
+    new_order = order_of(new_g, new_root)
+    prefix = len(old_order)          # the caller already verified this
+    guid_map = dict(zip(new_order[:prefix], old_order))
+    tail_nodes = set(new_order[prefix:])
+
+    kept_edges = []
+    for e in new_recs:
+        if e["record"] != "edge":
+            continue
+        if e["source"] not in tail_nodes and e["destination"] not in tail_nodes:
+            continue                  # both ends are old content already
+        e2 = dict(e)
+        e2["source"] = guid_map.get(e["source"], e["source"])
+        e2["destination"] = guid_map.get(e["destination"], e["destination"])
+        e2["record_hash"] = R.edge_hash(e2)
+        kept_edges.append(e2)
+
+    # Every node a kept edge names that is not already a node the base has —
+    # every tail node reached by `contains`/`delegates_to` above, plus a
+    # leaf `contains`/`derived_from` target the walk itself never visits
+    # (`file`, a delegated fragment's `blob`) because both are UNCONTAINED
+    # by rule and reachable only through the edge that points at them.
+    referenced = {g for e in kept_edges for g in (e["source"], e["destination"])}
+    new_guids = tail_nodes | (referenced - set(old_g.nodes))
+    delta_nodes = [r for r in new_recs
+                  if r["record"] == "node" and r["guid"] in new_guids]
+
+    return delta_nodes + kept_edges
+
+
+def _digest_update(s: Store, route: str, args: list[str], updates: str) -> int:
+    """
+    Append a longer re-ingest of the same file onto an existing AoTA root.
+
+    A different shape from `_digest`'s own multi-file batch: exactly one
+    file, one target, and a delta rather than a set of freshly minted roots.
+    `main()` has already refused a non-root or an `immutable` target before
+    this is ever called; what is left to check here is the one thing that
+    cannot be known until the file is actually read — whether it still
+    starts with what the base already has.
+    """
+    if len(args) != 1:
+        print("  --updates appends exactly one file at a time")
+        print("  nothing was written")
+        return 1
+    src = Path(args[0])
+    if not src.is_file():
+        print(f"  {src}: no such file")
+        return 1
+
+    # One file per root, by construction: `_digest`'s own writing loop mints
+    # a fresh file per plan, and an append rewrites that same file rather
+    # than ever creating a second one for a root that already has one — so
+    # the file to rewrite is found by asking which one currently holds it.
+    target_file, old_recs = None, None
+    for f in s.files():
+        recs_f = R.from_jsonl(f.read_text(encoding="utf-8"))
+        if any(r["record"] == "node" and r["guid"] == updates
+               for r in recs_f):
+            target_file, old_recs = f, recs_f
+            break
+    if old_recs is None:
+        print(f"  --updates={updates}: not found in any graph file")
+        return 1
+
+    try:
+        new_recs, new_root = RT.read(route, src)
+    except Exception as e:
+        print(f"  {src.name}: cannot read as {route}: {e}")
+        print("  nothing was written")
+        return 1
+
+    # `mutability` is stamped onto a root once, at creation, and this fresh
+    # re-read of the grown file has no way to know it — the route itself
+    # never sets it (`main()` refused `--mutability` on this very call,
+    # since the contract never changes). Without it the new root's own
+    # `params` differ from the old one's by exactly this one key, its
+    # `record_hash` differs for that reason alone, and `align()` reports a
+    # mismatch at position zero even when nothing about the content moved.
+    # Stamped from the *old* root, the one place it is actually recorded.
+    old_root_rec = next(r for r in old_recs if r.get("guid") == updates)
+    mut = (old_root_rec.get("params") or {}).get("mutability")
+    if mut is not None:
+        new_root_rec = next(r for r in new_recs if r.get("guid") == new_root)
+        new_root_rec.setdefault("params", {})["mutability"] = mut
+        R.stamp_hashes(new_recs)
+
+    prefix, total = R.align(old_recs, updates, new_recs, new_root)
+    if prefix < total:
+        print(f"  {src.name}: this file's start no longer matches "
+              f"{updates}'s recorded head ({prefix} of {total} nodes still "
+              f"agree) — refusing to append. Digest it as a fresh root "
+              f"instead if this is genuinely different material.")
+        print("  nothing was written")
+        return 1
+
+    delta = _delta(old_recs, updates, new_recs, new_root)
+    merged = old_recs + delta
+
+    data = src.read_bytes()
+    sha = hashlib.sha256(data).hexdigest()
+    guid = str(uuid.uuid4())
+    stored = guid + src.suffix
+    bb = R.Builder()
+    bb.node("blob", {
+        "original_name": src.name,
+        "stored_as": stored,
+        "bytes_sha256": sha,
+        "imported_at": R._now(),
+        "route": route,
+    }, guid=guid)
+    bb.edge("derived_from", updates, guid, INGEST_LAYER)
+    R.stamp_hashes(bb.records)
+    merged += bb.records
+    R.refresh_fold(merged, updates)
+
+    problems = R.check(merged)
+    if problems:
+        print(f"  {src.name}: appending would leave the base with "
+              f"{len(problems)} problem(s), e.g. {problems[0]}")
+        print("  nothing was written")
+        return 1
+
+    n_before = sum(1 for r in old_recs if r["record"] == "node")
+    n_after = sum(1 for r in merged if r["record"] == "node")
+    s.keep_blob(src, stored)
+    dest = s.write(target_file.name, merged)
+    print(f"  {src.name} -> {dest.relative_to(s.root)}  "
+          f"(appended to root {updates}: {n_before} -> {n_after} nodes, "
+          f"blob {guid})")
+    return 0
+
+
 def main(argv):
     # `compost` when the CLI dispatched us, `store.py` when this module was run
     # directly. Taken from argv rather than hard-coded, so the usage a reader
@@ -530,7 +750,7 @@ def main(argv):
         return 1
 
     if cmd == "digest":
-        route, files, follow, err = _route_of(argv[2:])
+        route, files, follow, mutability, updates, err = _route_of(argv[2:])
         if err or not files:
             print(f"usage: {prog} digest --as=<route> <file>...")
             if err:
@@ -541,7 +761,87 @@ def main(argv):
                   "named\n`notes.jsonl` digested --as=notes is markdown, "
                   "because that is what was asked for.")
             return 2
-        return _digest(s, route, files, prog, follow)
+
+        # `mutability` is declared once, at creation, and never changes
+        # (docs/design-0.3.0.md §2) — so the two flags are mutually
+        # exclusive by construction: `--updates` names an *existing* root
+        # whose mutability was already set the day it was minted, and
+        # `--mutability` on that call would be asking to relax a contract
+        # that was made to never move.
+        if mutability is not None and updates is not None:
+            print("  --mutability cannot be given together with --updates: "
+                  "mutability is set once, at creation, and never changes")
+            return 2
+        if updates is None:
+            if mutability is None:
+                print("  --mutability is required at creation: one of "
+                      f"{', '.join(MUTABILITIES)}")
+                return 2
+            if mutability not in MUTABILITIES:
+                print(f"  unknown --mutability {mutability!r}; expected one "
+                      f"of {', '.join(MUTABILITIES)}")
+                return 2
+            # The one route with a derivable default (docs/roadmap.md,
+            # "AoTA"): a transcript's own filename can name the session it
+            # already belongs to. Not acted on — omitting `--updates` still
+            # mints a second root, silently, exactly as before — only
+            # printed, so a default nobody can see is not the kind found by
+            # accident later.
+            if route == "claude-code-transcript":
+                recs, _ = s.load()
+                for fp in files:
+                    match = RT.find_transcript_root(recs, Path(fp))
+                    if match:
+                        print(f"  note: {Path(fp).name} matches existing "
+                              f"session root {match} by filename — pass "
+                              f"--updates={match} to append to it instead "
+                              f"of minting a second root")
+        else:
+            # The user names the root because "which of fifty README.md
+            # files" has no safe automatic answer (docs/roadmap.md, "AoTA").
+            recs, _ = s.load()
+            nodes = {r["guid"]: r for r in recs if r["record"] == "node"}
+            target = nodes.get(updates)
+            if target is None or target["type"] not in R.ROOT_TYPES:
+                print(f"  --updates={updates} does not name a document or "
+                      f"session root in this base")
+                return 1
+            tmut = (target.get("params") or {}).get("mutability")
+            if tmut == "immutable":
+                print(f"  --updates={updates}: that root is immutable and "
+                      f"refuses updates")
+                return 1
+            if tmut is None:
+                print(f"  --updates={updates}: that root has no declared "
+                      f"mutability, so its contract is unknown — refusing "
+                      f"rather than guessing")
+                return 1
+            # `mutable` is refused until v0.2.17 builds `revision_of`.
+            #
+            # The flag's *contract* is settled here (docs/roadmap.md, "AoTA":
+            # one flag, meaning decided by the target's mutability) so that
+            # v0.2.17 does not re-litigate it. What does not exist yet is the
+            # machinery behind the `mutable` reading — a revision mints a
+            # whole new tree and chains root to root with one `revision_of`
+            # edge (docs/design-0.3.0.md §7), and none of that is built.
+            #
+            # The alternative was to route `mutable` through the same delta
+            # append as `append-only`, which runs and passes `check`. It is
+            # refused because it would be silently *wrong*: append semantics
+            # on a `mutable` root inherit the head-unchanged refusal below,
+            # so a root that declared "anything here may change" would be
+            # told its start no longer matches — the exact opposite of the
+            # contract it declared. A missing behaviour can be added; a
+            # wrong one that shipped has to be taken away from whoever
+            # started relying on it.
+            if tmut == "mutable":
+                print(f"  --updates={updates}: that root is mutable, and "
+                      f"revising one needs `revision_of`, which is v0.2.17 "
+                      f"— refusing rather than appending to it, which is a "
+                      f"different contract than the one it declared")
+                return 1
+        return _digest(s, route, files, prog, follow,
+                       mutability=mutability, updates=updates)
 
     if cmd == "ls":
         recs, files = s.load()

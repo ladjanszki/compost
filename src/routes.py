@@ -25,6 +25,7 @@ parses and mints and does not touch the disk beyond reading its input, which
 is what lets `digest` validate a whole batch before writing any of it.
 """
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -270,6 +271,72 @@ def _transcript_referrals(path: Path) -> list[Path]:
         seen.add(aid)
         out.append(base / f"agent-{aid}.jsonl")
     return out
+
+
+# -- the transcript default: what a filename alone says about identity ------
+#
+# `--updates=guid` names the root explicitly because "which of fifty
+# README.md files" has no safe automatic answer (docs/roadmap.md, "AoTA") —
+# but a Claude Code transcript is not an arbitrary file. Archived transcripts
+# come in exactly two shapes, and both name their own identity: a root
+# session is written to `<sessionId>.jsonl`, and the session root already
+# stores `session_id`; a subagent's is `agent-<toolUseId>.jsonl`, and its
+# root's `agent` sidecar already carries that same `toolUseId` (the identical
+# equality `store.py:_link_agents` draws, read the other way). Measured
+# against the archived base: 6 of 18 real filenames match the first rule, the
+# other 12 match the second, and together they resolve all 18.
+#
+# This is a *filename* fact, deliberately not wired to change what `digest`
+# does: omitting `--updates` still mints a second root, silently — that stays
+# principle 10's answer this release (docs/roadmap.md). What this buys is
+# something to print, not something to act on: `store.py` uses it to name a
+# candidate `--updates` value when one exists, so the default is at least
+# visible rather than found by accident later.
+_SESSION_NAME = re.compile(r"^(%s)\.jsonl$" % R.HANDLE_RE)
+_AGENT_NAME = re.compile(r"^agent-(%s)\.jsonl$" % R.HANDLE_RE)
+
+
+def transcript_identity(path: Path):
+    """What `path`'s name alone claims about a transcript's identity.
+
+    Returns `("session_id", value)`, `("agent_tool_use_id", value)`, or
+    `None` for a name matching neither archived shape. Never opens the file
+    and never looks at a base, so it composes with whatever a caller wants
+    to match it against.
+    """
+    m = _SESSION_NAME.match(path.name)
+    if m:
+        return ("session_id", m.group(1))
+    m = _AGENT_NAME.match(path.name)
+    if m:
+        return ("agent_tool_use_id", m.group(1))
+    return None
+
+
+def find_transcript_root(records: list, path: Path) -> str | None:
+    """The existing session root `path`'s filename identifies, or `None`.
+
+    `session_id` is matched against `session.params["session_id"]`, which
+    every session root already stores. `agent_tool_use_id` is matched
+    against `session.params["agent"]["toolUseId"]`, the sidecar
+    `store.py:_link_agents` already reads to join a subagent to the tool
+    call that launched it.
+    """
+    ident = transcript_identity(path)
+    if ident is None:
+        return None
+    kind, value = ident
+    for r in records:
+        if r["record"] != "node" or r["type"] != "session":
+            continue
+        params = r.get("params") or {}
+        if kind == "session_id" and params.get("session_id") == value:
+            return r["guid"]
+        if kind == "agent_tool_use_id":
+            agent = params.get("agent") or {}
+            if agent.get("toolUseId") == value:
+                return r["guid"]
+    return None
 
 
 ROUTES = {
