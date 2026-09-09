@@ -3031,69 +3031,61 @@ read `run.sh`'s last line before believing a green board.
 
 ---
 
-## v0.2.16 — the ledger: measured first, not yet specced
+## v0.2.16 — TA (was v0.2.17), and where the ledger went
 
-**Measured 2026-09-09, before any design.** The skeleton below says to
-re-measure *"how many records a real base would retract"* first. Done, against
-`base-v0.2.13-2026-09-08` (42,613 nodes, 72,218 edges, 47 roots) — the human's
-live base was replaced on 2026-09-08 and is empty, so the archive is the only
-real material there is. The answer redraws the release.
+**The ledger is no longer a release.** What was v0.2.16 — retraction,
+provenance, replay — moved to **`TODO-the-clock.md`** on 2026-09-09, whole and
+with its measurements. **TA moves up into this number**, so v0.2.16 is
+`revision_of` on roots and full-tree revisions, and the path to v0.3.0 is one
+release shorter.
 
-### What a real base would actually retract
+**Anything written before this renumbering calls TA "v0.2.17"** — v0.2.15's
+CHANGELOG entry among them, correctly, because that is what it was called when
+it shipped. Those are history and are left alone. Current documents and code
+say v0.2.16.
 
-| candidate for retraction | found |
-|---|---|
-| nodes under **superseded re-ingest roots** | **11,641 of 42,613 — 27.3%** |
-| duplicate `layer` output (the "rebuilds multiply" risk) | **0** of 35,902 layer edges |
-| `unresolved_citation` placeholders | **7** |
+### Why the ledger came out
 
-Eight of 37 distinct sources had been ingested more than once, leaving **10
-superseded roots**. Everything else the design anticipated retracting is
-absent: not one duplicated `(type, source, destination)` triple exists in the
-whole base, so `compost layer citation` was evidently run once per base and the
-accumulation risk the roadmap lists never fired here.
+Measured before designing, as the skeleton demanded: *how many records would a
+real base retract?* Against `base-v0.2.13-2026-09-08` (42,613 nodes), **11,641
+— 27.3%** sit under 10 superseded re-ingest roots, and nothing else the design
+expected to retract is present at all: **0** duplicate layer triples across
+35,902 layer edges, 7 placeholders.
 
-**So retraction has exactly one real customer, and it is re-ingestion.**
+Then the part that decided it. Aligning each superseded root against its
+replacement: **9 of 10 pairs are exact prefixes — 11,433 of 11,641 nodes,
+98.21% of the older trees.** Every append-only source aligns exactly; the one
+divergence is `compost.md`, an edited document, at node 3 of 211. **So the
+27.3% is 98.21% AoTA and 1.79% TA** — v0.2.15 prevents the first accruing and
+`revision_of` is the mechanism for the second. Retraction's only measured
+customer is already handled by the releases either side of it.
 
-### And that customer splits cleanly along v0.2.15's own axis
+Provenance is largely built already (`tool_version` on every edge since v0.2.8)
+and wants queries rather than records. **Replay is the part that is actually
+wanted**, and it is blocked on the one thing this project has now declined to
+build three times — a semantic clock. `TODO-the-clock.md` is that thread pulled
+together: PROV's ordering constraint, the `immutable` contract, and blob
+currency are the same missing thing, and replay is the first instance with no
+structural way around it. It deserves its own decision, not a corner of a
+release doing two other things.
 
-Aligning each superseded root against the survivor that replaced it:
+### Why removing it is safe
 
-| | |
-|---|---|
-| pairs that are an **exact prefix** | **9 of 10** |
-| total nodes aligning | **11,433 of 11,641 — 98.21% of the older trees** |
-| the one that diverges | `compost.md`, at node **3 of 211** |
+`docs/design-0.3.0.md`: v0.3.0 is *"change, the text artifacts, and the first
+semantic layer"* — the ledger is not in the sentence, and §12 says each version
+is provable alone. The semantic layer's own inputs were checked directly:
+`TODO-equality-layers.md` mentions retraction, provenance and replay **not at
+all**; `docs/design-naming.md` mentions retraction **once**, in "Still open",
+as a question that only arises if retraction exists and that already carries
+its provisional answer.
 
-Every append-only source — six subagent transcripts and three sessions — is an
-*exact* prefix of its replacement, mechanically collapsible with no human
-judgement involved. **The single divergence is a document that was edited**:
-the whitepaper, which is a TA.
+### What v0.2.16 now is
 
-So the 27.3% divides as **98.21% AoTA and 1.79% TA**, and both halves already
-have an owner. v0.2.15 prevents the first from ever accruing again;
-`revision_of` in v0.2.17 is the mechanism for the second. Neither needs a
-tombstone.
-
-### The question this leaves, unanswered on purpose
-
-**If retraction's only measured customer is already handled by the two releases
-either side of it, what is v0.2.16 for?**
-
-Two readings, and the choice is not mine to make:
-
-- **The ledger is mostly provenance and replay**, and retraction is a small
-  part of it that happens to have little to do on today's material. Replay as a
-  *filter over records* is order-free given §7, and provenance is already
-  half-built — `tool_version` on every edge since v0.2.8.
-- **Retraction is for the migration**, not for new bases. Every base built
-  before v0.2.15 carries its 27.3%, and there is currently no way to say "this
-  root was superseded" without deleting the file that holds it — which is the
-  one inverse the design offers and is all-or-nothing.
-
-The second reading makes v0.2.16 a *migration* release for existing bases
-rather than a capability for new ones, which is a different shape of work and a
-different set of guarantees. **Not specced until that is decided.**
+**TA — `revision_of` on roots, full-tree revisions.** Unchanged in content from
+the v0.2.17 entry it replaces; re-measure the fold's cost on document trees
+first, and `TODO-section-container.md` decides by here. `--updates` against a
+`mutable` root is refused today with a message naming this version, and that
+refusal is what this release lifts.
 
 ## v0.2.16 → v0.3.0 — skeleton only
 
@@ -3107,8 +3099,8 @@ preceded it.
 | version | must achieve | re-measure first | must not foreclose |
 |---|---|---|---|
 | **v0.2.15** AoTA | `mutability` declared and checked, `--updates`, append, delta ingest | done: 9,217/9,217 under the delegation-following walk | non-append-only sources; async alignment; the storage revamp |
-| **v0.2.16** the ledger | retraction, provenance, replay as a filter | how many records a real base would retract | mutation records — §7 keeps them open |
-| **v0.2.17** TA | `revision_of` on roots, full-tree revisions | the fold's cost on document trees | the section container — `TODO-section-container.md` decides by here |
+| **v0.2.16** TA | `revision_of` on roots, full-tree revisions | the fold's cost on document trees | the section container — `TODO-section-container.md` decides by here |
+| ~~the ledger~~ | **removed from the line 2026-09-09** — retraction has no measured customer, replay needs a decision of its own | done: 11,433 of 11,641 superseded nodes are exact prefixes, 98.21% | `TODO-the-clock.md` holds it whole |
 | **v0.3.0** | the first semantic layer | the largest equivalence class a plausible layer produces | — |
 | **after v0.3.0** | the storage revamp — `TODO-storage-revamp.md` | duplicate bytes as a fraction of `storage/` | — |
 

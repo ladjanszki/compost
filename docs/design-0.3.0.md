@@ -449,8 +449,8 @@ Each version is provable alone, and nothing waits on a decision still open.
 | **v0.2.13** | **the fold** — `record_hash` on every node unconditionally, `record_subtree_hash`, total mapping as a tested property. Not the per-type whitelists: `design-total-mapping.md` removed the question rather than answering it |
 | **v0.2.14** | **the recursion made explicit** — one markdown digestor, delegated inputs stored as blobs |
 | **v0.2.15** | **AoTA** — `mutability` declared and checked, positional alignment, delta ingest |
-| **v0.2.16** | the ledger — retraction, provenance, replay as a filter |
-| **v0.2.17** | **TA** — `revision_of` on roots, full-tree revisions |
+| ~~v0.2.16~~ | the ledger — **removed from the release line 2026-09-09**, held whole in `TODO-the-clock.md`. Retraction had no measured customer; replay needs the clock decision this project has declined three times |
+| **v0.2.16** | **TA** — `revision_of` on roots, full-tree revisions (was v0.2.17) |
 | **v0.3.0** | the first semantic layer, over all of it |
 
 **v0.2.12 absorbed the grammar untangling**, and the two belong together: its
