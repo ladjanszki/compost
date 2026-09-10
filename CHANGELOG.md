@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.16-rc — TA: revisions, and structure that means something
+## v0.2.16 — 2026-09-10 — TA: revisions, and structure that means something
 
 Two things shipped together because they are one question. A TA revision
 compares whole trees by fold, and the unit worth comparing is a **section** —

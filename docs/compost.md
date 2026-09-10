@@ -3,7 +3,7 @@
 *A local-first knowledge base where a conversation and a document are the same
 kind of thing, and every paragraph has a name.*
 
-**Version 0.2.15.** Every earlier version of this document is kept, unedited, in
+**Version 0.2.16.** Every earlier version of this document is kept, unedited, in
 the notes repository — because the paper explaining this project is going to be
 digested *by* it: one revision chain over its own history, once v0.2.16 lands
 `revision_of`. They are not in `docs/`, and there is no procedure for putting
@@ -309,6 +309,50 @@ which bytes an appended root's `blob_of` returns, where the ordering is
 declined three times to build a semantic clock should expect to keep meeting
 the questions that need one**, and the honest form is a proxy that says it is
 one (`docs/design-blob-currency.md`).
+
+### Structure is in the graph, because the graph is the point — v0.2.16
+
+**A heading contains its section.** `make_sections` runs in the reader, so the
+sectioning rule is *pandoc's* — setext headings, a level-3 following a
+level-1, headings inside block quotes — adopted rather than authored. The
+`Div` it produces is then **hoisted**: absorbed into its own `Header`, which
+becomes the parent of everything beneath it.
+
+The alternative was to keep pandoc's `Div` as the container. Measured over all
+520 corpus documents, hoisting adds **zero nodes — 19,538 → 19,538** — where
+the `Div` shape costs **+1,576**, one per section; it does not deepen the tree;
+and it makes the heading and the section **one handle**, so there is nothing to
+decide about which of the two a citation means.
+
+**What it buys is a question becoming a walk.** *"What is under this heading"*
+was a forward scan comparing levels, performed by whoever asked. It is now
+`g.children(guid)`, and no level comparison survives anywhere in `src/`. Two
+documents with the same heading over different content — the case that
+motivated this — share a `record_hash`, correctly, because they *are* the same
+heading, and differ in their fold.
+
+**The round-trip is a safety property, not the goal, and this is where that
+becomes explicit.** `records_to_ast` is no longer the identity: `hoist` and
+`unhoist` compose to it, which is a weaker guarantee held by a property test
+over every fixture rather than by construction. That trade is deliberate, and
+the reason is principle-level rather than local:
+
+> This is a knowledge graph, not a representation as close to pandoc as
+> possible. `contains` edges carry semantics — a heading is structural
+> information. Several source types are unified under one node grammar, so the
+> knowledge in each is exposed the same way.
+
+Where graph shape and source shape pull apart, **the graph wins**, and the
+round-trip's job is to prove that nothing was silently dropped on the way.
+That is what it was always really doing; v0.2.15 and earlier simply never had
+to say so, because the two shapes had never disagreed.
+
+**A revision is a whole tree, and only roots are chained.** `--updates`
+against a `mutable` root mints one `revision_of` and re-mints the tree.
+Individual blocks get no revision edges: which block in v2 corresponds to which
+in v1 is a positional walk over content hashes that `align()` already performs,
+and storing that answer would be one edge per block per revision — a second
+graph the size of the first, for a fact recomputable in one pass.
 
 ### Ingestion is two-phase, and that is what makes it safe to re-run
 
