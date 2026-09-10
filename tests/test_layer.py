@@ -30,6 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import layers as L      # noqa: E402
+from src import markdown as MD   # noqa: E402
 from src import records as R     # noqa: E402
 from src import routes as RT     # noqa: E402
 from src import store as S       # noqa: E402
@@ -47,7 +48,7 @@ def _digest_text(st, tmp, name, text):
     """
     p = tmp / name
     p.write_text(text)
-    recs, root = R.ast_to_records(RT._ast_of(p), source=name, route="notes")
+    recs, root = R.ast_to_records(MD.ast_of_file(p), source=name, route="notes")
     st.write(f"{name}.jsonl", recs)
     return recs, root
 
@@ -275,7 +276,7 @@ def main():
             # mistake this property exists to prevent.
             found = whole = 0
             for path in T.markdown("notes"):
-                recs, _ = R.ast_to_records(RT._ast_of(path), source=path.name,
+                recs, _ = R.ast_to_records(MD.ast_of_file(path), source=path.name,
                                            route="notes")
                 found += len(R.legacy_handle_refs(recs))
                 for n in recs:

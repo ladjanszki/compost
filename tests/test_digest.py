@@ -29,6 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import cli              # noqa: E402
+from src import markdown as MD   # noqa: E402
 from src import records as R     # noqa: E402
 from src import routes as RT     # noqa: E402
 from src import store as S       # noqa: E402
@@ -74,7 +75,7 @@ def main():
             # first. `pandoc-ast` is fed an AST produced the way a person
             # would produce one: outside the tool, with pandoc.
             ast_file = tmp / "manual.json"
-            ast_file.write_text(json.dumps(RT._ast_of(note)))
+            ast_file.write_text(json.dumps(MD.ast_of_file(note)))
             for route, path in (("notes", note),
                                 ("claude-code-transcript", SESSION),
                                 ("pandoc-ast", ast_file)):

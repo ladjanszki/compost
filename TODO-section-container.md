@@ -11,8 +11,8 @@ spec compresses, and two of its conclusions were **overturned by measurement**.
   implementations, and only one of them is safe"* said to keep pandoc's `Div`
   and never transform in `records_to_ast`. The human proposed hoisting the
   `Div` into its own `Header` instead, and measurement backed them: hoisting
-  adds **zero nodes** (14,153 → 14,153) where the `Div` shape costs **+1,546**,
-  one per heading; it does not deepen the tree; and it makes the heading and
+  adds **zero nodes** (19,538 → 19,538) where the `Div` shape costs **+1,576**,
+  one per section; it does not deepen the tree; and it makes the heading and
   the section one handle, which dissolves this file's own open workflow
   question. The `hoist`/`unhoist` pair round-trips **518 of 518**.
 - **A non-identity `records_to_ast` is accepted, deliberately.** The rule is now

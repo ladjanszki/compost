@@ -3091,9 +3091,19 @@ A paragraph.                    ├─ Para "A paragraph."
 
 Three things this buys over the `Div` shape, all measured:
 
-- **It adds no nodes at all.** The `Div` shape costs +1,546 nodes on the corpus
-  — exactly one per heading, 19,524 → 21,070. Hoisted: **14,153 → 14,153, a
-  difference of zero.** The container was already there.
+- **It adds no nodes at all.** The `Div` shape costs **+1,576** nodes on the
+  corpus — exactly one per section, 19,538 → 21,114. Hoisted: **19,538 →
+  19,538, a difference of zero.** The container was already there.
+
+  *These figures were corrected on 2026-09-10, after the release.* The spec
+  first said 14,153 and +1,546, both taken with the wrong denominator twice
+  over: a `glob.glob("**/*.md")` that silently skips dot-directories and so
+  measured 518 of the 520 documents `run.sh` reports, and a hand-rolled block
+  count that never descended into list items. 1,546 is headings *at top level*;
+  1,576 is headings *anywhere*, and 30 of them sit inside block quotes and
+  lists. The **zero** was right in every framing, which is exactly why it
+  survived — a difference of nothing is the one number a bad denominator
+  cannot distort.
 - **The tree does not get deeper.** `Div` takes max depth 8 → 9 and median 1 →
   2. Hoisted keeps a heading where a heading already was.
 - **It dissolves the open workflow question.** `TODO-section-container.md`
@@ -3219,8 +3229,8 @@ table; `docs/record-format.md` on a `Header` with children; the man page.
 2. **The full round-trip is unchanged in form**, 526/526, against sectioned
    ASTs.
 3. **Sections add no nodes.** Node count is identical to the flat model,
-   measured 14,153 → 14,153. Sabotage: mint a `section` node and the count
-   moves by one per heading.
+   measured 19,538 → 19,538 over all 520 corpus documents. Sabotage: mint a
+   `section` node and the count moves by one per section (+1,576).
 4. **A `Header` contains its section**, and "what is under this heading" is
    `g.children(guid)` with no level comparison anywhere in `src/`.
 5. **Two identical headings over different content share a `record_hash` and

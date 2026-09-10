@@ -39,8 +39,8 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from src import markdown as MD     # noqa: E402
 from src import records as R      # noqa: E402
-from src import routes as RT      # noqa: E402
 from src import store as S        # noqa: E402
 from tools import graph_sql as GS  # noqa: E402
 
@@ -58,7 +58,7 @@ def _base(tmp: Path, name: str, extra: list | None = None) -> S.Store:
     st = S.Store.init(tmp / name)
     p = tmp / f"{name}.md"
     p.write_text("A paragraph.\n\nAnother one.\n\n```\na code block\n```\n")
-    recs, root = R.ast_to_records(RT._ast_of(p), source=p.name, route="notes")
+    recs, root = R.ast_to_records(MD.ast_of_file(p), source=p.name, route="notes")
     st.write("a.jsonl", recs)
     if extra:
         st.write("b.jsonl", extra)

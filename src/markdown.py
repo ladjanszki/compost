@@ -20,6 +20,7 @@ all (docs/roadmap.md, "the recursion made explicit").
 """
 import json
 import subprocess
+from pathlib import Path
 
 from . import records as R
 
@@ -33,21 +34,63 @@ from . import records as R
 # quietly drift onto different dialects.
 READER = "commonmark_x-smart-attributes-fancy_lists"
 
+# The sectioning filter, v0.2.16: `make_sections` wraps every heading in a
+# Div, and it does so through pandoc's own code rather than a rule compost
+# authors and defends (docs/roadmap.md, "TA: revisions, and structure that
+# means something"; `TODO-section-container.md`). Applied by both functions
+# below, so a markdown-reading path can never sectionless one document and
+# section another — see `ast_of_file`, the file-reading seam this release
+# adds so there is exactly one place to apply it to a path, matching
+# `_ast_of_text`'s one place for a fragment.
+_FILTER = str(Path(__file__).resolve().parent / "make_sections.lua")
+
+
+def _run(pandoc_args: list[str], input_text: str | None = None) -> dict:
+    """The one pandoc invocation: same reader, same filter, stdin or a path.
+
+    `ast_of_file` and `_ast_of_text` differ only in whether `pandoc_args`
+    names a file or leaves stdin to carry the text — the dialect and the
+    sectioning filter are identical either way, which is the whole of
+    guarantee 6.
+    """
+    r = subprocess.run(
+        ["pandoc", "-f", READER, "-t", "json", "--lua-filter", _FILTER,
+         *pandoc_args],
+        input=input_text, capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip())
+    return json.loads(r.stdout)
+
 
 def _ast_of_text(text: str) -> dict:
     """Markdown text, with no file of its own, through pandoc's reader.
 
     `text` goes to pandoc on stdin rather than by path, because there is no
-    file to name it with. Same reader, same three extensions disabled — the
-    dialect must not depend on how the bytes arrived, or a citation link in a
-    claude response would parse differently from the identical text in a
-    note.
+    file to name it with. Same reader, same three extensions disabled, same
+    sectioning filter — the dialect must not depend on how the bytes arrived,
+    or a citation link in a claude response would parse differently from the
+    identical text in a note.
     """
-    r = subprocess.run(["pandoc", "-f", READER, "-t", "json"],
-                       input=text, capture_output=True, text=True)
-    if r.returncode:
-        raise RuntimeError(r.stderr.strip())
-    return json.loads(r.stdout)
+    return _run([], input_text=text)
+
+
+def ast_of_file(path) -> dict:
+    """A file through pandoc's markdown reader, as a pandoc JSON document.
+
+    The single file-reading seam markdown text takes, v0.2.16: through
+    v0.2.15 this was `routes.py:_ast_of`, its own separate subprocess call
+    with the same `READER` but no way to guarantee it stayed in step with
+    `_ast_of_text` — two invocations meant the sectioning filter could be
+    added to one and not the other, `TODO-section-container.md`'s "worst
+    available outcome". `routes.py` now calls this instead of shelling out
+    itself.
+
+    The path is resolved before it is handed over, so it always begins with a
+    slash. A relative name starting with a dash is otherwise read by pandoc as
+    a flag — `-dash.md` becomes `-d ash.md`, i.e. `--defaults ash.md` — and the
+    failure arrives as a confusing pandoc error about a file nobody named.
+    """
+    return _run([str(Path(path).resolve())])
 
 
 def text_to_records(text: str, mint=None, route: str | None = None):

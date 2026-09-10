@@ -102,14 +102,15 @@ def main():
             case("--updates naming an immutable root is refused",
                  code != 0 and "immutable" in out.lower(), out.strip())
 
-            # `mutable` is refused too, until v0.2.16 builds `revision_of`.
-            # Routing it through the append path instead runs and passes
-            # `check`, which is why this is a test and not a comment: a
-            # `mutable` root put through delta ingest inherits the
-            # head-unchanged refusal, so the one contract that promised
-            # "anything here may change" would be the one told its start
-            # moved. Refusing is recoverable; shipping the wrong reading is
-            # not (src/store.py, and the report on v0.2.15).
+            # `mutable` was refused here through v0.2.15, until `revision_of`
+            # existed to give it a meaning: routing it through the append
+            # path instead runs and passes `check`, but a `mutable` root put
+            # through delta ingest would inherit the head-unchanged refusal
+            # below, so the one contract that promised "anything here may
+            # change" would be the one told its start moved. v0.2.16 builds
+            # the real machinery instead — `_digest_revision`, a whole new
+            # tree chained by one `revision_of` (docs/design-0.3.0.md §7, §9)
+            # — so this is now a positive case rather than a refusal.
             code, out = run("digest", "--as=notes", "--mutability=mutable",
                             str(NOTE))
             ta_root = None
@@ -122,9 +123,16 @@ def main():
                                == "mutable")
             code, out = run("digest", "--as=notes", f"--updates={ta_root}",
                             str(NOTE))
-            case("--updates naming a mutable root is refused until "
-                 "revision_of exists (v0.2.16), not silently appended to",
-                 code != 0 and "revision_of" in out, out.strip())
+            rev_edge = None
+            if code == 0:
+                recs, _ = S.Store.find(tmp).load()
+                rev_edge = next((r for r in recs if r["record"] == "edge"
+                                 and r["type"] == "revision_of"
+                                 and r["destination"] == ta_root), None)
+            case("--updates naming a mutable root mints a revision_of "
+                 "instead of appending (v0.2.16)",
+                 code == 0 and rev_edge is not None
+                 and rev_edge["source"] != ta_root, out.strip())
 
             recs, _ = S.Store.find(tmp).load()
             non_root = next(r["guid"] for r in recs

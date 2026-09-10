@@ -321,6 +321,177 @@ def _row(b: Builder, row) -> str:
     return guid
 
 
+# --------------------------------------------------------------------------
+# Sections: hoisting `make_sections`' Div into its own Header
+# --------------------------------------------------------------------------
+#
+# `make_sections` (applied in the reader, `src/markdown.py`) wraps every
+# heading in a `Div(attr, [Header, ...rest])`. v0.2.16 does not keep that
+# shape: the container is the `Header`, not the `Div` — decided by the human
+# against this module's first draft, and measured afterwards (docs/roadmap.md,
+# "TA"). `hoist` absorbs the Div into its own Header, which becomes the
+# parent of `rest`; `unhoist` is its exact inverse. Neither function is the
+# identity on its own input — a plain, unsectioned block list hoists to
+# itself, but a sectioned one does not equal its own hoisted form — the
+# guarantee is only that the PAIR composes to the identity, tested as a
+# property over every corpus fixture rather than trusted
+# (`tests/verify-0.2.16.sh`, guarantee 1).
+#
+# Both functions are pure and operate on raw pandoc block dicts (`{"t":...,
+# "c":...}`), never on records — `ast_to_records` hoists on the way in and
+# `records_to_ast` unhoists on the way out, so nothing else in the
+# translation ever learns what a section is.
+#
+# The two keys `hoist` adds — `section_attr`, `section_blocks` — are not part
+# of pandoc's grammar. They exist only on the boundary between these two
+# functions and are never written to a record directly: `section_attr`
+# becomes `params["section_attr"]` on the `Header` node (see `_block`,
+# below), and `section_blocks` becomes the Header's `contains` children.
+
+_SECTION_CLASS = "section"
+
+
+def _is_section_div(blk: dict) -> bool:
+    if blk.get("t") != "Div":
+        return False
+    attr, kids = blk["c"]
+    return (_SECTION_CLASS in attr[1] and bool(kids)
+            and kids[0].get("t") == "Header")
+
+
+def hoist(blocks: list) -> list:
+    """Fold every `make_sections` Div into its own Header. See module notes.
+
+    Recurses into every block-list position pandoc's grammar has —
+    `BlockQuote`, `Div`, `Figure`, list items, definitions, table cells and
+    captions — because a section can appear, and nest, inside any of them.
+    """
+    return [_hoist_block(blk) for blk in blocks]
+
+
+def _hoist_block(blk: dict) -> dict:
+    t = blk["t"]
+
+    if _is_section_div(blk):
+        attr, kids = blk["c"]
+        header, rest = kids[0], kids[1:]
+        level, hattr, inlines = header["c"]
+        return {"t": "Header", "c": [level, hattr, inlines],
+               "section_attr": attr, "section_blocks": hoist(rest)}
+
+    if t == "Div":
+        attr, kids = blk["c"]
+        return {"t": t, "c": [attr, hoist(kids)]}
+
+    if t == "BlockQuote":
+        return {"t": t, "c": hoist(blk["c"])}
+
+    if t == "Figure":
+        attr, (short, cap_blocks), kids = blk["c"]
+        return {"t": t, "c": [attr, [short, hoist(cap_blocks)], hoist(kids)]}
+
+    if t == "BulletList":
+        return {"t": t, "c": [hoist(item) for item in blk["c"]]}
+
+    if t == "OrderedList":
+        list_attrs, items = blk["c"]
+        return {"t": t, "c": [list_attrs, [hoist(item) for item in items]]}
+
+    if t == "DefinitionList":
+        return {"t": t, "c": [[term, [hoist(d) for d in defs]]
+                              for term, defs in blk["c"]]}
+
+    if t == "Table":
+        attr, (short, cap_blocks), colspecs, head, bodies, foot = blk["c"]
+        return {"t": t, "c": [attr, [short, hoist(cap_blocks)], colspecs,
+                              _hoist_row_group(head),
+                              [_hoist_body(body) for body in bodies],
+                              _hoist_row_group(foot)]}
+
+    return blk
+
+
+def _hoist_row_group(rg):
+    r_attr, rows = rg
+    return [r_attr, [_hoist_row(r) for r in rows]]
+
+
+def _hoist_row(row):
+    r_attr, cells = row
+    return [r_attr, [[c_attr, align, rowspan, colspan, hoist(cblocks)]
+                     for c_attr, align, rowspan, colspan, cblocks in cells]]
+
+
+def _hoist_body(body):
+    b_attr, rhc, inter, main = body
+    return [b_attr, rhc, [_hoist_row(r) for r in inter],
+            [_hoist_row(r) for r in main]]
+
+
+def unhoist(blocks: list) -> list:
+    """The inverse of `hoist`. See module notes above `hoist`."""
+    return [_unhoist_block(blk) for blk in blocks]
+
+
+def _unhoist_block(blk: dict) -> dict:
+    t = blk["t"]
+
+    if t == "Header" and "section_attr" in blk:
+        level, hattr, inlines = blk["c"]
+        header = {"t": "Header", "c": [level, hattr, inlines]}
+        rest = unhoist(blk.get("section_blocks") or [])
+        return {"t": "Div", "c": [blk["section_attr"], [header] + rest]}
+
+    if t == "Div":
+        attr, kids = blk["c"]
+        return {"t": t, "c": [attr, unhoist(kids)]}
+
+    if t == "BlockQuote":
+        return {"t": t, "c": unhoist(blk["c"])}
+
+    if t == "Figure":
+        attr, (short, cap_blocks), kids = blk["c"]
+        return {"t": t, "c": [attr, [short, unhoist(cap_blocks)],
+                              unhoist(kids)]}
+
+    if t == "BulletList":
+        return {"t": t, "c": [unhoist(item) for item in blk["c"]]}
+
+    if t == "OrderedList":
+        list_attrs, items = blk["c"]
+        return {"t": t, "c": [list_attrs, [unhoist(item) for item in items]]}
+
+    if t == "DefinitionList":
+        return {"t": t, "c": [[term, [unhoist(d) for d in defs]]
+                              for term, defs in blk["c"]]}
+
+    if t == "Table":
+        attr, (short, cap_blocks), colspecs, head, bodies, foot = blk["c"]
+        return {"t": t, "c": [attr, [short, unhoist(cap_blocks)], colspecs,
+                              _unhoist_row_group(head),
+                              [_unhoist_body(body) for body in bodies],
+                              _unhoist_row_group(foot)]}
+
+    return blk
+
+
+def _unhoist_row_group(rg):
+    r_attr, rows = rg
+    return [r_attr, [_unhoist_row(r) for r in rows]]
+
+
+def _unhoist_row(row):
+    r_attr, cells = row
+    return [r_attr, [[c_attr, align, rowspan, colspan, unhoist(cblocks)]
+                     for c_attr, align, rowspan, colspan, cblocks in cells]]
+
+
+def _unhoist_body(body):
+    b_attr, rhc, inter, main = body
+    return [b_attr, rhc, [_unhoist_row(r) for r in inter],
+            [_unhoist_row(r) for r in main]]
+
+
 def _block(b: Builder, blk: dict) -> str:
     t = blk["t"]
     c = _c(blk)
@@ -329,7 +500,22 @@ def _block(b: Builder, blk: dict) -> str:
         return b.node(t, None, c)
 
     if t == "Header":
-        return b.node(t, {"level": c[0], "attr": c[1]}, c[2])
+        # `section_attr`/`section_blocks` are `hoist`'s doing, present only
+        # when this Header absorbed a `make_sections` Div — never for a
+        # `pandoc-ast` route's own raw AST, which is never hoisted at all
+        # (nothing in it matches `_is_section_div`). `params["section_attr"]`
+        # keeps the div's own attr, which `make_sections` moved the
+        # identifier onto — losing it would make `unhoist` not an inverse
+        # (docs/roadmap.md, "two facts").
+        params = {"level": c[0], "attr": c[1]}
+        section_attr = blk.get("section_attr")
+        if section_attr is not None:
+            params["section_attr"] = section_attr
+        guid = b.node(t, params, c[2])
+        section_blocks = blk.get("section_blocks")
+        if section_blocks:
+            b.children(guid, [_block(b, x) for x in section_blocks])
+        return guid
 
     if t == "CodeBlock":
         return b.node(t, {"attr": c[0], "text": c[1]})
@@ -426,7 +612,12 @@ def ast_to_records(doc: dict, mint=None, source: str | None = None,
     if route:
         params["route"] = route
     root = b.node("document", params)
-    b.children(root, [_block(b, blk) for blk in doc["blocks"]])
+    # Hoisted before any block is walked, v0.2.16: `ast_to_records` never
+    # sees a `make_sections` Div at all, only the Header it becomes. A block
+    # list with no section shape hoists to itself, so this is a no-op for
+    # the `pandoc-ast` route's own raw AST and for any fixture read without
+    # the sectioning filter. See `hoist`'s module notes, above.
+    b.children(root, [_block(b, blk) for blk in hoist(doc["blocks"])])
     stamp_hashes(b.records)
     return b.records, root
 
@@ -540,7 +731,17 @@ def _to_block(g: Graph, guid: str) -> dict:
     if t in ("Plain", "Para", "LineBlock"):
         return {"t": t, "c": n["content"]}
     if t == "Header":
-        return {"t": t, "c": [_p(n, "level"), _p(n, "attr"), n["content"]]}
+        blk = {"t": t, "c": [_p(n, "level"), _p(n, "attr"), n["content"]]}
+        section_attr = _p(n, "section_attr")
+        if section_attr is not None:
+            # The inverse of `_block`'s Header case: this Header carries a
+            # section (it was hoisted on the way in), so its `contains`
+            # children are the div's own former content and need to travel
+            # back with it for `unhoist` — called once, over the whole tree,
+            # at the bottom of `records_to_ast`, never here per-node.
+            blk["section_attr"] = section_attr
+            blk["section_blocks"] = _blocks_of(g, guid)
+        return blk
     if t == "CodeBlock":
         return {"t": t, "c": [_p(n, "attr"), _p(n, "text")]}
     if t == "RawBlock":
@@ -595,7 +796,11 @@ def records_to_ast(records: list, root: str) -> dict:
     return {
         "pandoc-api-version": _p(n, "pandoc_api_version"),
         "meta": _p(n, "meta", {}),
-        "blocks": _blocks_of(g, root),
+        # `unhoist` once, over the whole reconstructed list, is the exact
+        # inverse of `ast_to_records`'s `hoist` — restoring the
+        # `make_sections` Div a hoisted Header stands in for. A no-op on a
+        # tree with no sections, same as `hoist` was on the way in.
+        "blocks": unhoist(_blocks_of(g, root)),
     }
 
 
@@ -874,6 +1079,62 @@ def check(records: list) -> list[str]:
                 f"{n['type']} {g_}: immutable root has {df_count[g_]} "
                 f"derived_from edges — its mutability contract permits "
                 f"exactly one ingest")
+
+    # Fourteenth assertion: `revision_of` is root-to-root, irreflexive,
+    # acyclic, and at most one revision per root (v0.2.16, "TA";
+    # docs/design-0.3.0.md §7, §9). A revision re-mints the whole tree and
+    # chains only the two roots — never a block — so the only shape this
+    # edge is ever allowed to have is document/session -> document/session,
+    # the same treatment `derived_from` got in v0.2.14 (twelfth assertion,
+    # above). "At most one revision per root" is checked the same way
+    # `launched` already is: a destination named by two different
+    # `revision_of` edges would mean two different trees both claim to
+    # supersede the same predecessor, forking a history the design
+    # (`design-0.3.0.md` §9) declares linear — one revision, one predecessor.
+    rev: dict[str, list[str]] = {}
+    rev_dest_count: dict[str, int] = {}
+    for e in edges:
+        if e["type"] != "revision_of":
+            continue
+        if e["source"] == e["destination"]:
+            problems.append(f"revision_of {e['guid']} is reflexive: "
+                            f"{e['source']} cannot be its own revision")
+        src_n, dst_n = nodes.get(e["source"]), nodes.get(e["destination"])
+        if src_n is None or src_n["type"] not in ROOT_TYPES:
+            problems.append(
+                f"revision_of {e['guid']}: source {e['source']} is not a "
+                f"document or session root — revision_of chains roots only")
+        if dst_n is None or dst_n["type"] not in ROOT_TYPES:
+            problems.append(
+                f"revision_of {e['guid']}: destination {e['destination']} "
+                f"is not a document or session root — revision_of chains "
+                f"roots only")
+        rev.setdefault(e["source"], []).append(e["destination"])
+        rev_dest_count[e["destination"]] = rev_dest_count.get(
+            e["destination"], 0) + 1
+
+    for dst, n_rev in rev_dest_count.items():
+        if n_rev > 1:
+            problems.append(
+                f"{dst} is superseded by {n_rev} different revision_of "
+                f"edges — at most one revision per root")
+
+    rev_colour: dict[str, int] = {}
+
+    def rev_visit(g_):
+        rev_colour[g_] = 1
+        for k in rev.get(g_, []):
+            if rev_colour.get(k) == 1:
+                return True
+            if not rev_colour.get(k) and rev_visit(k):
+                return True
+        rev_colour[g_] = 2
+        return False
+
+    for g_ in list(rev):
+        if not rev_colour.get(g_) and rev_visit(g_):
+            problems.append("cycle in the revision_of graph")
+            break
 
     return problems
 

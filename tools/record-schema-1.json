@@ -148,6 +148,7 @@
             "next",
             "replies_to",
             "responds_to",
+            "revision_of",
             "touches"
           ]
         },
@@ -286,7 +287,8 @@
           "type": "object",
           "properties": {
             "attr": {},
-            "level": {}
+            "level": {},
+            "section_attr": {}
           },
           "required": [
             "attr",
@@ -721,6 +723,13 @@
         "aligns_with": "prov:wasDerivedFrom (W3C PROV-O)",
         "enforced": "irreflexive (a node is never derived from itself); acyclic (records.check()'s twelfth assertion, v0.2.14)",
         "not_enforced": "the source pre-existing the target — created_at is audit metadata, not semantics, so there is no semantic clock to order derivation by (docs/design-0.3.0.md §7)"
+      },
+      {
+        "layer": "ingestion",
+        "type": "revision_of",
+        "aligns_with": "a TA revision, root to root (docs/design-0.3.0.md §7, §9)",
+        "enforced": "irreflexive; acyclic; root-to-root only (document/session, never a block); at most one revision per predecessor root (records.check()'s fourteenth assertion, v0.2.16)",
+        "not_enforced": "which of two roots is newer beyond the edge's own direction — no semantic clock, same as derived_from"
       },
       {
         "layer": "pandoc-ast",

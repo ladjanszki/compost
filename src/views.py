@@ -367,6 +367,19 @@ def _ast(records, root, wrap=None, mode="djot") -> dict:
         blocks = _session_children(g, root, mode)
     else:
         blocks = R._blocks_of(g, root)
+    # v0.2.16: `_blocks_of`/`_to_block` walk the HOISTED shape — a Header
+    # whose `contains` children are the section's own former content, never
+    # a `make_sections` Div at all — and every wrap (handle decoration,
+    # slash-tag rendering) is injected against that shape, same as always.
+    # `pandoc()` below shells out to real pandoc, which knows nothing of
+    # `section_attr`/`section_blocks` and would silently drop a hoisted
+    # Header's children if handed them directly. `unhoist`, once, over the
+    # whole assembled list, restores the genuine Div a section is — its own
+    # generic `Div` case reaches one nested arbitrarily deep inside a
+    # session's own turn/tool-call `Div` wrappers just as it does inside an
+    # ordinary document, since those wrappers are themselves plain pandoc
+    # `Div`s. A no-op wherever nothing was hoisted.
+    blocks = R.unhoist(blocks)
     return {"pandoc-api-version": R._p(n, "pandoc_api_version") or API_VERSION,
             "meta": R._p(n, "meta", {}),
             "blocks": blocks}

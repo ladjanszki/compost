@@ -79,15 +79,16 @@ other.
 **These are not invariants, and the distinction matters.**
 
 An **invariant** is a property of the graph that a program checks. `check()`
-makes **thirteen** assertions and refuses a view when any fails. You cannot
-violate an invariant and ship; you get an error. (Thirteen assertions,
-nineteen call sites — one rule can report several ways, the parent-count rule
-alone in three. Counting `problems.append` gives nineteen and is the wrong
-number; *The thirteen invariants*, below, is the enumeration this document
-keeps current. This paragraph said "ten assertions, twelve call sites" through
-v0.2.15, two releases after the count moved — the same drift the invariant
-list itself shipped at v0.2.14, and the reason a number here is now written
-next to the thing that produces it.)
+makes **fourteen** assertions and refuses a view when any fails. You cannot
+violate an invariant and ship; you get an error. (Fourteen assertions,
+twenty-four call sites — one rule can report several ways, the parent-count
+rule alone in three and the fourteenth (v0.2.16) in five. Counting
+`problems.append` gives twenty-four and is the wrong number; *The fourteen
+invariants*, below, is the enumeration this document keeps current. This
+paragraph said "ten assertions, twelve call sites" through v0.2.15, two
+releases after the count moved — the same drift the invariant list itself
+shipped at v0.2.14, and the reason a number here is now written next to the
+thing that produces it.)
 
 A **principle** is a rule about how the system is built, enforced by attention.
 You can violate one and everything still passes. Each of the fifteen below was
@@ -97,7 +98,7 @@ this is the same kind of thing. Calling them invariants would make them sound
 stronger than they are, and the whole reason to write them down is that nothing
 enforces them.
 
-**Fifteen principles. Thirteen invariants. They are different lists, they live
+**Fifteen principles. Fourteen invariants. They are different lists, they live
 in different documents, and only one of them is enforced by a program.**
 
 ### On what enters
@@ -436,7 +437,7 @@ Two more sets are closed in code rather than in prose. **`ROOT_TYPES`** —
 `file`, `alias`, `unresolved_citation`, `display_name` — nodes that are *pointed
 at* rather than contained. Everything else has exactly one `contains` parent.
 
-### The thirteen invariants
+### The fourteen invariants
 
 What `check()` asserts over a whole loaded graph. **A view of a graph failing any
 of them is refused, not rendered** (principle 11).
@@ -478,6 +479,15 @@ of them is refused, not rendered** (principle 11).
     second one on an `immutable` root is what such a violation leaves behind.
     A hand-authored `contains` edge spliced on with no second blob is **not**
     caught, and that gap is named here rather than left to be discovered.
+14. **`revision_of` is irreflexive, acyclic, root-to-root only, and at most
+    one revision per predecessor root.** v0.2.16, and the same treatment
+    `derived_from` got in 12: a TA revision re-mints the whole tree and
+    chains only the two roots (`docs/design-0.3.0.md` §7, §9), never a block,
+    so document/session on both ends is the only shape this edge may have.
+    "At most one revision per root" is checked the way 4 already is for
+    `launched` — a predecessor named by two different `revision_of` edges
+    would mean two trees both claim to supersede it, forking a history the
+    design declares linear.
 
 ### Where the per-type grammar lives, now in three layers
 
@@ -498,7 +508,7 @@ asked to answer all of them.**
 | `check()` | what must a *graph* be | `src/records.py`, unchanged |
 | prose | *why* | this document, and `docs/record-grammar.md` |
 
-A schema validates one document at a time and cannot express any of the ten
+A schema validates one document at a time and cannot express any of the fourteen
 invariants above — no cycle in `contains`, the `next` chain a total order,
 exactly one parent — so `check()` is not replaced and does not shrink.
 
@@ -715,7 +725,7 @@ render produces, and that running the build again changes nothing.
 | `DefinitionTerm` | — | — | yes |
 | `Div` | `attr` | — | — |
 | `Figure` | `attr` | — | — |
-| `Header` | `attr`, `level` | — | yes |
+| `Header` | `attr`, `level` | `section_attr` | yes |
 | `HorizontalRule` | — | — | — |
 | `LineBlock` | — | — | yes |
 | `ListItem` | — | `wrap` | — |
@@ -742,7 +752,7 @@ render produces, and that running the build again changes nothing.
 | `turn` | `author`, `log`, `timestamp`, `uuid` | — | — |
 | `unresolved_citation` | — | — | — |
 
-**14 `(layer, type)` edge pairs.**
+**15 `(layer, type)` edge pairs.**
 
 | layer | type | aligns with |
 |---|---|---|
@@ -754,6 +764,7 @@ render produces, and that running the build again changes nothing.
 | `conversation` | `responds_to` | — |
 | `display` | `names` | — |
 | `ingestion` | `derived_from` | prov:wasDerivedFrom (W3C PROV-O) — enforced: irreflexive (a node is never derived from itself); acyclic (records.check()'s twelfth assertion, v0.2.14); not enforced: the source pre-existing the target — created_at is audit metadata, not semantics, so there is no semantic clock to order derivation by (docs/design-0.3.0.md §7) |
+| `ingestion` | `revision_of` | a TA revision, root to root (docs/design-0.3.0.md §7, §9) — enforced: irreflexive; acyclic; root-to-root only (document/session, never a block); at most one revision per predecessor root (records.check()'s fourteenth assertion, v0.2.16); not enforced: which of two roots is newer beyond the edge's own direction — no semantic clock, same as derived_from |
 | `pandoc-ast` | `contains` | — |
 | `pandoc-ast` | `next` | — |
 | `session` | `contains` | — |
@@ -761,7 +772,7 @@ render produces, and that running the build again changes nothing.
 | `session` | `next` | — |
 | `session` | `touches` | — |
 
-**63 distinct params.** Which node types each appears on. The third column is a leftover: it was to be filled in by hand, one row at a time, deciding which params counted as content. `v0.2.13` removed that question rather than answering it — the mapping is the whitelist — so nothing reads this column. It is still rendered because the table is generated and an empty column is cheaper than a special case.
+**64 distinct params.** Which node types each appears on. The third column is a leftover: it was to be filled in by hand, one row at a time, deciding which params counted as content. `v0.2.13` removed that question rather than answering it — the mapping is the whitelist — so nothing reads this column. It is still rendered because the table is generated and an empty column is cheaper than a special case.
 
 | param | appears on | content? (unused) |
 |---|---|---|
@@ -806,6 +817,7 @@ render produces, and that running the build again changes nothing.
 | `row_head_columns` | `TableBody` |  |
 | `rowspan` | `Cell` |  |
 | `scheme` | `alias` |  |
+| `section_attr` | `Header` |  |
 | `selector_conforms_to` | `blob` |  |
 | `selector_value` | `blob` |  |
 | `session_id` | `document`, `session` |  |

@@ -24,7 +24,12 @@ import sys,glob,json,subprocess; sys.path.insert(0,"$ROOT")
 from src import records as R, markdown as MD
 assert hasattr(R,"hoist") and hasattr(R,"unhoist"), \
     "no records.hoist / records.unhoist"
-fs=sorted(glob.glob("$ROOT/tests/corpus/**/*.md",recursive=True)) or ["$ROOT/README.md"]
+# `find`, not glob.glob: recursive glob silently skips dot-directories, so it
+# misses tests/corpus/rust-book/.github/ and measures 518 of the 520 documents
+# run.sh reports. Found by the v0.2.16 agent, in this script.
+import subprocess as _sp
+fs=[x for x in _sp.run(["find","$ROOT/tests/corpus","-name","*.md","-print0"],
+    capture_output=True,text=True).stdout.split("\0") if x] or ["$ROOT/README.md"]
 bad=0
 for f in fs:
     a=MD.ast_of_file(f) if hasattr(MD,"ast_of_file") else json.loads(
@@ -56,7 +61,9 @@ PY
 run NEW "sections add no nodes — the count matches the flat model exactly" <<PY
 import sys,glob,json,subprocess; sys.path.insert(0,"$ROOT")
 from src import records as R, markdown as MD
-fs=sorted(glob.glob("$ROOT/tests/corpus/**/*.md",recursive=True))[:60] or ["$ROOT/README.md"]
+import subprocess as _sp
+fs=([x for x in _sp.run(["find","$ROOT/tests/corpus","-name","*.md","-print0"],
+    capture_output=True,text=True).stdout.split("\0") if x] or ["$ROOT/README.md"])[:60]
 flat=sec=0
 for f in fs:
     a=json.loads(subprocess.run(["pandoc","-f",MD.READER,"-t","json",f],
@@ -146,7 +153,9 @@ echo
 run GUARD "the AST round-trip holds" <<PY
 import sys,json,subprocess,glob; sys.path.insert(0,"$ROOT")
 from src import records as R, markdown as MD
-fs=sorted(glob.glob("$ROOT/tests/corpus/**/*.md",recursive=True))[:25] or ["$ROOT/README.md"]
+import subprocess as _sp
+fs=([x for x in _sp.run(["find","$ROOT/tests/corpus","-name","*.md","-print0"],
+    capture_output=True,text=True).stdout.split("\0") if x] or ["$ROOT/README.md"])[:25]
 for f in fs:
     a=json.loads(subprocess.run(["pandoc","-f",MD.READER,"-t","json",f],
         capture_output=True,text=True,check=True).stdout)

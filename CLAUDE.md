@@ -10,7 +10,7 @@ things are temporarily out of step. Read this before assuming either.
 conda env create -f environment.yml   # once; later, conda env update -f …
 conda activate compost                # pandoc 3.11 — base has 3.8 and won't say so
 pip install -e .                      # puts `compost` on PATH
-./tests/run.sh                        # twenty-three suites, all should pass
+./tests/run.sh                        # twenty-four suites, all should pass
 compost --help
 compost ls                            # what is in the base here, if there is one
 ```
@@ -122,7 +122,7 @@ merely old.
 |---|---|
 | `docs/compost.md` | **the whitepaper — start here.** Carries its version in the status line; the *path* never moves, because the build and two suites hardcode it. What compost is, the fifteen principles, the shape, the grammar's vocabularies, and the decisions with the measurement behind each. |
 | `docs/record-grammar.md`, `docs/record-format.md`, `docs/queries.md`, `docs/decisions.md` | **what is true now.** Rewritten as understanding improves. Prose and reasons — as of v0.2.12 `record-grammar.md` is **no longer the machine-read source**; that is the schema below. |
-| `tools/record-schema-1.json` | **the record grammar, machine-read.** What a record may be. `tests/test_grammar.py` holds it against a real digest in both directions and validates every record with it. Graph-level invariants are not here — they are `check()`'s thirteen. |
+| `tools/record-schema-1.json` | **the record grammar, machine-read.** What a record may be. `tests/test_grammar.py` holds it against a real digest in both directions and validates every record with it. Graph-level invariants are not here — they are `check()`'s fourteen. |
 | `docs/man-compost.md` | **what is true now**, and held against the program by `tests/test_manpage.py`. |
 | `docs/roadmap.md`, `docs/design-*.md` | **what is being decided now.** A design document that has served its purpose moves to the notes repository rather than being deleted — it is a revision of something, and once TA ships it becomes a document in the base like any other. |
 | `docs/migration.md` | the v0.1 corpus migration. **Part shipped, part never built** — the handle dictionary and `kg-8hex` exist; the routes are still a proposal. Describes files not on this disk. |

@@ -14,8 +14,8 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from src import markdown as MD     # noqa: E402
 from src import records as R      # noqa: E402
-from src import routes as RT      # noqa: E402
 from tests import tier as T  # noqa: E402
 from src import store as S        # noqa: E402
 
@@ -26,7 +26,7 @@ FIXTURES = T.markdown("edge-cases")[:8]
 def build(tmp: Path) -> S.Store:
     st = S.Store.init(tmp)
     for f in FIXTURES:
-        recs, _ = R.ast_to_records(RT._ast_of(f))
+        recs, _ = R.ast_to_records(MD.ast_of_file(f))
         st.keep_blob(f, f"{uuid.uuid4()}{f.suffix}")
         st.write(f"{f.stem}.jsonl", recs)
     return st

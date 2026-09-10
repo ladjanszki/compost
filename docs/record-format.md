@@ -210,7 +210,7 @@ corpus. Both are fetched — see `tests/corpus.txt`.
 | `Plain` | 453 | 42 | 777 | — | — |
 | `RawBlock` | 0 | 2 | 1132 | — | format, text |
 | `CodeBlock` | 19 | 7 | 956 | — | `Attr`, text |
-| `Header` | 121 | 6 | 543 | — | level, `Attr` |
+| `Header` | 121 | 6 | 543 | blocks (v0.2.16) | level, `Attr`, `section_attr` |
 | `BulletList` | 144 | 15 | 79 | `ListItem`* | — |
 | `BlockQuote` | 3 | 7 | 50 | blocks | — |
 | `OrderedList` | 8 | 4 | 12 | `ListItem`* | `ListAttributes` |
@@ -227,6 +227,86 @@ cases are all borrowed from the test corpus rather than felt. And the three
 constructors nothing exercises are the three worth implementing *last* and
 testing with hand-written fixtures, because no real document will catch a bug
 in them.
+
+## Sections: the `Header` contains what follows it (v0.2.16)
+
+Through v0.2.15 a `Header` had no children — pandoc's block list is flat, so
+`Para`, `Header`, `Para` under a heading were three unrelated siblings, and
+"what is under this heading" was a forward scan comparing levels rather than
+a subtree walk. Two identical headings (two `# Braindump` weekly notes, say)
+were therefore the *same node* by every measure the graph had: a `Header`'s
+`record_subtree_hash` was its own `record_hash`, so "the same heading text"
+and "the same section" were the same statement.
+
+**The reader now sections the document before `ast_to_records` ever sees
+it.** `src/markdown.py` runs `pandoc.utils.make_sections` as a Lua filter
+(`src/make_sections.lua`), which wraps each heading in a `Div` classed
+`section`: `Div(attr, [Header, ...rest])`, nested for a lower-level heading,
+sibling for one at the same or higher level. This is *pandoc's* sectioning
+rule, adopted rather than authored, so setext headings, a level-3 following a
+level-1, and a heading inside a block quote are all pandoc's problem to have
+already solved.
+
+**The `Div` is then hoisted into its own `Header`**, which becomes the parent
+of `rest` — the human's call against this document's own first draft, and
+measured afterwards: hoisting costs zero nodes on the corpus (14,153 →
+14,153) where keeping the `Div` costs one node per heading (19,524 →
+21,070). `src/records.py:hoist`/`unhoist` are the pair that does this, pure
+functions over raw pandoc block lists, called once each at the top of
+`ast_to_records` and the bottom of `records_to_ast`. Neither is the identity
+on a sectioned tree — the guarantee is that the *pair* composes to it,
+`unhoist(hoist(ast)) == ast`, tested as a property over every fixture rather
+than trusted (`docs/roadmap.md`, "TA").
+
+**`make_sections` moves the heading's own identifier onto the `Div`**, so
+both attrs have to survive the hoist or `unhoist` stops being an inverse:
+
+```
+Header's own attr:   ["", [], [["number","1"]]]      -- id emptied
+Div's attr, hoisted
+onto params.section_attr:
+                      ["chapter", ["section"], [["number","1"]]]
+```
+
+A `Header` node therefore carries **two** attrs: `params.attr` (its own,
+almost always id-less after sectioning) and `params.section_attr` (the
+section's, present only when this heading was actually sectioned — never on
+a `pandoc-ast` route's own raw AST, which is never hoisted at all).
+
+**What this buys, precisely**: `record_hash` is unchanged in what it means —
+`f(type, params, content)` — so two identical headings still hash the same;
+they are the same heading. `record_subtree_hash` now folds the heading's own
+children too, so two documents that are each one `# Braindump` heading over a
+different list separate cleanly at the fold, which is the reason this
+shipped (`TODO-section-container.md`). "What is under this heading" is
+`g.children(guid)`, with no level comparison anywhere in `src/`.
+
+## `revision_of`: a TA revision, root to root (v0.2.16)
+
+A `mutable` root re-ingested with `--updates=GUID` (`src/store.py:
+_digest_revision`) mints a **whole new tree** — every block gets a fresh
+guid, changed or not — and chains it to the previous root with exactly one
+`revision_of` edge, new root as `source`, old root as `destination`. The old
+tree is not rewritten; it is left exactly as it was, in its own file,
+fully reachable. This is Option A of `docs/design-0.3.0.md` §9, chosen
+because it is the unsophisticated choice: sharing unchanged blocks across
+revisions would give a block two `contains` parents, which breaks the
+invariant that makes `render` a tree walk instead of a graph walk.
+
+**Only the two roots are ever connected** (§7, "Which records carry
+`revision_of` — roots only"). Correspondence between a revision and its
+predecessor — which block in the new tree is which block in the old one — is
+`records.align()`'s positional walk to compute on demand, not a fact stored
+once per block at write time; a per-block edge would be a second graph the
+size of the first.
+
+`records.check()`'s fourteenth assertion holds `revision_of` to the same
+shape `derived_from` (twelfth) already gets: irreflexive, acyclic. Two more
+are specific to a chain of whole trees: **root-to-root only** (`document` or
+`session` on both ends, never a block — a revision is never partial), and
+**at most one revision per predecessor root** (a root named by two different
+`revision_of` edges would mean two trees both claim to supersede it, forking
+a history the design declares linear).
 
 ## The document node and `meta`
 

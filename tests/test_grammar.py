@@ -109,6 +109,28 @@ def build() -> list:
                 if S._digest(st, route, args, "compost"):
                     raise RuntimeError(f"digest failed for {route}")
 
+        # A `mutable` root, revised once — v0.2.16, "TA". Without this the
+        # schema could name `(ingestion, revision_of)` while nothing in the
+        # base ever mints one, which is exactly the drift "every (layer,
+        # type) the schema names is exercised" exists to catch. Same
+        # reasoning as wiring the citation layer in here rather than leaving
+        # it merely documented.
+        mutable_note = Path(d) / "mutable.md"
+        mutable_note.write_text("A mutable paragraph.\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            if S._digest(st, "notes", [str(mutable_note)], "compost",
+                        mutability="mutable"):
+                raise RuntimeError("digest failed for mutable.md")
+        recs_mut, _ = st.load()
+        mutable_root = next(
+            r["guid"] for r in recs_mut if r["record"] == "node"
+            and r["type"] == "document"
+            and (r.get("params") or {}).get("mutability") == "mutable")
+        with contextlib.redirect_stdout(io.StringIO()):
+            if S._digest(st, "notes", [str(mutable_note)], "compost",
+                        updates=mutable_root):
+                raise RuntimeError("revision failed for mutable.md")
+
         recs, _ = st.load()
         target = next(r for r in recs
                       if r["record"] == "node" and r["type"] == "Para")

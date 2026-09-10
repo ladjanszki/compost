@@ -26,43 +26,26 @@ is what lets `digest` validate a whole batch before writing any of it.
 """
 import json
 import re
-import subprocess
 from pathlib import Path
 
 from . import records as R
 from . import session as SESS
 from . import markdown as MD
 
-# The markdown dialect lives in `markdown.py` now, as `MD.READER` — not
-# reassigned to a module-level name here, on purpose: `tests/verify-0.2.14.sh`
-# holds "READER is defined exactly once in src/" by grepping for the literal
-# assignment, and a second `READER = ...` line here would trip it even though
-# it only ever aliases the one true definition. `_ast_of`, below, reads
-# `MD.READER` directly. See `markdown.py` for the three extensions and why
-# each is load-bearing.
-
-
-def _ast_of(path: Path) -> dict:
-    """A file through pandoc's markdown reader, as a pandoc JSON document.
-
-    The path is resolved before it is handed over, so it always begins with a
-    slash. A relative name starting with a dash is otherwise read by pandoc as
-    a flag — `-dash.md` becomes `-d ash.md`, i.e. `--defaults ash.md` — and the
-    failure arrives as a confusing pandoc error about a file nobody named.
-    """
-    r = subprocess.run(
-        ["pandoc", "-f", MD.READER, "-t", "json", str(Path(path).resolve())],
-        capture_output=True, text=True)
-    if r.returncode:
-        raise RuntimeError(r.stderr.strip())
-    return json.loads(r.stdout)
+# The markdown dialect and the sectioning filter both live in `markdown.py`
+# now, as `MD.READER` and `MD.ast_of_file` — v0.2.16 collapsed what used to be
+# a second pandoc invocation here (`_ast_of`, reading a file on this module's
+# own subprocess call) into that one seam, so a file-based read and a
+# text-based read can never quietly drift onto different dialects or apply
+# `make_sections` to one and not the other (`TODO-section-container.md`'s
+# "worst available outcome"; docs/roadmap.md, "TA", guarantee 6).
 
 
 # -- the routes -------------------------------------------------------------
 
 def _notes(path: Path, mint, route: str):
     """Prose, read as the one fixed markdown dialect above."""
-    return R.ast_to_records(_ast_of(path), mint=mint,
+    return R.ast_to_records(MD.ast_of_file(path), mint=mint,
                             source=path.name, route=route)
 
 

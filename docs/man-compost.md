@@ -122,30 +122,39 @@ do not contain is never guessed. It is set once and never changes; giving it
 together with `--updates` is refused, because `--updates` names a root whose
 mutability was already decided the day it was minted.
 
-**`--updates=GUID` re-ingests a longer version of a file already in the
-base**, naming the root explicitly — "which of fifty `README.md` files" has no
-safe automatic answer, so the tool never guesses it. `GUID` must already be a
-`document` or `session` root; naming anything else, a root declared
-`immutable`, or a root declared `mutable`, is refused. **`mutable` is refused
-because the machinery behind that reading does not exist yet**: revising a TA
-mints a new tree and chains root to root with one `revision_of` edge, which is
-v0.2.16. Routing it through the append path instead would run, and would be
-silently wrong — an appended `mutable` root inherits the head-unchanged
-refusal below, so the one contract that promised "anything here may change"
-would be the one told its start no longer matches. The *flag's* meaning is
-settled now (one flag, read by the target's mutability) so that v0.2.16 does
-not re-litigate it; only the `mutable` behaviour waits.
+**`--updates=GUID` re-ingests a longer or changed version of a file already in
+the base**, naming the root explicitly — "which of fifty `README.md` files"
+has no safe automatic answer, so the tool never guesses it. `GUID` must
+already be a `document` or `session` root; naming anything else, or a root
+declared `immutable`, is refused. What happens next depends on the target's
+own declared mutability, decided the day it was minted and never
+re-litigated by this flag:
 
-Against an `append-only` root this mints nodes for
-only the **tail** — the file's own unchanged prefix is not re-minted — adds
-`contains`/`next` edges onto the *existing* root, and rewrites that root's
-`record_subtree_hash` in place (a whole-file rewrite of `graph/*.jsonl`, the
-only honest form of change to an otherwise-immutable record; the root's own
-`record_hash`, what it *claims*, never moves). The file's whole new bytes are
-stored again as a second blob — storage does not deduplicate across a
-re-ingest yet (`TODO-storage-revamp.md`) — so a root can carry more than one
-`derived_from` edge; `records.blob_of()` still returns one blob, the current
-one, and `records.blobs_of()` returns all of them, oldest first.
+- **`append-only`** mints nodes for only the **tail** — the file's own
+  unchanged prefix is not re-minted — adds `contains`/`next` edges onto the
+  *existing* root, and rewrites that root's `record_subtree_hash` in place (a
+  whole-file rewrite of `graph/*.jsonl`, the only honest form of change to an
+  otherwise-immutable record; the root's own `record_hash`, what it
+  *claims*, never moves). Refused if the file's start no longer matches the
+  root's recorded head — see below.
+- **`mutable`** mints a **whole new tree**, chained to the old one by exactly
+  one `revision_of` edge, root to root (`docs/design-0.3.0.md` §7, §9,
+  v0.2.16). Nothing is shared with the previous tree — every block, changed
+  or not, gets a fresh guid — and the old tree is not rewritten at all; it
+  stays in its own file, exactly as it was, fully reachable. This is
+  deliberately the unsophisticated choice: sharing unchanged blocks across
+  revisions would give a block two `contains` parents, which breaks the
+  invariant that makes `render` a tree walk rather than a graph walk.
+  Routing `mutable` through the `append-only` path instead would run and be
+  silently wrong — an appended `mutable` root would inherit the
+  head-unchanged refusal above, so the one contract that promised "anything
+  here may change" would be the one told its start no longer matches.
+
+The file's whole new bytes are stored again as a second blob either way —
+storage does not deduplicate across a re-ingest yet (`TODO-storage-revamp.md`)
+— so an `append-only` root can carry more than one `derived_from` edge;
+`records.blob_of()` still returns one blob, the current one, and
+`records.blobs_of()` returns all of them, oldest first.
 
 Both order blobs by `imported_at`, then by guid. **The guid is there for
 determinism, not meaning.** `imported_at` records whole seconds, so two
@@ -172,7 +181,12 @@ change this paragraph just said does not happen.
 `check` verifies the contract `--mutability` declares: an `append-only` root
 whose recorded head no longer folds the way it used to is a reported problem,
 and so is an `immutable` root carrying more than one `derived_from` edge. A
-`mutable` root asserts nothing yet — full-tree revisions are `v0.2.16`.
+`mutable` root's own contract is checked on `revision_of` instead
+(v0.2.16): the edge must be irreflexive, acyclic, root-to-root only, and at
+most one revision per predecessor root — never per-block, since a revision
+re-mints the whole tree and correspondence between the two is computed by
+`records.align()` on demand, not stored as a second graph the size of the
+first.
 
 `pandoc-ast` is the narrowest route, not the broadest — there is no reading
 step in it to be wrong, because `ast_to_records` takes exactly that shape.
@@ -316,6 +330,10 @@ What it enforces:
   (`created_at` is audit metadata, never semantics); a hand-authored edge
   spliced onto such a root with no second blob to go with it is a real gap
   this does not catch
+- `revision_of` is irreflexive, acyclic, root-to-root only (never a block),
+  and at most one revision per predecessor root — the same treatment
+  `derived_from` gets above, for a TA revision's whole-new-tree chain
+  (v0.2.16)
 
 ### layer NAME [--by SCHEME]
 

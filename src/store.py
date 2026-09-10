@@ -365,6 +365,18 @@ def _digest(s: Store, route: str, args: list[str], prog: str,
     has been read.
     """
     if updates is not None:
+        # `mutable` and `append-only` roots take different shapes of update
+        # (docs/design-0.3.0.md §7, §9; docs/roadmap.md, "TA"): an
+        # `append-only` root gets `_digest_update`'s delta, sharing every
+        # unchanged block; a `mutable` root gets `_digest_revision`'s whole
+        # new tree, chained by one `revision_of` edge. `main()` has already
+        # refused `immutable` and undeclared-mutability targets before this
+        # is ever reached, so what is left here is only these two.
+        base_recs, _ = s.load()
+        target = next((r for r in base_recs if r.get("guid") == updates), None)
+        mut = (target.get("params") or {}).get("mutability") if target else None
+        if mut == "mutable":
+            return _digest_revision(s, route, args, updates)
         return _digest_update(s, route, args, updates)
 
     plans, seen = [], {}
@@ -720,6 +732,92 @@ def _digest_update(s: Store, route: str, args: list[str], updates: str) -> int:
     return 0
 
 
+def _digest_revision(s: Store, route: str, args: list[str], updates: str) -> int:
+    """
+    Mint a whole new tree for `updates`'s `mutable` root, and chain it to the
+    old one with one `revision_of` edge — Option A, `docs/design-0.3.0.md`
+    §9: the unsophisticated choice, deliberately. Every block gets a fresh
+    guid, changed or not; nothing is shared with the previous tree.
+
+    Unlike `_digest_update`'s AoTA delta, this shares no records with the
+    file that already holds `updates` — the old tree is not rewritten at
+    all, which is the honest form of "records are immutable" when nothing
+    about the old file needs to change. The new tree, its blob, and the one
+    `revision_of` edge all land together in a fresh graph file instead.
+
+    Only the roots are ever connected (`docs/design-0.3.0.md` §7,
+    "Which records carry `revision_of` — roots only"): correspondence
+    between the two trees is `records.align()`'s to compute, on demand, not
+    this function's to store as a second graph the size of the first.
+    """
+    if len(args) != 1:
+        print("  --updates revises exactly one file at a time")
+        print("  nothing was written")
+        return 1
+    src = Path(args[0])
+    if not src.is_file():
+        print(f"  {src}: no such file")
+        return 1
+
+    base_recs, _ = s.load()
+    old_root_rec = next((r for r in base_recs if r.get("guid") == updates),
+                        None)
+    if old_root_rec is None:
+        print(f"  --updates={updates}: not found in this base")
+        return 1
+
+    try:
+        new_recs, new_root = RT.read(route, src)
+    except Exception as e:
+        print(f"  {src.name}: cannot read as {route}: {e}")
+        print("  nothing was written")
+        return 1
+
+    # `mutability` travels from the old root to the new one, the same way
+    # `_digest_update` copies it onto an AoTA append's fresh read — the route
+    # itself never sets it, and a revision's whole point is that the
+    # contract does not change underneath it.
+    mut = (old_root_rec.get("params") or {}).get("mutability")
+    new_root_rec = next(r for r in new_recs if r.get("guid") == new_root)
+    new_root_rec.setdefault("params", {})["mutability"] = mut
+    R.stamp_hashes(new_recs)
+
+    data = src.read_bytes()
+    sha = hashlib.sha256(data).hexdigest()
+    guid = str(uuid.uuid4())
+    stored = guid + src.suffix
+    b = R.Builder()
+    b.node("blob", {
+        "original_name": src.name,
+        "stored_as": stored,
+        "bytes_sha256": sha,
+        "imported_at": R._now(),
+        "route": route,
+    }, guid=guid)
+    b.edge("derived_from", new_root, guid, INGEST_LAYER)
+    # The one edge this whole function exists to mint: new root supersedes
+    # old root. `check()`'s fourteenth assertion holds this to root-to-root,
+    # irreflexive, acyclic, and at most one revision per predecessor.
+    b.edge("revision_of", new_root, updates, INGEST_LAYER)
+    R.stamp_hashes(b.records)
+
+    merged_new = new_recs + b.records
+    problems = R.check(base_recs + merged_new)
+    if problems:
+        print(f"  {src.name}: revising would leave the base with "
+              f"{len(problems)} problem(s), e.g. {problems[0]}")
+        print("  nothing was written")
+        return 1
+
+    s.keep_blob(src, stored)
+    dest = s.write(f"{uuid.uuid4()}.jsonl", merged_new)
+    n = sum(1 for r in merged_new if r["record"] == "node")
+    print(f"  {src.name} -> {dest.relative_to(s.root)}  "
+          f"(revision of {updates}: {n} nodes in the new tree, "
+          f"root {new_root}, blob {guid})")
+    return 0
+
+
 def main(argv):
     # `compost` when the CLI dispatched us, `store.py` when this module was run
     # directly. Taken from argv rather than hard-coded, so the usage a reader
@@ -816,30 +914,14 @@ def main(argv):
                       f"mutability, so its contract is unknown — refusing "
                       f"rather than guessing")
                 return 1
-            # `mutable` is refused until v0.2.16 builds `revision_of`.
-            #
-            # The flag's *contract* is settled here (docs/roadmap.md, "AoTA":
-            # one flag, meaning decided by the target's mutability) so that
-            # v0.2.16 does not re-litigate it. What does not exist yet is the
-            # machinery behind the `mutable` reading — a revision mints a
-            # whole new tree and chains root to root with one `revision_of`
-            # edge (docs/design-0.3.0.md §7), and none of that is built.
-            #
-            # The alternative was to route `mutable` through the same delta
-            # append as `append-only`, which runs and passes `check`. It is
-            # refused because it would be silently *wrong*: append semantics
-            # on a `mutable` root inherit the head-unchanged refusal below,
-            # so a root that declared "anything here may change" would be
-            # told its start no longer matches — the exact opposite of the
-            # contract it declared. A missing behaviour can be added; a
-            # wrong one that shipped has to be taken away from whoever
-            # started relying on it.
-            if tmut == "mutable":
-                print(f"  --updates={updates}: that root is mutable, and "
-                      f"revising one needs `revision_of`, which is v0.2.16 "
-                      f"— refusing rather than appending to it, which is a "
-                      f"different contract than the one it declared")
-                return 1
+            # `append-only` and `mutable` both reach `_digest`, which reads
+            # the target's own declared mutability again there and picks the
+            # matching machinery: `_digest_update`'s delta append for
+            # `append-only`, `_digest_revision`'s whole-new-tree-plus-
+            # `revision_of` for `mutable` (docs/design-0.3.0.md §7, §9;
+            # docs/roadmap.md, "TA"). Through v0.2.15 `mutable` was refused
+            # here outright, because the revision machinery did not exist
+            # yet — this is the release that lifts that refusal.
         return _digest(s, route, files, prog, follow,
                        mutability=mutability, updates=updates)
 

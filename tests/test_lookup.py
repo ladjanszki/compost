@@ -27,8 +27,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src import cli             # noqa: E402
 from src import layers as L     # noqa: E402
+from src import markdown as MD  # noqa: E402
 from src import records as R    # noqa: E402
-from src import routes as RT    # noqa: E402
 from src import store as S      # noqa: E402
 
 TARGET = "A target paragraph worth citing.\n\nAnother block entirely.\n"
@@ -38,7 +38,7 @@ def _write(st, tmp, name, text):
     """Write `text` to `tmp/name`, read it and commit its records to `st`."""
     p = tmp / name
     p.write_text(text)
-    recs, root = R.ast_to_records(RT._ast_of(p), source=name)
+    recs, root = R.ast_to_records(MD.ast_of_file(p), source=name)
     st.write(f"{name}.jsonl", recs)
     return recs, root
 
@@ -61,7 +61,7 @@ def _write_with_guid(st, tmp, name, text, want_guid):
 
     p = tmp / name
     p.write_text(text)
-    recs, root = R.ast_to_records(RT._ast_of(p), mint=mint, source=name)
+    recs, root = R.ast_to_records(MD.ast_of_file(p), mint=mint, source=name)
     st.write(f"{name}.jsonl", recs)
     return recs, root
 
