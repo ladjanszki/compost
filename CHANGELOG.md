@@ -3,6 +3,121 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.16-rc — TA: revisions, and structure that means something
+
+Two things shipped together because they are one question. A TA revision
+compares whole trees by fold, and the unit worth comparing is a **section** —
+"has this document changed" is almost always yes and tells you nothing.
+
+### A heading contains its section
+
+`make_sections` runs in the **reader**, through a Lua filter, so the sectioning
+rule is *pandoc's* — setext headings, a level-3 following a level-1, headings
+inside block quotes. We adopt a definition rather than authoring one and then
+defending it. Then the `Div` it produces is **hoisted**: absorbed into its own
+`Header`, which becomes the parent of everything under it.
+
+```
+# Chapter                    document
+                             └─ Header(level=1) "Chapter"
+A paragraph.                    ├─ Para
+                                └─ Header(level=2) "Subsection"
+## Subsection                      └─ BulletList
+```
+
+**This was the human's shape, chosen against the first proposal in the spec,
+and measurement backed them.** Over all 520 corpus documents, through the real
+pipeline: sectioning adds **zero nodes — 19,538 → 19,538**, where the rejected
+`Div` shape would have cost **+1,576**, one per section. It does not deepen the
+tree. And it makes the heading and the section **one handle**, which dissolves
+the open workflow question `TODO-section-container.md` had carried since it was
+written — whether a section wants a handle of its own.
+
+**What it fixes.** Two weekly braindumps, each one `# Braindump` over a nested
+list. A `Header` used to have no children, so its `record_subtree_hash` *was*
+its `record_hash` and the two braindumps could not be told apart by any hash.
+Now `record_hash` still matches — correctly, they *are* the same heading — and
+the folds differ. "What is under this heading" is `g.children(guid)`, with no
+level comparison anywhere in `src/`.
+
+### The round-trip is a safety property, not the goal
+
+The frame that decided every judgement call in this release, from the human:
+
+> We are building a **knowledge graph**, not a representation as close to
+> pandoc as possible. `contains` edges carry semantics — a heading is
+> structural information. Several source types are unified under one node
+> grammar, so the knowledge in each is exposed the same way.
+
+So `records_to_ast` is **no longer the identity**, deliberately. The property
+tested is that `hoist` and `unhoist` **compose** to it — weaker, and therefore
+tested over every fixture rather than trusted: **520 of 520**, with the full
+`records_to_ast(ast_to_records(ast)) == ast` holding on **520 of 520** against
+sectioned ASTs.
+
+*Rejected: sections in a separate layer.* It reintroduces the staleness hazard
+the roadmap already declines to detect.
+
+### Revisions
+
+`--updates` against a `mutable` root — refused in v0.2.15 because the machinery
+did not exist — now mints one `revision_of`, root to root, and re-mints the
+whole tree (`docs/design-0.3.0.md` §9, Option A). Blocks get no revision edges:
+correspondence is what `records.align()` already computes positionally, and one
+edge per block per revision would be a second graph the size of the first.
+
+`check` gains a **fourteenth** assertion: `revision_of` is irreflexive, acyclic,
+root-to-root only, and at most one revision per predecessor root.
+
+### One markdown seam, not two
+
+`markdown.ast_of_file` is now the only place a markdown *file* is read, and
+`routes.py` no longer shells out on its own. Both it and `_ast_of_text` share
+one helper that applies the filter. That matters because applying sectioning to
+one path and not the other would put **two document shapes in one base** —
+what `TODO-section-container.md` calls the worst available outcome. It is now
+structurally impossible rather than a convention someone has to remember.
+
+### The bug the spec did not anticipate
+
+`views.py` fed the hoisted shape straight to pandoc, and **pandoc silently
+ignores unknown keys** — so every section's nested content vanished from the
+djot and HTML views, over 100 citable blocks losing their handles. The records
+were correct throughout; only the views were wrong, which is the failure mode
+hardest to notice.
+
+It was caught because `test_views` regressed 24/24 → 21/24 the moment
+sectioning went live. Fixed with one `unhoist()` call. The fix was then
+verified by reintroducing the bug by hand: the board goes 24/24 → 21/24 again,
+so the test genuinely covers it rather than merely having been present.
+
+### What verification found that the report did not
+
+The implementation report was accurate and honest. Two things came out of
+checking it anyway, which is why that step exists.
+
+**A pinned corpus does not drift.** The report explained a count mismatch as
+*"the corpus pin has moved"*. It has not. **1,546** is headings at *top level*;
+**1,576** is headings *anywhere*, and the 30 in between sit inside block quotes
+and lists. Both numbers are right; they count different things. The earlier
+spec figures — 14,153 nodes, +1,546 — were mine and were wrong twice over: a
+`glob.glob("**/*.md")` that silently skips dot-directories and so measured 518
+of 520 documents, and a hand-rolled walker that never descended into list
+items. The **zero** was right in every framing, which is exactly why it
+survived — a difference of nothing is the one number a bad denominator cannot
+distort.
+
+**And the agent found a real bug in the harness checking it**: that same
+`glob.glob` was in `verify-0.2.16.sh` itself. Fixed there.
+
+The one guarantee the report did not measure directly was re-measured by hand:
+the AoTA prefix holds at **2,379 of 2,379** and **473 of 473**, identical to
+the pre-sectioning figures — correctly, because a pre-order walk of a hoisted
+tree emits the same nodes in the same order. Sectioning does reach the
+delegated path: **72 of 72** headings in `session-04` carry `section_attr`.
+
+**24 suites green, corpus present at 520 documents.**
+
 ## v0.2.15 — 2026-09-09 — AoTA: an artifact that grows
 
 An append-only artifact keeps **one root, forever**. A later ingest of a longer
