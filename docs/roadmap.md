@@ -3175,12 +3175,24 @@ what a document *is* and deserves its own conversation.
 
 ### What has to be built
 
-**1. `src/markdown.py` — the Lua filter, shipped with the package.**
-`make_sections` applied inside `MD.READER`'s invocation, so every markdown path
-gets it. There is exactly one such path since v0.2.14, and `test_extras` already
-asserts `READER` is defined once — the single most dangerous version of this
-change, two markdown shapes in one base, is structurally prevented rather than
-promised.
+**1. `src/markdown.py` — the Lua filter, and one seam that applies it.**
+The filter ships with the package. `READER` is already defined exactly once
+here, and a suite asserts it — but the *invocation* is not: `markdown.py`
+reads text on stdin, and `routes.py:_ast_of_file` shells out separately for a
+file. Two invocations means the filter can be added to one and not the other,
+which is the failure mode `TODO-section-container.md` calls "the worst
+available outcome": two document shapes in one base.
+
+**So this release collapses that too.** `markdown.ast_of_file(path) -> dict`
+becomes the single file-reading seam, `routes.py` calls it instead of shelling
+out, and both it and `_ast_of_text` apply the filter. After this, `pandoc -f
+READER` appears once per input kind in exactly one module, and guarantee 6 has
+something to be true *of* rather than a convention to uphold.
+
+*The name `ast_of_file` is this document's, chosen so the verify script has
+something concrete to call. If the implementer finds a better seam — one
+function taking text-or-path, or the filter applied inside `READER` itself —
+that is a better answer and should be reported rather than worked around.*
 
 **2. `src/records.py` — `hoist` and `unhoist`, a tested inverse pair.**
 `ast_to_records` hoists on the way in; `records_to_ast` unhoists on the way out.
