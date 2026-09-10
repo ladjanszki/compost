@@ -109,8 +109,17 @@ command -v compost >/dev/null; check $? "compost on PATH"
 # The gate is worthless if it tested the operator's checkout instead of the
 # clone, and `pip install -e .` is silently a no-op-shaped success either
 # way. Assert the interpreter resolves `src` from $ROOT.
-SRC="$(python -c 'import src,os;print(os.path.dirname(os.path.dirname(src.__file__)))' 2>/dev/null)"
-case "$SRC" in "$ROOT"/*) true ;; *) false ;; esac
+#
+# Both sides are resolved to their physical paths before comparing. On macOS
+# `mktemp -d` hands back /var/folders/... while /var is a symlink to
+# /private/var, and Python reports the resolved form — so a plain prefix test
+# on $ROOT fails while `src` is in fact inside the clone. The first version of
+# this check did exactly that and reported FAIL on a perfectly good run:
+# a check describing something other than what it names, added in the commit
+# that fixed another instance of the same thing.
+ROOT_REAL="$(cd "$ROOT" && pwd -P)"
+SRC="$(python -c 'import src,os;print(os.path.realpath(os.path.dirname(os.path.dirname(src.__file__))))' 2>/dev/null)"
+case "$SRC" in "$ROOT_REAL"/*|"$ROOT_REAL") true ;; *) false ;; esac
 check $? "src resolves inside the clone, not the operator's checkout"
 
 step "suites on a bare clone"
