@@ -3031,7 +3031,228 @@ read `run.sh`'s last line before believing a green board.
 
 ---
 
-## v0.2.16 — TA (was v0.2.17), and where the ledger went
+## v0.2.16 — TA: revisions, and structure that means something
+
+**Two things ship together because they are one question.** A TA revision
+compares whole trees by fold, and the unit it compares *should be a section* —
+"has this document changed" is almost always yes and tells you nothing. So
+sections have to exist before anything folds documents in anger, which is what
+`TODO-section-container.md` said when it asked to be decided by this release.
+
+**And the ledger is not here.** It left the line on 2026-09-09 for
+`TODO-the-clock.md`; retraction had no measured customer and replay needs a
+decision this project has deferred three times. The section above records that.
+
+### Why sections at all, and it is not about pandoc
+
+Stated by the human on 2026-09-10, and it is the frame the rest of this section
+is written under:
+
+> We are building a knowledge graph. The internal nodes should show the
+> structure, because `contains` edges *are* semantic information — a heading
+> and the other structural parts carry meaning. Our aim is **not** a
+> representation as close to pandoc as possible. It is a graph where several
+> source types are unified under one node grammar — today a pandoc AST and a
+> Claude Code transcript — so that the knowledge in each is exposed the same
+> way.
+
+That reframes the round-trip. `records_to_ast(ast_to_records(ast)) == ast` is a
+**safety property** — proof that nothing was silently dropped — and not a
+statement that the graph should be shaped like pandoc's output. Where the two
+pull apart, the graph shape wins and the round-trip proves the conversion is
+still lossless.
+
+**The concrete problem it fixes**, from `TODO-section-container.md`: two weekly
+braindumps, each one `# Braindump` heading over a nested list. Under the flat
+model their headings are one node — a `Header` has no children, so its
+`record_subtree_hash` *is* its `record_hash`, and "the same heading text" and
+"the same section" are the same statement. The structure a person sees is not
+in the graph, and "what is under this heading" is a forward scan with a level
+comparison rather than a subtree walk.
+
+### The shape: the heading is the container
+
+**Decided by the human, against this document's first proposal, and measured
+afterwards.** `make_sections` wraps each section in a `Div` and makes the
+heading the Div's first child. The first sketch here kept that shape. The
+chosen shape **hoists**: the `Div` is absorbed into its own `Header`, which
+becomes the parent of everything under it.
+
+```
+# Chapter                    document
+                             └─ Header(level=1) "Chapter"        <- the container
+A paragraph.                    ├─ Para "A paragraph."
+                                └─ Header(level=2) "Subsection"
+## Subsection                      └─ BulletList
+                                      ├─ ListItem
+- first                               └─ ListItem
+- second
+```
+
+Three things this buys over the `Div` shape, all measured:
+
+- **It adds no nodes at all.** The `Div` shape costs +1,546 nodes on the corpus
+  — exactly one per heading, 19,524 → 21,070. Hoisted: **14,153 → 14,153, a
+  difference of zero.** The container was already there.
+- **The tree does not get deeper.** `Div` takes max depth 8 → 9 and median 1 →
+  2. Hoisted keeps a heading where a heading already was.
+- **It dissolves the open workflow question.** `TODO-section-container.md`
+  asked whether the human wants a *section* handle or whether clicking the
+  heading is enough. Under `Div` those are two nodes and two handles. Hoisted
+  they are one: you click the heading, and its fold covers the section.
+
+**`record_hash` and `record_subtree_hash` now answer different questions for a
+`Header`, and that is the point.** `record_hash` stays `f(type, params,
+content)` — two `# Braindump` headings still hash identically, correctly,
+because they *are* the same heading. `record_subtree_hash` folds what is under
+it, so the two braindumps separate. This was confirmed with the human as the
+expected behaviour rather than assumed.
+
+### `make_sections` stays in the reader
+
+The sectioning rule is **pandoc's**, applied by pandoc's own code through a Lua
+filter, and only then hoisted. This is not stylistic: it means the rule for
+setext headings, a level-3 following a level-1, and headings inside block
+quotes is *adopted rather than authored*. Measured — `# One`, `### three`,
+`## two` gives:
+
+```
+Div id='one'  →  Header(1)
+  Header(1)          ├─ Header(3)      <- level 3 nests under level 1
+  Div id='three'     └─ Header(2)      <- level 2 is its SIBLING
+  Div id='two'
+```
+
+Defensible alternatives exist, and none of them is ours to defend.
+
+**Two facts an implementer will otherwise discover the hard way.**
+`make_sections` **moves the identifier off the `Header` onto the `Div`** — the
+header's own attr becomes `['', [], [['number','1']]]` while the div carries
+`['chapter', ['section'], [['number','1']]]`. Both must be kept or the hoist is
+not reversible. And it **absorbs author-written `::: section` divs**: a
+hand-written one containing a heading comes back with a generated id and a
+number, identical in shape to any other section. There is therefore no
+ambiguity to disambiguate — the filter normalises first, and the hoist operates
+on one shape.
+
+**`--section-divs` does not do this.** It is an HTML writer option and does not
+reach the JSON writer; `pandoc -t json --section-divs` returns a flat list.
+
+### The round-trip becomes a transform pair, deliberately
+
+`records_to_ast` stops being the identity and becomes the inverse of the hoist.
+The human accepted this explicitly. The guarantee weakens from *the translation
+is identity* to *these two transforms compose to the identity* — which is
+weaker, must hold across future pandoc versions and any new block type, and is
+therefore **tested as a property over every fixture rather than trusted**.
+
+Measured before speccing: `unhoist(hoist(ast)) == ast` holds on **518 of 518**
+corpus documents, and the full `records_to_ast(ast_to_records(ast)) == ast`
+holds on **518 of 518** against a sectioned AST.
+
+*Rejected: keeping the sections in a separate layer.* It re-introduces the
+staleness hazard the roadmap already declines to detect — a layer that must be
+rebuilt whenever the document changes, with nothing to say it is out of date.
+
+### TA revisions
+
+**Option A, from `docs/design-0.3.0.md` §9: a revision re-mints the whole
+tree**, and the roots chain with one `revision_of` edge. Unchanged blocks get
+new guids. Only roots carry revision edges — never individual blocks, because
+correspondence is computed by the positional walk `records.align()` already
+performs, and one edge per block per revision would be a second graph the size
+of the first.
+
+This is the waste v0.2.15 refused for AoTA, and it is acceptable here for the
+reason §9 gives: a transcript re-ingested daily grew ~700 nodes while re-minting
+5,496; a README saved twice has neither that shape nor that frequency.
+
+**Sharing unchanged blocks across revisions is booked, not chosen.** It gives a
+block two `contains` parents and breaks `check`'s third invariant, which is what
+makes `render` a tree walk rather than a graph walk. Splitting structure from
+content — git's tree/blob model — is probably where this ends up, but it changes
+what a document *is* and deserves its own conversation.
+
+### What has to be built
+
+**1. `src/markdown.py` — the Lua filter, shipped with the package.**
+`make_sections` applied inside `MD.READER`'s invocation, so every markdown path
+gets it. There is exactly one such path since v0.2.14, and `test_extras` already
+asserts `READER` is defined once — the single most dangerous version of this
+change, two markdown shapes in one base, is structurally prevented rather than
+promised.
+
+**2. `src/records.py` — `hoist` and `unhoist`, a tested inverse pair.**
+`ast_to_records` hoists on the way in; `records_to_ast` unhoists on the way out.
+A `Header` gains `params["section_attr"]` (the div's) beside its existing
+`attr`. Nothing else in the translation learns what a section is.
+
+**3. `src/store.py` — `--updates` against a `mutable` root mints
+`revision_of`.** The refusal added in v0.2.15 is lifted here; the flag's
+contract was settled there so that this release does not re-litigate it.
+
+**4. `src/records.py` — `check` on `revision_of`.** Root to root only,
+irreflexive, acyclic, and at most one revision per root. Same treatment
+`derived_from` got in v0.2.14, including a declaration of what the borrowed
+name honours.
+
+**5. Schema and docs.** `section_attr` on `Header`; `revision_of` in the edge
+table; `docs/record-format.md` on a `Header` with children; the man page.
+
+### Guarantees
+
+1. **`hoist` and `unhoist` compose to the identity** on every corpus fixture.
+   Sabotage: drop the header's own attr and the pair stops being an inverse —
+   `make_sections` moved the id, so the empty attr is not redundant.
+2. **The full round-trip is unchanged in form**, 526/526, against sectioned
+   ASTs.
+3. **Sections add no nodes.** Node count is identical to the flat model,
+   measured 14,153 → 14,153. Sabotage: mint a `section` node and the count
+   moves by one per heading.
+4. **A `Header` contains its section**, and "what is under this heading" is
+   `g.children(guid)` with no level comparison anywhere in `src/`.
+5. **Two identical headings over different content share a `record_hash` and
+   differ in `record_subtree_hash`.** This is the braindump case and the reason
+   the file exists.
+6. **Every markdown path is sectioned identically.** Sabotage: section
+   `routes.py` but not the delegated prose path, and assert a single base never
+   holds both shapes.
+7. **A `mutable` root re-ingested with `--updates` mints one `revision_of`**,
+   root to root, and the old tree stays whole and reachable.
+8. **`check` rejects a `revision_of` that is reflexive, cyclic, block-to-block,
+   or a second revision of one root.**
+9. **The AoTA prefix property survives sectioning.** Measured already: 97.23%
+   flat, 97.26% sectioned, the same documents diverging in both, and 22 of 24
+   divergences are a truncation artifact rather than a property failure.
+10. **`records_to_session` is untouched**, and the transcript round-trip still
+    holds exactly.
+11. **Every record validates against the schema**, and `check` reports 0
+    problems on a base built from every fixture.
+
+### Re-measure before building
+
+- **The fold's cost on document trees**, which the skeleton demands. Taken:
+  **0.64 ms/doc flat, 0.67 ms/doc sectioned** across 518 documents — 4% on a
+  path that already shells out to pandoc. Not a constraint.
+- **How many documents sections actually help.** The corpus says 25.1% have
+  more than one heading — but the corpus is **92% rust-book**, one section per
+  file, and is the wrong denominator. The human's own 29 documents:
+  **75.9% have more than one heading and 65.5% genuinely nest**, 456 headings
+  in all, one document with 67. Take this number again on whatever base exists
+  when the work starts.
+
+### What this release does not do
+
+**No block sharing across revisions**, per §9 — booked with its measurements.
+**No section-level `revision_of`.** Roots only; the section fold is what makes
+per-section change *visible*, and an edge per section would be storing what the
+walk already computes. **No re-digest tooling for pre-v0.2.16 bases** — every
+record's shape changes, and the human's base was replaced on 2026-09-08 and is
+empty, which is why this lands now rather than later.
+
+---
+
+## Where the ledger went, and why TA was renumbered
 
 **The ledger is no longer a release.** What was v0.2.16 — retraction,
 provenance, replay — moved to **`TODO-the-clock.md`** on 2026-09-09, whole and

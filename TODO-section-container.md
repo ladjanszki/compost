@@ -1,13 +1,41 @@
 # TODO — a section container of our own
 
-**Not scheduled. Decide before v0.2.16** — the TA release, renumbered from
-v0.2.17 on 2026-09-09 when the ledger left the line. The TA release revises whole trees and
-compares them by fold; if sections are going to exist, they should exist before
-anything starts folding documents in anger. Nothing before v0.2.16 is blocked by
-this.
+**DECIDED 2026-09-10 and specced.** It ships in **v0.2.16** — `docs/roadmap.md`,
+*"v0.2.16 — TA: revisions, and structure that means something"*. This file is
+kept until that release lands, because the argument below is the reasoning the
+spec compresses, and two of its conclusions were **overturned by measurement**.
 
-**The human wants one.** This file exists so that the argument against can be
-made properly, and it will need to be a good one.
+**What changed against what this file proposed.**
+
+- **The container is the `Header`, not a `Div`.** This file's *"Two
+  implementations, and only one of them is safe"* said to keep pandoc's `Div`
+  and never transform in `records_to_ast`. The human proposed hoisting the
+  `Div` into its own `Header` instead, and measurement backed them: hoisting
+  adds **zero nodes** (14,153 → 14,153) where the `Div` shape costs **+1,546**,
+  one per heading; it does not deepen the tree; and it makes the heading and
+  the section one handle, which dissolves this file's own open workflow
+  question. The `hoist`/`unhoist` pair round-trips **518 of 518**.
+- **A non-identity `records_to_ast` is accepted, deliberately.** The rule is now
+  that the two transforms *compose* to the identity, tested as a property over
+  every fixture. The framing that settles it: **this is a knowledge graph, not a
+  pandoc mirror.** `contains` edges carry semantics, and where graph shape and
+  pandoc shape pull apart the graph wins — with the round-trip demoted to what
+  it always really was, a proof that nothing was silently dropped.
+- **This file's own deciding measurement pointed the wrong way.** It asked to
+  *"count how many `.md` sources in the corpus contain more than one heading."*
+  That is **25.1%** — and the corpus is **92% rust-book**, one section per file,
+  which is nobody's writing. Against the human's own 29 documents it is
+  **75.9%**, with **65.5% genuinely nesting**. The question was right; the
+  denominator was not.
+
+**What survived unchanged:** `make_sections` in the reader so the sectioning
+rule is pandoc's rather than ours, and the warning that every markdown path must
+be sectioned identically — which v0.2.14 made structurally safe by leaving
+exactly one such path.
+
+**Measured and no longer feared:** the round-trip holds 518/518 on sectioned
+ASTs, the AoTA prefix property does not degrade (97.23% flat, 97.26%
+sectioned), and the fold costs 0.64 → 0.67 ms/doc.
 
 ---
 
