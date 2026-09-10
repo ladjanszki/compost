@@ -109,8 +109,10 @@ The catalogue is not wrong; it measured the corpus, and the corpus is a sample o
 *documents*, not a sample of a working life. A command vocabulary is small and
 fixed, so repetition grows with how much history a base holds and barely appears
 in seven transcripts. **Every merge rate in the catalogue is a lower bound taken
-on the wrong denominator**, which is the same failure `HANDOFF.md` records about
-the 88.7% re-ingest number. A layer must be judged on a base that has been lived
+on the wrong denominator**, which is the same failure recorded about the 88.7%
+re-ingest number in `handoff-v0.2.15-2026-09-10.md`, retired to the notes
+repository on 2026-09-10 (the number is also in `docs/design-0.3.0.md` §6, and
+the corrected framing — 99.98% of the *older* tree — in §6b). A layer must be judged on a base that has been lived
 in.
 
 ### 4.2 What each candidate layer actually merges
