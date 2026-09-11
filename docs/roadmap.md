@@ -3562,6 +3562,102 @@ compare models on a task nobody has measured — the working hypothesis, stated
 by them, is that semantic categorisation will not need the most expensive
 models.
 
+### What it costs, measured — and batching is not an optimisation
+
+Taken 2026-09-11, before any API call existed, so the numbers cost nothing to
+get. **Classifiable blocks** are `Para`, `Plain`, `ListItem`, `Header`,
+`CodeBlock` and `BlockQuote` with non-empty text; **context** is the ancestor
+path, which v0.2.16 and v0.2.17 made a single walk.
+
+| | files | classifiable blocks | block text | ancestor context | total |
+|---|---|---|---|---|---|
+| test corpus | 520 | 12,296 | ~514k tokens | ~178k | **~692k** |
+| the human's notes | 50 | 4,845 | ~108k | ~75k | **~183k** |
+
+At a cheap model's prices that is **cents**, and the worry that started this —
+that re-running on a large corpus gets expensive — does not survive contact with
+the material. *But only if the calls are batched*, and that is the finding:
+
+A real concept map — `topic-list-raw.md`, 353 headings — is **~2,809 tokens**,
+and **it is re-sent with every call**. Classifying the human's 4,845 blocks:
+
+| | calls | input tokens | the map's share | at $0.10/M |
+|---|---|---|---|---|
+| one block per call | 4,845 | **13,792,737** | **98.7%** | $1.38 |
+| 20 blocks per call | 243 | 865,719 | 78.8% | $0.09 |
+| 100 blocks per call | 49 | **320,773** | 42.9% | **$0.03** |
+
+**Forty-six times cheaper, and the content is identical.** One block per call
+spends 98.7% of the budget re-sending the same map. This is the same shape as
+v0.2.15's delta ingest: *not an optimisation but a requirement*, because the
+naive form is dominated by re-transmitting what has not changed.
+
+So **the batch size is a first-class parameter**, not a tuning detail, and
+`--cost-calculation` must report it — a number that changes by 46× with one flag
+is the number the operator most needs to see before committing.
+
+### What has to be built
+
+**1. `src/llm.py` — the one seam, stdlib only.** `urllib.request` and `json`
+are enough for OpenRouter's OpenAI-compatible endpoint; **no new dependency**,
+which keeps `pyproject.toml`'s `dependencies = []` true. The model id and the
+endpoint are each defined exactly once, and a test greps for them the way
+`test_extras` already greps for `READER`. The call is an **injectable
+parameter** so the suites never touch the network — `tools/loop.py`'s `ask=`
+is the shape that already works here.
+
+**2. `src/layers.py` — a `concept-map` builder**, registered in `BUILDERS`
+beside `_citation` and `_kg8hex`. One run classifies against **one** map,
+mints one `prov:Activity` node, and writes one graph file.
+
+**3. `--cost-calculation`, and it does not import `llm.py`'s caller.** Local
+counting only, no network, no key. Report `x of y` blocks, the batch size, the
+input tokens, and — with `--model` — the fetched price and the product.
+
+**Tokenisation is an estimate and must say so.** No tokenizer ships with this
+project and none is installed; an exact count needs a per-model tokenizer,
+which is a dependency per model family. The honest form is a character-based
+estimate with the ratio stated, since the decision it informs — *is this cents
+or dollars* — survives a 20% error. What must be exact is the **character
+count and the call count**, which are computable and testable.
+
+**4. The concept map's own ingest.** None. It is `--as=notes
+--mutability=mutable` like any document; v0.2.16 made its headings containers
+and v0.2.17 did the same for its bullets. **Nothing in this release parses a
+concept map specially**, which is the point of having spent two releases on
+tree shape.
+
+**5. Schema and docs.** `talks_about` and the abstention node in the edge and
+node tables, with what each borrowed name honours and does not; the man page's
+`layer` section; `docs/record-format.md`.
+
+### Guarantees
+
+1. **`--cost-calculation` makes no network call**, with or without `--model`.
+   Sabotage: point the endpoint at a closed port and confirm the flag still
+   returns 0.
+2. **The suites never make a network call.** Sabotage: replace the injected
+   caller with one that raises on use, and the whole board stays green.
+3. **The reported block count matches the graph.** `x of y` against a real
+   digest, not a snapshot.
+4. **Batch size changes the reported cost and not the block count.** The 46×
+   is the headline; assert the direction and that coverage is unchanged.
+5. **One run is one `prov:Activity`, and deleting it removes everything it
+   minted** — edges, the abstention node, the activity itself, and nothing
+   else. Sabotage: delete the run and assert `check` is clean and no other
+   run's edges moved.
+6. **A block may carry several `talks_about` edges but exactly one primary.**
+   Sabotage: mint two primaries and `check` reports it.
+7. **Abstention is a node, one per map**, and a block classified nowhere points
+   at it rather than at nothing — so *"considered and declined"* is
+   distinguishable from *"not yet seen"*.
+8. **An edge minted against an earlier revision of a map keeps pointing at the
+   heading node it named.** That stays true and must not be rewritten.
+9. **`check` reports 0 problems** on a base carrying a classified map, and
+   every record validates against the schema.
+10. **Nothing in `src/` calls a model except through `llm.py`.** A grep test,
+    the same shape as `READER`'s.
+
 ### What is still open — do not hand this over yet
 
 1. **The unit.** Measured: depth does **not** predict meaning. Over 1,951
@@ -3573,11 +3669,22 @@ models.
    ancestor path as context**, which v0.2.16 and v0.2.17 make a single walk.
    Still to decide: whether a section carries its own topic distinct from its
    children's.
-2. **Which model, and the prompt.** Unmeasured. Needs
-   `--cost-calculation` first, then a comparison on real material.
-3. **Accumulation policy.** Re-running mints a complete second set of edges.
-   One graph file per run, deletable whole, is the proposal; it needs
-   confirming as the intended workflow rather than discovered as a surprise.
+2. **Which model, and the prompt.** Still unmeasured, and still needs
+   `--cost-calculation` built before it can be answered — but the cost
+   measurement above removes the *constraint*: at 100 blocks per call the
+   human's whole notes repository is **$0.03** at a cheap model's prices, so
+   model choice is a quality question rather than a budget one. Their
+   hypothesis — that this will not need the most expensive models — is now
+   cheap to test on real material.
+3. **Accumulation policy — proposed and needing a yes.** Re-running mints a
+   complete second set of edges. One graph file per run, attributed to one
+   `prov:Activity`, deletable whole. Build step 2 and guarantee 5 assume this;
+   it is the layer's only inverse and it should be confirmed as the intended
+   workflow rather than discovered as a surprise.
+
+   **The batch size is now a fourth thing to decide**, and it is not a tuning
+   detail: 46× separates one block per call from a hundred. A default has to be
+   chosen, and whether it is a flag.
 4. **Re-measure everything on a lived-in base.** `TODO-v0.3.0-readiness.md` has
    the standing warning: the human's base was replaced on 2026-09-08 and is
    effectively empty, and the archive pre-dates delegation, mutability and
