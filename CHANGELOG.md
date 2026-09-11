@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## v0.2.17-rc — the list item is a container too
+## v0.2.17 — 2026-09-11 — the list item is a container too
 
 **The same shape v0.2.16 fixed for headings, one level down.** A bullet with a
 nested list now carries its own text, exactly as a bullet without one already
@@ -82,7 +82,22 @@ Nothing enforces it — it feeds only the whitepaper's generated table — but i
 was already untrue for the collapsed case and this release gives more items
 content. The appendix is regenerated.
 
-**25 suites green, corpus present at 520 documents.**
+### And one the gate caught that nothing else could
+
+`test_store`'s conflict check picked its probe with `type == "Para"`. On the
+smoke set that base is built from one fixture, `nested-lists.md`, whose last
+`Para` this release absorbs into the `ListItem` that owns it — correctly. The
+probe found nothing and the suite went 11/12 **on a bare clone only**; with 520
+corpus documents there is always a `Para`, so the full tier stayed green.
+
+The guarantee is about *a guid carrying two different contents*; which node
+type holds them is incidental. It now takes any node with content. This is the
+same species v0.2.14 shipped in `test_mapping_totality` — a probe selected by
+something other than what the check needs — and the bare-clone tier is exactly
+what `clean-room.sh` exists to test.
+
+**25 suites green, corpus present at 520 documents**, and exit 0 on a
+corpus-free clone.
 
 ## v0.2.16 — 2026-09-10 — TA: revisions, and structure that means something
 
