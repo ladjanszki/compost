@@ -3,7 +3,7 @@
 *A local-first knowledge base where a conversation and a document are the same
 kind of thing, and every paragraph has a name.*
 
-**Version 0.2.16.** Every earlier version of this document is kept, unedited, in
+**Version 0.2.17.** Every earlier version of this document is kept, unedited, in
 the notes repository — because the paper explaining this project is going to be
 digested *by* it: one revision chain over its own history, once v0.2.16 lands
 `revision_of`. They are not in `docs/`, and there is no procedure for putting
@@ -353,6 +353,35 @@ Individual blocks get no revision edges: which block in v2 corresponds to which
 in v1 is a positional walk over content hashes that `align()` already performs,
 and storing that answer would be one edge per block per revision — a second
 graph the size of the first, for a fact recomputable in one pass.
+
+### …and the same is true of a bullet — v0.2.17
+
+A `ListItem` holding text and a nested list stored them side by side, so
+"everything under this bullet" was not a subtree walk — the same complaint that
+produced sections, one level down. **The target shape already existed**:
+`_list_item` had always collapsed a *single* `Plain`/`Para` into the `ListItem`
+itself, carrying the text as content and the block type as `wrap`. One document
+therefore held two shapes for the same idea. This release makes them one.
+
+**It is the first tree change that makes the graph smaller.** Sections were
+node-neutral, because the `Div` and the `Header` merged into a `Header` that
+already existed. Here the separate text block is absorbed into a `ListItem`
+that already existed, so the corpus falls **19,538 → 19,400** — one node fewer
+for each of its 138 hoistable items. Structure and size are not opposed; this
+one bought both.
+
+**The rule is conservative and the reason generalises.** Hoist only when the
+leading text is followed by nothing but lists. Two paragraphs in one bullet
+stay siblings, because neither contains the other — the same judgement that
+leaves a `Figure`'s caption alone. **A caption describes; it does not contain**,
+and asserting otherwise would put a relationship in the graph that the source
+never had. That line — between structure the source *has* and structure we
+would like it to have — is the one this pair of releases is really about.
+
+**And the survey is complete.** Every branch of `records._block` was read to
+answer *where else is a logical parent stored as a sibling*. `ListItem` was the
+last instance; `DefinitionList` already had it right. There is no known place
+left where the graph flattens a containment the source expresses.
 
 ### Ingestion is two-phase, and that is what makes it safe to re-run
 

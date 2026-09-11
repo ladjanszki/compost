@@ -22,7 +22,7 @@ compost version
 
 ## STATUS
 
-Version 0.2.16. The ten subcommands below are the whole program.
+Version 0.2.17. The ten subcommands below are the whole program.
 
 `compost` is on PATH inside the `compost` conda env, which `DEVELOPMENT.md`
 describes; from a checkout `python3 -m src.cli` is equivalent.

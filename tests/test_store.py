@@ -86,8 +86,16 @@ def main():
 
         def conflict_detected():
             recs, _ = st.load()
+            # Any node that carries content, not a `Para` specifically. On
+            # the smoke set this base is built from one fixture,
+            # `nested-lists.md`, and v0.2.17 absorbed its last `Para` into the
+            # `ListItem` that owns it — correctly — which left this probe with
+            # nothing to find and failed the whole suite on a bare clone while
+            # passing with the corpus. The guarantee is about *a guid with two
+            # contents*; which node type carries them is incidental, and
+            # pinning it to one made this test depend on a fixture's shape.
             node = next(r for r in recs if r["record"] == "node"
-                        and r["type"] == "Para")
+                        and r.get("content"))
             twisted = dict(node, content=[{"t": "Str", "c": "different"}])
             st.write("conflict.jsonl", [twisted])
             problems = st.check()
