@@ -1,9 +1,34 @@
 # Naming — Skolem terms, and what a layer mints
 
-**Status: being decided.** Written 2026-09-06, out of a conversation about how
-to describe a JSON transformation in a way no single tool owns. If it survives
-review it becomes the spec for the first semantic layer and this file is
-deleted; anything in it worth keeping reaches `docs/compost.md` first.
+**Status: UNSCHEDULED, and re-scoped on 2026-09-11. This is not the first
+semantic layer.** It designs an **equivalence** layer — *is this the same thing
+I mean* — and it took that slot because `docs/design-0.3.0.md` names "the first
+semantic layer" twice without ever defining it. The intended occupant was the
+**talks-about layer**: a concept map the human writes, blocks linked to the
+concepts they are about. That is `docs/roadmap.md`, "v0.3.0 — the talks-about
+layer", and it follows `semantic-connections.md` in the notes repository.
+
+Checked when the substitution was found: this document contains **zero**
+occurrences of "topic", "classify", "categor" or "talks_about", and so does
+`TODO-equality-layers.md`.
+
+**The two are not the same mechanism with different parameters.** A Skolem term
+is a deterministic function of content, which is exactly what lets §5.4's check
+recompute it. A topic assignment is a judgement and cannot be recomputed from
+the bytes. And a classifier must be allowed to **abstain** — false negatives are
+preferred to false positives — where a Skolem function is total by construction
+and never declines to name anything. The storage shape here (a class alias plus
+`names` edges) may well be reused; the design should not be inherited.
+
+**Nothing here is withdrawn.** The measurements stand, §5.2's decision — store
+the question and the answer, never the term — is good, and the work is real. It
+answers a question this project does not currently need answered, and it waits.
+Its urgency also fell when v0.2.15 made a transcript's append point positional:
+§3.2's `toolcall` case, the catalogue's headline at 85.3%, existed to tell you
+that you had seen a command before, and position now answers that.
+
+*Original status line, 2026-09-06: "being decided… if it survives review it
+becomes the spec for the first semantic layer."*
 
 It answers four of the seven questions left open in `TODO-equality-layers.md`,
 retires one of its six catalogued cases, and replaces it with a cheaper one

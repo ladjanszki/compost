@@ -1,10 +1,24 @@
 # TODO — how ready v0.3.0 actually is
 
-**Assessed 2026-09-10, while v0.2.16 was in flight.** The question was whether
-v0.3.0 — *the first semantic layer* — can be specced and handed to an
-implementer. Short answer: **the design is ready and the measurements are
-not**, and the gap is not where it looks.
+**SUPERSEDED IN ITS CONCLUSION, 2026-09-11. Read this warning before the rest.**
 
+This file assessed `docs/design-naming.md`'s readiness and concluded *"design:
+ready"*. **It assessed the wrong design.** I checked whether the ledger was a
+prerequisite and whether the measurements held — and never asked whether the
+layer being specced was the one the human wanted. It was not. `design-naming.md`
+is an *equivalence* layer; the first semantic layer was always meant to be the
+**talks-about layer**, and is now drafted in `docs/roadmap.md`, "v0.3.0 — the
+talks-about layer".
+
+**Checking an answer's readiness without checking the question is the error
+here**, and it is worth leaving written down: every individual finding below is
+still correct, and the conclusion they add up to was still wrong.
+
+**What survives and is still worth reading:** the measurement warning in "The
+real gap" — the human's base was replaced on 2026-09-08, the archive pre-dates
+delegation, mutability and sections, and every merge rate in `design-naming.md`
+§4.2 was taken on a shape that no longer exists. That applies to the
+talks-about layer too, and is carried into its draft as open question 4.
 ---
 
 ## The design is in unusually good shape

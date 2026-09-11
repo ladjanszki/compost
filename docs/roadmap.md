@@ -3274,6 +3274,290 @@ empty, which is why this lands now rather than later.
 
 ---
 
+## v0.2.17 — the list item is a container too
+
+**The same shape v0.2.16 fixed for headings, one level down.** A `ListItem`
+holding text and a nested list puts them side by side: the text and the
+sub-list are *siblings*, so "everything under this bullet" is not a subtree
+walk — exactly the complaint that produced sections.
+
+```
+- another thought              ListItem
+    - something extra            ├─ Plain  "another thought"     <- logical parent
+    - more on the extra          └─ BulletList                    <- its children, as a sibling
+```
+
+**Hoist it the same way**: the `ListItem`'s own text becomes the parent of what
+follows it, `hoist`/`unhoist` gain one case each, and `records_to_ast` stays
+the inverse it already is.
+
+### Why now, before v0.3.0 and not after
+
+**A tree-shape change after classification has to be paid for twice.**
+`talks_about` edges point at block guids; re-digesting mints fresh guids; every
+edge dangles and `check` fails on its second assertion. The only repair is to
+delete the layer and run it again — and that run costs **money**, at the moment
+the base is largest. The window is open now: the human's base holds two
+documents.
+
+It is also the cheapest this will ever be. `hoist`/`unhoist` exist as a tested
+inverse pair, the sabotage pattern is written, and the expensive decision —
+that a non-identity `records_to_ast` is acceptable, in exchange for structure
+the graph should hold — was made and argued in v0.2.16.
+
+### The survey: where else is a logical parent stored as a sibling
+
+Asked directly, and answered by reading every branch of `records._block`.
+**`ListItem` is the only remaining instance.** The others divide cleanly:
+
+| construct | shape | verdict |
+|---|---|---|
+| `Header` / section `Div` | was sibling | **fixed in v0.2.16** |
+| **`ListItem`** | `[Plain, BulletList]` — text beside its own sub-list | **this release** |
+| `DefinitionList` | `DefinitionTerm` already **contains** its `DefinitionItem`s (`records.py`, `b.children(tg, items)`) | **already right** — and precedent that the codebase does this elsewhere |
+| `Figure` | caption is a sibling of the content | **not the pattern.** A caption *describes*; it does not contain. The `Figure` is the container and both are its parts |
+| `Table` | caption sibling of `TableHead`/`TableBody`/`TableFoot`; those correctly contain their rows | **not the pattern**, same reason |
+| `BlockQuote`, `Div` | plain containers | nothing to fix |
+
+**Measured on real material**, and the corpus understates it by more than half:
+
+| | files | `ListItem`s | hoistable |
+|---|---|---|---|
+| test corpus | 520 | 1,751 | 138 — **7.9%** |
+| the human's notes | 49 | **2,530** | 463 — **18.3%** |
+
+Forty-nine notes hold more list items than the whole 520-file corpus. Sized on
+the corpus alone this reads marginal, which is the same wrong denominator that
+nearly killed sections at 25.1%.
+
+**Most list items are already fine.** 2,066 of 2,530 have no block children at
+all — `_list_item` collapses a single `Plain`/`Para` into the `ListItem` itself
+with a `wrap` param. Only the multi-block ones carry the defect.
+
+### What has to be built
+
+**1. `src/records.py` — `hoist`/`unhoist` gain a `ListItem` case.** When a
+`ListItem`'s blocks are a leading `Plain`/`Para` followed by anything, the text
+block becomes the container and the rest become its children. The existing
+`section_attr`/`section_blocks` mechanism is the template; the `ListItem`'s own
+`wrap` param is the analogue of the `Header`'s emptied attr — **it must be
+kept, or the inverse is not an inverse.**
+
+**2. Nothing else.** No schema change beyond the new param, no new node type,
+no view change — `views.py` already calls `unhoist` before handing blocks to
+pandoc, which is why v0.2.16's bug cannot recur here.
+
+**3. Docs.** `record-format.md` on a text block with children; the man page if
+any wording implies a `ListItem` is flat.
+
+### Guarantees
+
+1. **`hoist`/`unhoist` still compose to the identity**, now over list items
+   too: 520 of 520 corpus documents. Sabotage: drop the `wrap` param and the
+   pair stops being an inverse.
+2. **The full round-trip is unchanged in form**, 520 of 520 against hoisted
+   ASTs, and `test_records`'s flat path untouched.
+3. **List hoisting adds no nodes**, exactly as sections did not. Sabotage: mint
+   a container node and the count moves.
+4. **A bullet contains its sub-bullets** — `g.children(guid)` on the text block
+   returns the nested list, with no sibling scan anywhere in `src/`.
+5. **The AoTA prefix property survives**, re-measured rather than assumed —
+   the number to beat is 2,379 of 2,379 on `session-04` and 473 of 473 on
+   `session-02`.
+6. **`records_to_session` is untouched** and the transcript round-trip holds
+   byte for byte.
+7. **Every record validates against the schema**, and `check` reports 0
+   problems on a base built from every fixture.
+8. **The views still render every citable block.** This is v0.2.16's bug
+   turned into a standing guarantee: sabotage by removing `views.py`'s
+   `unhoist` call and confirm `test_views` fails.
+
+### What this release does not do
+
+**No change to `Figure` or `Table` captions**, per the survey — a caption
+describes rather than contains, and treating it as a parent would assert a
+relationship the source does not have.
+
+**No re-digest tooling.** Every record's shape changes and the base is empty;
+that is the reason this lands now rather than later.
+
+---
+
+## v0.3.0 — the talks-about layer (DRAFT, pending v0.2.17)
+
+**Status: draft, written 2026-09-11 immediately after the design conversation
+that produced it, and deliberately before v0.2.17 is built.** Not because it is
+ready to hand over — it is not, and §"What is still open" says why — but
+because the *reasoning* is what perishes, and this document is where this
+project keeps reasoning. Review it after v0.2.17 ships; the parts that depend
+on the tree shape are marked.
+
+### What this is, and what it is not
+
+**The first semantic layer means: connect blocks to topics.** A concept map the
+human writes, blocks linked to the concepts they are about, and crude wiki-like
+pages assembled from everything gathered under one concept.
+
+**It is not `docs/design-naming.md`.** That document designs an *equivalence*
+layer — Skolem terms, "is this the same thing I mean" — and took this slot
+because `docs/design-0.3.0.md` names "the first semantic layer" twice without
+ever defining it. Checked: `design-naming.md` contains **zero** occurrences of
+"topic", "classify", "categor" or "talks_about", and so does
+`TODO-equality-layers.md`. The intended occupant was described in the notes
+repository, in `semantic-connections.md`, which this section follows.
+
+**They are not the same mechanism with different parameters.** A Skolem term is
+a deterministic function of content, which is what lets `check` recompute it. A
+topic assignment is a **judgement** and cannot be recomputed from the bytes.
+And this layer must be allowed to **abstain** — the human's stated preference is
+false negatives over false positives — where a Skolem function is total by
+construction and never declines to name anything. Same storage shape, opposite
+semantics. The naming layer is unscheduled, not cancelled.
+
+### The concept map is a document, and the heading *is* the concept
+
+The human writes a markdown file of nested headings. Since v0.2.16 that ingests
+as a tree of `Header` containers — **so the concept tree already exists the
+moment it is digested.** No separate concept node type: the heading and the
+concept are the same object, decided so that the map is transparent and
+editable as prose. Renaming a heading moves blocks, and that is accepted.
+
+**The map is a TA.** Ordinary `--mutability=mutable`, revised with `--updates`,
+chained by `revision_of` — all of which v0.2.16 shipped. Old `talks_about`
+edges keep pointing at the old heading nodes, which stays *true*: something was
+classified under that heading, and it was. `cites` already behaves this way
+across revisions (`design-0.3.0.md` §7), so this is precedent rather than a new
+rule.
+
+**There may be several maps, and this is a requirement rather than a
+convenience.** Ingested material may hold unconnected clusters, and the human
+wants to label the same blocks several ways — different views over one base. So
+a block **must** be connectable to headings in more than one file, which
+settles the multi-topic question on a requirement instead of taste.
+
+### Vocabulary — SKOS and Dublin Core, honoured explicitly
+
+The project borrows PROV-O for `derived_from` and states the rule: a borrowed
+name must declare what it enforces **and** what it does not. Two vocabularies
+fit here and are worth borrowing rather than inventing:
+
+| our thing | aligns with |
+|---|---|
+| a concept | `skos:Concept` |
+| nesting in the map | `skos:broader` / `skos:narrower` |
+| one whole map | `skos:ConceptScheme`, `skos:inScheme` |
+| block → concept | `dcterms:subject` |
+| the one primary concept | `foaf:primaryTopic` |
+| the classifying model | `prov:SoftwareAgent` |
+| one classification run | `prov:Activity` |
+| who made this claim | `prov:wasAttributedTo` |
+
+**SKOS settles tree-versus-map with evidence.** `skos:broader` is deliberately
+**not transitive** — there is a separate `skos:broaderTransitive` — because real
+concept schemes turn out to be poly-hierarchies. The people who standardised
+this met the same question and declined to force a tree.
+
+**`foaf:primaryTopic` earns its place.** Multi-label classification quietly
+defeats the human's own abstention preference: every individual edge looks
+defensible while the aggregate over-assigns. One primary per block gives a
+measurable drift signal — count blocks whose primary is "none of these" — while
+keeping the concept-map flexibility.
+
+### Abstention is a node, one per map
+
+**"None of these" is a real node, not the absence of an edge**, and there is one
+per concept map. Two reasons, both load-bearing:
+
+- Absence cannot distinguish *"considered and declined"* from *"not seen yet"*,
+  and on a layer re-run as the map improves that is the difference between
+  "done" and "needs another pass".
+- Scoped per map because that is the only reading that stays true: *we tried to
+  classify this with **this** map and nothing fitted.* Another map, with other
+  concepts, may well succeed.
+
+### The first LLM call in this project, and the constraints on it
+
+**`TODO-ai-call-audit.md` establishes that `src/` has never made one.** Every
+`subprocess.run` in the tool is pandoc or graphviz. This is therefore the first,
+by decision.
+
+- **OpenRouter, not Claude Code.** A layer that only builds inside Claude Code
+  means the base can only be built by someone with Claude Code and the result
+  cannot be reproduced or audited. `tools/loop.py`'s hardcoded `claude` is the
+  anti-pattern, already in the repo, to point at.
+- **One seam**, the way `src/markdown.py` is the one pandoc seam and `READER`
+  is defined once with a test that greps for it.
+- **The suites never make a network call.** `tools/loop.py`'s injectable
+  `ask=` is the shape that already works here.
+- **No API key in the graph, in `storage/`, or in git.**
+
+**The deeper consequence, and it is architectural.** An LLM judgement is the
+first input to this graph that **cannot be recomputed from bytes**. The
+round-trip is an acceptance test precisely because it can be re-run and
+compared; run a classifier twice and it may produce different edges. That is the
+third instance of one shape this project keeps meeting, after the missing
+semantic clock (`TODO-the-clock.md`) and `design-naming.md`'s `scheme`. The
+answer that worked twice applies again: **if it cannot be recomputed, the record
+must carry enough to explain it** — model id, prompt version, the map revision
+it ran against, and the run itself as a node.
+
+That is what makes *aerating the compost* possible: open it, read it, point at
+the exact place, ask for a fix.
+
+### One run, deletable whole
+
+Every node and edge a run mints is attributed to one `prov:Activity` — a
+`run_id`. Delete the run and everything it produced goes with it, in one
+predicate, including from the DuckDB view. This is the layer's only inverse and
+it is the same one the design already offers elsewhere: delete a whole file one
+run wrote.
+
+**One run classifies against one map**, producing one `run_id` and one
+abstention node. That keeps delete-together exact.
+
+### `--cost-calculation`, and why it is more than a convenience
+
+```
+compost layer concept-map --cost-calculation [--model=<openrouter-model>]
+```
+
+With the switch, **no API call happens**. Local tokenisation counts what would
+be sent and prints it; with `--model`, the price per million tokens is fetched
+and multiplied.
+
+**This is the one deterministic part of an LLM layer**, so unlike the
+classification itself it can be a tested property. It also lets the human
+compare models on a task nobody has measured — the working hypothesis, stated
+by them, is that semantic categorisation will not need the most expensive
+models.
+
+### What is still open — do not hand this over yet
+
+1. **The unit.** Measured: depth does **not** predict meaning. Over 1,951
+   prose blocks in the human's notes, median length drops once from depth 0 to
+   1 (15 → 9 words) and then flattens; depth 3 is *longer* than depth 1; and
+   short blocks are **more** common at top level (30.7% ≤5 words) than nested.
+   Only 8.3% of blocks sit at depth ≥2. So there is no granularity floor at a
+   depth — the working answer is to classify **a block together with its
+   ancestor path as context**, which v0.2.16 and v0.2.17 make a single walk.
+   Still to decide: whether a section carries its own topic distinct from its
+   children's.
+2. **Which model, and the prompt.** Unmeasured. Needs
+   `--cost-calculation` first, then a comparison on real material.
+3. **Accumulation policy.** Re-running mints a complete second set of edges.
+   One graph file per run, deletable whole, is the proposal; it needs
+   confirming as the intended workflow rather than discovered as a surprise.
+4. **Re-measure everything on a lived-in base.** `TODO-v0.3.0-readiness.md` has
+   the standing warning: the human's base was replaced on 2026-09-08 and is
+   effectively empty, and the archive pre-dates delegation, mutability and
+   sections. Every rate in `design-naming.md` §4.2 was taken on a shape that no
+   longer exists.
+5. **How the wiki pages are read.** A view, a subcommand, or a generated
+   document that is itself digested. Undecided, and it decides whether this
+   layer has a rendering surface at all.
+
+---
+
 ## Where the ledger went, and why TA was renumbered
 
 **The ledger is no longer a release.** What was v0.2.16 — retraction,
@@ -3330,7 +3614,7 @@ first, and `TODO-section-container.md` decides by here. `--updates` against a
 `mutable` root is refused today with a message naming this version, and that
 refusal is what this release lifts.
 
-## v0.2.16 → v0.3.0 — skeleton only
+## v0.2.17 → v0.3.0 — skeleton only
 
 Specced one at a time, each immediately before its agent runs, with the previous
 release's measurements in hand. This is deliberate: v0.2.13 alone moved from
@@ -3342,9 +3626,10 @@ preceded it.
 | version | must achieve | re-measure first | must not foreclose |
 |---|---|---|---|
 | **v0.2.15** AoTA | `mutability` declared and checked, `--updates`, append, delta ingest | done: 9,217/9,217 under the delegation-following walk | non-append-only sources; async alignment; the storage revamp |
-| **v0.2.16** TA | `revision_of` on roots, full-tree revisions | the fold's cost on document trees | the section container — `TODO-section-container.md` decides by here |
+| **v0.2.16** TA | **shipped 2026-09-10** — `revision_of` on roots, sections as containers | done: 19,538 of 19,538 nodes, zero added | — |
+| **v0.2.17** the list item | hoist `ListItem`, the last place a logical parent is a sibling | done: 463 of 2,530 list items hoistable in the human's notes, 18.3% | — |
 | ~~the ledger~~ | **removed from the line 2026-09-09** — retraction has no measured customer, replay needs a decision of its own | done: 11,433 of 11,641 superseded nodes are exact prefixes, 98.21% | `TODO-the-clock.md` holds it whole |
-| **v0.3.0** | the first semantic layer | the largest equivalence class a plausible layer produces | — |
+| **v0.3.0** | **the talks-about layer** — blocks to concepts, drafted above | the none-of-these rate on a lived-in base, and the cost per run | the naming/equivalence layer, which is unscheduled rather than cancelled |
 | **after v0.3.0** | the storage revamp — `TODO-storage-revamp.md` | duplicate bytes as a fraction of `storage/` | — |
 
 **The storage revamp is deliberately not next**, and the reasoning is in
