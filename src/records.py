@@ -285,15 +285,27 @@ def _c(block):
 
 def _list_item(b: Builder, item: list) -> str:
     """
-    One `[Block]` from a bullet or ordered list.
+    One `[Block]` from a bullet or ordered list, already hoisted (see
+    `_hoist_item`, below `hoist`) — so an item whose leading Plain/Para was
+    followed only by lists arrives here as a single block carrying
+    `item_rest`, exactly as an item with nothing after the text arrives as a
+    single block with no `item_rest` at all.
 
     An item holding exactly one Plain or Para collapses into the ListItem
     itself — 89% of them do — carrying `wrap` so the expansion is exact.
     Without `wrap` the collapse would turn every tight list loose, because
-    Plain-versus-Para is precisely how pandoc encodes list tightness.
+    Plain-versus-Para is precisely how pandoc encodes list tightness. Since
+    v0.2.17 that same node also carries `item_rest`'s blocks as `contains`
+    children, when there were any — the list-hoisting case, v0.2.16's
+    Header/section move one level down (docs/roadmap.md, "the list item is a
+    container too").
     """
     if len(item) == 1 and item[0]["t"] in ("Plain", "Para"):
-        return b.node("ListItem", {"wrap": item[0]["t"]}, _c(item[0]))
+        guid = b.node("ListItem", {"wrap": item[0]["t"]}, _c(item[0]))
+        rest = item[0].get("item_rest")
+        if rest:
+            b.children(guid, [_block(b, x) for x in rest])
+        return guid
     guid = b.node("ListItem")
     b.children(guid, [_block(b, x) for x in item])
     return guid
@@ -347,6 +359,32 @@ def _row(b: Builder, row) -> str:
 # functions and are never written to a record directly: `section_attr`
 # becomes `params["section_attr"]` on the `Header` node (see `_block`,
 # below), and `section_blocks` becomes the Header's `contains` children.
+#
+# v0.2.17 adds a third, `item_rest`, for the same reason one level down: a
+# list item whose leading Plain/Para is followed by nothing but lists has
+# that logical parent stored as a *sibling* of its own sub-list, the same
+# defect sections fixed for headings (docs/roadmap.md, "the list item is a
+# container too"). `_hoist_item`, below, is the ListItem analogue of
+# `_hoist_block`'s section case on the way in — scoped to a
+# `BulletList`/`OrderedList` item rather than to a block type, because
+# `ListItem` is not itself a pandoc constructor: `hoist`ing a bare block list
+# the way sections do would also fold an ordinary paragraph-then-list at the
+# top of a document, which nothing asked for. `item_rest` never reaches a
+# record either: it collapses into the ListItem's existing `wrap`-collapsed
+# form (see `_list_item`) as `contains` children, no new param.
+#
+# On the way back out there is no separate `_unhoist_item`: `unhoist` itself
+# splices `item_rest` back in, for whichever block carries it, wherever that
+# block turns up — see `unhoist`'s own docstring for why a version scoped to
+# "the first block of a list item" is not safe once a view's own `wrap` has
+# nested or flanked that block.
+#
+# The rule is deliberately conservative: hoist only when the leading text is
+# followed by NOTHING but lists. `[Plain, Para]` (two paragraphs) stays as
+# two siblings — collapsing it would assert a containment relationship the
+# source does not have — and so does anything else that mixes in a
+# non-list block, e.g. `[Plain, CodeBlock]`. Measured against the whole test
+# corpus, that excludes exactly one list item.
 
 _SECTION_CLASS = "section"
 
@@ -391,11 +429,12 @@ def _hoist_block(blk: dict) -> dict:
         return {"t": t, "c": [attr, [short, hoist(cap_blocks)], hoist(kids)]}
 
     if t == "BulletList":
-        return {"t": t, "c": [hoist(item) for item in blk["c"]]}
+        return {"t": t, "c": [_hoist_item(item) for item in blk["c"]]}
 
     if t == "OrderedList":
         list_attrs, items = blk["c"]
-        return {"t": t, "c": [list_attrs, [hoist(item) for item in items]]}
+        return {"t": t, "c": [list_attrs,
+                              [_hoist_item(item) for item in items]]}
 
     if t == "DefinitionList":
         return {"t": t, "c": [[term, [hoist(d) for d in defs]]
@@ -409,6 +448,23 @@ def _hoist_block(blk: dict) -> dict:
                               _hoist_row_group(foot)]}
 
     return blk
+
+
+def _hoist_item(item: list) -> list:
+    """One list item's `[Block]`. See the notes above `_SECTION_CLASS`.
+
+    Conservative: only a leading `Plain`/`Para` followed by nothing but
+    `BulletList`/`OrderedList` folds. Everything else — including a bare
+    single-block item, which `_list_item` collapses on its own without any
+    help from `hoist` — passes through the ordinary `hoist` unchanged.
+    """
+    if (len(item) >= 2 and item[0]["t"] in ("Plain", "Para")
+            and all(x["t"] in ("BulletList", "OrderedList")
+                   for x in item[1:])):
+        head = dict(item[0])
+        head["item_rest"] = hoist(item[1:])
+        return [head]
+    return hoist(item)
 
 
 def _hoist_row_group(rg):
@@ -429,8 +485,34 @@ def _hoist_body(body):
 
 
 def unhoist(blocks: list) -> list:
-    """The inverse of `hoist`. See module notes above `hoist`."""
-    return [_unhoist_block(blk) for blk in blocks]
+    """The inverse of `hoist`. See module notes above `hoist`.
+
+    Splices a hoisted list item's `item_rest` back in as siblings of the
+    block that carries it, wherever that block turns up in the list handed
+    in — not only when a `BulletList`/`OrderedList` item calls this
+    directly. `_to_item` calls `g.wrap` on the reconstructed carrier block to
+    inject a citation handle, the same move every view already makes for
+    every other citable node — a `RawBlock` sibling before it for djot
+    (`_djot_wrap`), a wrapping `Div` around it for html (`_html_wrap`). A
+    version of this scoped to "the first block of a list item's own list"
+    stops firing the instant either wrapping is in play, because the carrier
+    is then either not first (djot) or nested one Div deeper (html) — this
+    release's analogue of v0.2.16's `views.py` bug: caught by
+    `tests/test_views.py`, not by any corpus round-trip, because `render`'s
+    `wrap` is never exercised by `ast_to_records`/`records_to_ast` alone.
+    Doing the splice here, in the one function every nesting position already
+    recurses through, means it fires no matter how deep a view buries the
+    carrier block.
+    """
+    out = []
+    for blk in blocks:
+        if blk["t"] in ("Plain", "Para") and "item_rest" in blk:
+            head = {k: v for k, v in blk.items() if k != "item_rest"}
+            out.append(head)
+            out.extend(unhoist(blk["item_rest"]))
+        else:
+            out.append(_unhoist_block(blk))
+    return out
 
 
 def _unhoist_block(blk: dict) -> dict:
@@ -716,11 +798,26 @@ def _to_row(g: Graph, guid: str):
 
 
 def _to_item(g: Graph, guid: str) -> list:
-    """A ListItem back to `[Block]`, re-expanding a collapsed one."""
+    """A ListItem back to `[Block]`, re-expanding a collapsed one.
+
+    A `wrap`-collapsed ListItem may also carry `contains` children now
+    (v0.2.17, a hoisted `[Plain/Para, *lists]`) — reattached here as
+    `item_rest`, the raw key `unhoist` itself scans for, so the single
+    `unhoist` pass at the bottom of `records_to_ast` restores the original
+    siblings, wherever a view's own `wrap` (below, `g.wrap`) has put the
+    carrier block by the time that pass runs. Absent when there is nothing
+    after the text, same as before this release.
+    """
     n = g.nodes[guid]
     wrapper = _p(n, "wrap")
-    blocks = ([{"t": wrapper, "c": n["content"]}] if wrapper
-              else _blocks_of(g, guid))
+    if wrapper:
+        blk = {"t": wrapper, "c": n["content"]}
+        rest = _blocks_of(g, guid)
+        if rest:
+            blk["item_rest"] = rest
+        blocks = [blk]
+    else:
+        blocks = _blocks_of(g, guid)
     return g.wrap(n, blocks) if g.wrap else blocks
 
 

@@ -166,7 +166,7 @@ content is other nodes, reached by `contains`.
 | `Figure` | `attr` | children: `Caption`, then blocks |
 | `BulletList` | — | children: `ListItem` |
 | `OrderedList` | `list_attributes` | children: `ListItem` |
-| `ListItem` | `wrap` *(collapsed form only)* | content **or** children |
+| `ListItem` | `wrap` *(collapsed form only)* | content, children, or both (v0.2.17) |
 | `DefinitionList` | — | children: `DefinitionTerm` |
 | `DefinitionTerm` | — | content (the term), children: `DefinitionItem` |
 | `DefinitionItem` | — | children |
@@ -183,6 +183,15 @@ collapses into the `ListItem` itself and carries `wrap` naming which one it was
 — 89% of items do. `wrap` is not decoration: `Plain`-versus-`Para` is precisely
 how pandoc encodes list tightness, so dropping it would turn every tight list
 loose. The other form has no params and holds children.
+
+**Since v0.2.17, the collapsed form may hold children too.** An item whose
+leading `Plain`/`Para` is followed by nothing but `BulletList`/`OrderedList`
+hoists the same way a `Header` absorbs its section (v0.2.16, one level down):
+the text stays the node's own `content` and `wrap`, and the lists that
+followed it become `contains` children — `g.children(guid)` on the ListItem,
+no sibling scan. Conservative on purpose: `[Plain, Para]` (two paragraphs) and
+anything else that mixes in a non-list block stay siblings, because collapsing
+them would assert a containment relationship the source does not have.
 
 **An unmapped block constructor raises.** `_block` ends in
 `NotImplementedError`, deliberately: three separate data-loss bugs in this

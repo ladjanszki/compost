@@ -189,11 +189,16 @@ case, not an edge case:
 
 **Rule: an item holding exactly one `Plain` or `Para` collapses into the
 `ListItem` node**, which takes the inlines as its own `content` and records
-which wrapper it was in `params.wrap`. Items holding anything else keep their
-children. That removes 830 redundant nodes, keeps the citable thing and the
-clicked thing the same node, and stays exactly reversible — the `wrap` field
-is what makes it reversible rather than merely convenient, because without it
-the collapse would silently loosen every tight list.
+which wrapper it was in `params.wrap`. That removes 830 redundant nodes, keeps
+the citable thing and the clicked thing the same node, and stays exactly
+reversible — the `wrap` field is what makes it reversible rather than merely
+convenient, because without it the collapse would silently loosen every tight
+list.
+
+**Since v0.2.17, that same collapsed node may also hold children** — see
+"Lists: the `ListItem` contains its sub-list", below. Only an item mixing in
+something other than a leading `Plain`/`Para` and trailing lists keeps its
+children as a flat, uncollapsed `ListItem` with no `wrap`.
 
 Table structure needs no invention — `Row`, `Cell`, `TableHead`, `TableBody`,
 `TableFoot` and `Caption` are all real pandoc-types constructors, so they keep
@@ -280,6 +285,55 @@ children too, so two documents that are each one `# Braindump` heading over a
 different list separate cleanly at the fold, which is the reason this
 shipped (`TODO-section-container.md`). "What is under this heading" is
 `g.children(guid)`, with no level comparison anywhere in `src/`.
+
+## Lists: the `ListItem` contains its sub-list (v0.2.17)
+
+Through v0.2.16 a `ListItem` holding text and a nested list stored them as
+*siblings*: `[Plain, BulletList]`, both children of the item. "Everything
+under this bullet" was therefore a sibling scan, not a subtree walk — the
+same shape v0.2.16 fixed for a `Header` and what came after it, one level
+down.
+
+**The target shape already existed.** `_list_item` already collapsed an item
+holding exactly one `Plain`/`Para` into the `ListItem` itself, carrying the
+text as `content` and the wrapper as `params.wrap` (see "Settled" #2, below).
+This release makes an item whose leading text is followed by nothing but
+lists do the same: the `ListItem` keeps `content`/`wrap` exactly as before,
+and the lists that followed become its `contains` children. No new node type,
+no new param — `wrap` already meant precisely this.
+
+**The rule is conservative: hoist only when the leading text is followed by
+NOTHING but lists.** `[Plain, Para]` (two paragraphs) stays as two siblings —
+collapsing it would assert a containment relationship the source does not
+have, the same reason a `Figure`'s caption is left alone. Measured across the
+whole test corpus, exactly one list item is excluded by this rule: a
+`['Plain', 'CodeBlock']`. Whether a code block or a block quote under a bullet
+*should* hoist is a real, open question this release does not decide.
+
+**Unlike sections, this removes a node per hoisted item rather than costing
+zero.** A section's `Div` and `Header` merged into the `Header` that already
+existed — node-neutral. Here the separate `Plain`/`Para` child is absorbed
+into the `ListItem` that already existed, so the node it used to occupy is
+gone: measured, the test corpus goes from 19,538 to 19,400 nodes, one fewer
+for each of its 138 hoistable items.
+
+`src/records.py`'s `hoist`/`unhoist` gain the mechanism: `_hoist_item` does the
+one-time collapse on the way in, scoped to a `BulletList`/`OrderedList` item
+rather than to a block type (`ListItem` is not itself a pandoc constructor, so
+the check cannot live in `_hoist_block` the way a section's does). On the way
+back out there is no equivalent `_unhoist_item` — `unhoist` itself splices the
+carried-forward blocks (`item_rest`) back in, for whichever block still
+carries the key, wherever it turns up. That generality is load-bearing, not
+tidiness: `views.py` calls `g.wrap` on a citable `ListItem`'s reconstructed
+content to inject a handle, which nests or flanks the carrier block exactly
+as it already does for a `Header` or any other citable node — a djot
+`RawBlock` marker beside it, an html `Div` around it. A version of `unhoist`
+scoped to "the first and only block of a list item's own list" stops firing
+the moment either wrapping is in play, silently dropping the nested list from
+every rendered view while the plain `ast_to_records`/`records_to_ast`
+round-trip — which never exercises `wrap` — keeps passing. `tests/test_lists.py`
+holds this as its own sabotage, the analogue of v0.2.16's `views.py` bug one
+level down.
 
 ## `revision_of`: a TA revision, root to root (v0.2.16)
 

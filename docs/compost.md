@@ -772,7 +772,7 @@ render produces, and that running the build again changes nothing.
 | `Header` | `attr`, `level` | `section_attr` | yes |
 | `HorizontalRule` | — | — | — |
 | `LineBlock` | — | — | yes |
-| `ListItem` | — | `wrap` | — |
+| `ListItem` | — | `wrap` | yes |
 | `OrderedList` | `list_attributes` | — | — |
 | `Para` | — | — | yes |
 | `Plain` | — | — | yes |

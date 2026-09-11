@@ -322,7 +322,7 @@
           },
           "additionalProperties": false
         },
-        "carries_content": false
+        "carries_content": true
       },
       "OrderedList": {
         "params": {
