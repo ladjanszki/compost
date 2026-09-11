@@ -3596,6 +3596,46 @@ So **the batch size is a first-class parameter**, not a tuning detail, and
 `--cost-calculation` must report it — a number that changes by 46× with one flag
 is the number the operator most needs to see before committing.
 
+### Decisions taken 2026-09-11
+
+**1. Every classifiable block gets a topic, sections included.** Not just
+leaves. The human's reason is the interesting one: *how well a section's topic
+matches its children's is itself a measurement*, and it is only available if
+both are classified. Disagreement between a parent's topic and its children's
+becomes a quality signal for the classifier rather than a thing to prevent.
+
+**2. Batch 100, and it fits.** Measured against the human's own notes: the
+per-block payload is **median 161 chars, p95 417, max 2,129**, so a batch of
+100 plus a 353-heading map is **~6,800 tokens typically and ~18,500 worst
+case** — comfortable in any current context window, and 200 would also fit.
+100 is a starting point to be revised against real runs, not a constant.
+
+**3. One run per concept map, and it changes the CLI.** Confirmed as the
+accumulation policy. It also surfaces something no previous layer needed:
+**`compost layer` must take a root guid**, because the concept map is an
+*ingested document* and the builder has to be told which one. Every existing
+builder derives from the base as a whole; this is the first that takes an
+argument naming material already in it. `layer NAME [--by SCHEME]` grows a
+third form.
+
+**4. Tokenisation is an estimate, and says so.** The deciding fact is that an
+**offline exact count is not achievable across the model families named**
+(Claude, Gemini, OpenAI): as far as I can establish, Anthropic publishes no
+offline tokenizer — counting tokens is itself an API call — which would defeat
+`--cost-calculation`'s one hard promise of making no network call. So the
+estimate is not a compromise for the sake of one fewer dependency; it is the
+only honest offline answer. **Every estimated number must be labelled as an
+estimate** where it is printed. The character count and the call count are
+exact and must be reported as such.
+
+**5. HTTP: the standard library.** `serve.py` already uses stdlib
+`http.server`, so this is precedent rather than novelty, and the whole surface
+is one POST with a JSON body. `requests` would add a dependency to save a few
+lines and would make `pyproject.toml`'s `dependencies = []` — a property this
+project has defended, requiring a written justification even for `jsonschema` —
+no longer true. Timeouts and a small retry loop are explicit rather than
+inherited, which for a paid endpoint is a feature.
+
 ### What has to be built
 
 **1. `src/llm.py` — the one seam, stdlib only.** `urllib.request` and `json`
@@ -3658,7 +3698,46 @@ node tables, with what each borrowed name honours and does not; the man page's
 10. **Nothing in `src/` calls a model except through `llm.py`.** A grep test,
     the same shape as `READER`'s.
 
-### What is still open — do not hand this over yet
+### Still missing before this can be handed over — the interaction itself
+
+**The infrastructure is specced; the classification is not.** Everything above
+describes where records go, what they cost and how a run is deleted. None of it
+says what the model is actually asked, and that is the part which most needs
+care, because it is the one thing in this project whose output cannot be
+recomputed.
+
+**a. The prompt.** Unwritten. It needs: how the concept map is rendered into
+it, how a block and its ancestor path are rendered, how abstention is invited
+rather than merely permitted — the human prefers false negatives, and a model
+told only "classify this" will not decline — and how the primary topic is
+distinguished from the rest.
+
+**b. The response contract.** A batch of 100 goes out; what comes back, and how
+is each answer matched to its block? **What if 97 come back?** A missing or
+hallucinated identifier is the normal failure of this interaction, not an edge
+case, and the design has to say whether the batch is retried, partially
+accepted, or failed whole.
+
+**c. Failure mid-run.** Forty-nine calls to classify the human's notes. If call
+thirty fails after twenty-nine succeeded, is a partial run written or nothing?
+This interacts directly with *one run, deletable whole*: a half-run that looks
+complete is worse than no run, and "delete it and start again" is only an
+acceptable answer if a partial run is visibly partial.
+
+**d. Prompt versioning.** The design says the record must carry enough to
+explain a judgement it cannot reproduce, and names the prompt version as part
+of that. Where it lives and what changes it is unspecified.
+
+**e. What a classified block looks like when the map moves on.** Guarantee 8
+says an edge keeps pointing at the heading it named. What the *view* shows for
+a block whose topic belongs to a superseded revision is a separate question and
+is not answered.
+
+**These five are why this is still a draft.** They are not blocked on anything
+— no measurement is waiting, no decision is outstanding — they simply have not
+been written yet, and writing them is the next piece of work.
+
+### What is still open — needs the human or a lived-in base
 
 1. **The unit.** Measured: depth does **not** predict meaning. Over 1,951
    prose blocks in the human's notes, median length drops once from depth 0 to
