@@ -283,7 +283,7 @@ a `pandoc-ast` route's own raw AST, which is never hoisted at all).
 they are the same heading. `record_subtree_hash` now folds the heading's own
 children too, so two documents that are each one `# Braindump` heading over a
 different list separate cleanly at the fold, which is the reason this
-shipped (`TODO-section-container.md`). "What is under this heading" is
+shipped (`TODO-section-container.md`, retired to the notes repository). "What is under this heading" is
 `g.children(guid)`, with no level comparison anywhere in `src/`.
 
 ## Lists: the `ListItem` contains its sub-list (v0.2.17)

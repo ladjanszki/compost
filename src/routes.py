@@ -37,7 +37,7 @@ from . import markdown as MD
 # a second pandoc invocation here (`_ast_of`, reading a file on this module's
 # own subprocess call) into that one seam, so a file-based read and a
 # text-based read can never quietly drift onto different dialects or apply
-# `make_sections` to one and not the other (`TODO-section-container.md`'s
+# `make_sections` to one and not the other (`TODO-section-container.md`, retired to the notes repository's
 # "worst available outcome"; docs/roadmap.md, "TA", guarantee 6).
 
 

@@ -6,7 +6,7 @@ something") promises.
 Sectioning: `make_sections` runs in the reader (a Lua filter,
 `src/markdown.py`), and `records.hoist`/`records.unhoist` absorb the Div it
 produces into its own `Header` — the container is the heading, not a wrapper
-Div (docs/roadmap.md; `TODO-section-container.md`). Revisions: `--updates`
+Div (docs/roadmap.md; `TODO-section-container.md`, retired to the notes repository). Revisions: `--updates`
 against a `mutable` root now mints a whole new tree, chained to the old one
 by exactly one `revision_of` edge, root to root (docs/design-0.3.0.md §7, §9).
 

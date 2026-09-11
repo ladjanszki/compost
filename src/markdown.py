@@ -37,7 +37,7 @@ READER = "commonmark_x-smart-attributes-fancy_lists"
 # The sectioning filter, v0.2.16: `make_sections` wraps every heading in a
 # Div, and it does so through pandoc's own code rather than a rule compost
 # authors and defends (docs/roadmap.md, "TA: revisions, and structure that
-# means something"; `TODO-section-container.md`). Applied by both functions
+# means something"; `TODO-section-container.md`, retired to the notes repository). Applied by both functions
 # below, so a markdown-reading path can never sectionless one document and
 # section another — see `ast_of_file`, the file-reading seam this release
 # adds so there is exactly one place to apply it to a path, matching
