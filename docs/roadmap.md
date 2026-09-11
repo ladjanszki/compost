@@ -3336,12 +3336,33 @@ with a `wrap` param. Only the multi-block ones carry the defect.
 
 ### What has to be built
 
-**1. `src/records.py` — `hoist`/`unhoist` gain a `ListItem` case.** When a
-`ListItem`'s blocks are a leading `Plain`/`Para` followed by anything, the text
-block becomes the container and the rest become its children. The existing
-`section_attr`/`section_blocks` mechanism is the template; the `ListItem`'s own
-`wrap` param is the analogue of the `Header`'s emptied attr — **it must be
-kept, or the inverse is not an inverse.**
+**1. `src/records.py` — `hoist`/`unhoist` gain a `ListItem` case.**
+
+**The target shape already exists in the codebase, which is the best thing
+about this release.** `_list_item` already collapses a *single* `Plain`/`Para`
+into the `ListItem` itself, carrying the text as `content` and the original
+block type as `params["wrap"]`. So one document contains both shapes today:
+
+```
+- plain bullet            ListItem params={"wrap":"Plain"} content="plain bullet"
+- parent bullet           ListItem                      <- no content
+    - child one             ├─ Plain "parent bullet"    <- text as a SIBLING
+                            └─ BulletList
+```
+
+This release makes the second case match the first: the `ListItem` carries the
+text and `wrap` exactly as it already does, and the remaining blocks become its
+children. **No new node type, no new param** — `wrap` already exists and
+already means precisely this.
+
+**The rule is conservative: hoist only when the leading text is followed by
+nothing but lists.** `[Plain, Para]` must stay as it is — two paragraphs in one
+bullet are siblings, and making the first contain the second would assert a
+relationship the source does not have, the same reason `Figure`'s caption is
+left alone. Measured across the whole corpus, exactly **one** list item is
+excluded by this rule: a `['Plain', 'CodeBlock']`. Whether a code block or a
+block quote under a bullet *should* hoist is a real question and is named in
+"what to report" rather than decided here.
 
 **2. Nothing else.** No schema change beyond the new param, no new node type,
 no view change — `views.py` already calls `unhoist` before handing blocks to
@@ -3357,8 +3378,18 @@ any wording implies a `ListItem` is flat.
    pair stops being an inverse.
 2. **The full round-trip is unchanged in form**, 520 of 520 against hoisted
    ASTs, and `test_records`'s flat path untouched.
-3. **List hoisting adds no nodes**, exactly as sections did not. Sabotage: mint
-   a container node and the count moves.
+3. **List hoisting REMOVES exactly one node per hoisted item**, and this is
+   where it differs from sections. Sections were node-neutral because the `Div`
+   and the `Header` merged into the `Header` that already existed. Here the
+   separate `Plain`/`Para` child is absorbed into the `ListItem` that already
+   existed, so the count *falls*: measured, the corpus goes **19,538 → 19,400**,
+   one fewer for each of its 138 hoistable items. Assert the exact predicted
+   number, not merely "fewer" — a count that drops by the wrong amount means
+   something else was absorbed too.
+
+   *This guarantee said "adds no nodes" in the first draft of this spec, copied
+   from v0.2.16 without re-deriving it. It was wrong, and writing the verify
+   script is what caught it.*
 4. **A bullet contains its sub-bullets** — `g.children(guid)` on the text block
    returns the nested list, with no sibling scan anywhere in `src/`.
 5. **The AoTA prefix property survives**, re-measured rather than assumed —
