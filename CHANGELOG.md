@@ -3,6 +3,87 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## v0.2.17-rc — the list item is a container too
+
+**The same shape v0.2.16 fixed for headings, one level down.** A bullet with a
+nested list now carries its own text, exactly as a bullet without one already
+did.
+
+### The target shape already existed
+
+`_list_item` has always collapsed a *single* `Plain`/`Para` into the `ListItem`
+itself — text as `content`, original block type as `params["wrap"]`. So one
+document held two inconsistent shapes:
+
+```
+- plain bullet        ListItem wrap="Plain" content="plain bullet"
+- parent bullet       ListItem                       <- no content
+    - child one         ├─ Plain "parent bullet"     <- text as a SIBLING
+                        └─ BulletList
+```
+
+This release makes the second match the first. **No new node type and no new
+schema param** — `wrap` already existed and is exactly what makes the transform
+invertible. "Everything under this bullet" is now `g.children(guid)`, with no
+sibling scan anywhere in `src/`.
+
+### It removes nodes, and that is the difference from v0.2.16
+
+Measured through the real `ast_to_records`, over all 520 corpus documents:
+**19,538 → 19,400**, one fewer for each of the corpus's 138 hoistable items.
+
+Sections were node-*neutral* because the `Div` and the `Header` merged into a
+`Header` that already existed. Here the separate `Plain` is absorbed into a
+`ListItem` that already existed, so the count falls. **The first draft of the
+spec said "adds no nodes", copied from v0.2.16 without re-deriving it, and
+writing the verify script is what caught that.**
+
+### The rule is conservative, deliberately
+
+Hoist only when the leading text is followed by **nothing but lists**. Two
+paragraphs in one bullet stay siblings, because neither contains the other —
+the same reason a `Figure`'s caption is left alone. Exactly **one** item in the
+whole corpus is excluded by this, a `['Plain', 'CodeBlock']`, and it stays
+excluded: a code block is a leaf being absorbed, not a structural fold.
+Recorded as open rather than decided.
+
+### The survey, so this question does not come back
+
+Asked directly — where else is a logical parent stored as a sibling? — and
+answered by reading every branch of `records._block`. **`ListItem` was the only
+remaining instance.** `DefinitionList` already had it right. `Figure` and
+`Table` have a caption beside their content, but a caption *describes* rather
+than contains, and treating it as a parent would assert a relationship the
+source does not have.
+
+### The bug worth reading about
+
+The implementer's first `unhoist` was modelled on the Header case and checked
+`len(item) == 1` to find the carrier block. That breaks the moment a view runs:
+`_djot_wrap` prepends a handle marker as a *sibling*, and `_html_wrap` nests
+the carrier one level deeper in a `Div`. **Every nested list vanished from the
+rendered views** — 47 citable blocks lost their handles.
+
+**The corpus round-trip never noticed**, because that path never exercises
+`wrap`; `test_views` is what caught it. The fix scans for the marker
+structurally, independent of position or depth. Verified by reintroducing the
+bug by hand: `test_views` 24/24 → 23/24 and `test_lists` 15/15 → 14/15, while
+`test_records` stays 526/526 — which is the proof that the round-trip is blind
+to it.
+
+**A naive analogy from one release to the next is the lesson.** Sections are a
+per-block, position-independent fold; list items need one-to-many splicing, and
+the mismatch failed silently until a view ran.
+
+### Also
+
+`ListItem`'s `carries_content: false` in the schema is corrected to `true`.
+Nothing enforces it — it feeds only the whitepaper's generated table — but it
+was already untrue for the collapsed case and this release gives more items
+content. The appendix is regenerated.
+
+**25 suites green, corpus present at 520 documents.**
+
 ## v0.2.16 — 2026-09-10 — TA: revisions, and structure that means something
 
 Two things shipped together because they are one question. A TA revision
