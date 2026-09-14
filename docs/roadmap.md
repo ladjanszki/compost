@@ -3445,26 +3445,116 @@ false negatives over false positives — where a Skolem function is total by
 construction and never declines to name anything. Same storage shape, opposite
 semantics. The naming layer is unscheduled, not cancelled.
 
-### The concept map is a document, and the heading *is* the concept
+### The concept map is one markdown file: frontmatter configures, headings are the concepts
 
-The human writes a markdown file of nested headings. Since v0.2.16 that ingests
-as a tree of `Header` containers — **so the concept tree already exists the
-moment it is digested.** No separate concept node type: the heading and the
-concept are the same object, decided so that the map is transparent and
-editable as prose. Renaming a heading moves blocks, and that is accepted.
+**Settled 2026-09-14, after a proposal to use YAML was measured and dropped.**
+The map has two jobs and they live in two parts of one file:
 
-**The map is a TA.** Ordinary `--mutability=mutable`, revised with `--updates`,
-chained by `revision_of` — all of which v0.2.16 shipped. Old `talks_about`
-edges keep pointing at the old heading nodes, which stays *true*: something was
-classified under that heading, and it was. `cites` already behaves this way
-across revisions (`design-0.3.0.md` §7), so this is precedent rather than a new
-rule.
+```markdown
+---
+concept_map: true
+---
 
-**There may be several maps, and this is a requirement rather than a
-convenience.** Ingested material may hold unconnected clusters, and the human
-wants to label the same blocks several ways — different views over one base. So
-a block **must** be connectable to headings in more than one file, which
-settles the multi-topic question on a requirement instead of taste.
+# Time
+
+Anything about clocks, ordering, and replay.
+
+## Replay
+
+The replay capability, and why it kept surviving every cut.
+```
+
+- **The frontmatter is configuration.** `concept_map: true` today; run settings
+  may join it later.
+- **The body is the concepts.** A heading is a label, a nested heading is a
+  sublabel, and the prose under each is its **grounding description** — the
+  sentence that tells a cheap model what the label is *for*.
+
+**This needs no new mechanism, which is why it won.** Measured 2026-09-14:
+`commonmark_x` already parses YAML frontmatter; `ast_to_records` already stores
+it verbatim in `document.params["meta"]`; `concept_map: true` arrives **typed**
+as a pandoc `MetaBool` rather than the string `"true"`; and the round-trip
+holds with frontmatter present. The body parses into exactly the tree wanted,
+because v0.2.16 made a heading contain its section and v0.2.17 did the same for
+bullets.
+
+**The metadata has been stored since the beginning and never read.** This layer
+is its first consumer — the digest-everything rule paying off a release at a
+time: nothing had to be added, because nothing had been dropped.
+
+*Rejected: a YAML file for the concepts.* It was the human's own first
+proposal, and the objection behind it was correct — a file that is half query
+and half result is the mixing this project avoids everywhere else. But that is
+fixed by separating **input from output**, not by changing format: the map is
+the input, and the collection pages below are a generated view. Markdown also
+keeps the topic tree *in the graph* — labels are `Header` nodes, already
+citable, already rendered — where a YAML map would need the builder to mint
+nodes from a format nothing else reads, and PyYAML would be this project's
+first new dependency since `jsonschema`.
+
+**One sharp edge, and it has already cost something.** A description containing
+`: ` must be quoted, or pandoc rejects the whole file. That is exactly what
+broke `silent-failure-hunter.md` — a vendored plugin definition whose
+`description:` held an unquoted `Daisy: "…"` — and because `digest` refuses a
+batch on any failure, that one file blocked all 512 of its directory.
+
+**Frontmatter is a guard, never a discovery mechanism.** `compost layer` is
+pointed at a root guid explicitly and refuses if that root's `params["meta"]`
+does not say `concept_map: true`. The tool never goes looking for concept maps
+— that would be inferring a file's role from its content, which principle 2
+refuses. It is a check against pointing the classifier at the wrong document.
+
+### Two stages, and only the first is this release
+
+**The classification is a layer. The collection page is a view.** Separating
+them is what makes this release finishable.
+
+| stage | what it is | this release |
+|---|---|---|
+| **1. classify** | one LLM pass: block → concept, `talks_about` edges | **yes** |
+| **2. collect** | assemble every block under a label — *a pure function of the edges*, no model | **yes, as a view** |
+| **3. rewrite** | an LLM writes readable prose from a collection, citing its blocks | **no — a later release** |
+
+**Stage 2 is deterministic given stage 1**, so it belongs in `views.py` beside
+`default-djot`, `default-html` and `default-md`: generated from records and
+nothing else, disposable, rebuilt by `compost render`, carrying a handle on
+every block. Two consequences fall out for free — a collection page **cannot
+drift** from the classification, and deleting a run's edges makes its pages
+vanish at the next render with no separate cleanup.
+
+**The human's framing, and it is the reason for the split:** this first pass
+produces a *collection* page, not a wiki page. The readable article is a second
+rewrite that cites the blocks it drew on. Stopping at the collection still ends
+the release with something to open, read and comment on — the whole *aerate the
+compost* requirement — without waiting for the harder half.
+
+*This also answers "is this really a layer build?"* The classification is — it
+mints nodes and edges. The collection is not; it is a view. The broader
+vocabulary review the human wants is booked for after v0.3.0.
+
+### Decisions taken 2026-09-14
+
+**6. Frontmatter configures, headings are the concepts** — above.
+
+**7. The prompt is a text artifact.** A document like any other,
+`--mutability=mutable`, so `revision_of` versions it automatically and the run
+node carries its root guid. The "where does prompt versioning live" gap closes
+on machinery that already shipped.
+
+**8. A bad response is a loud error, and nothing is written.** Three checks,
+all cheap: the count returned matches the count sent, every label returned
+exists in the map, and every block id returned was one sent. No JSON grammar,
+no schema coercion, no repair — *see the severity and frequency first*.
+
+**9. A failed run writes nothing.** Refusal is the project default and it is
+affordable while a full pass costs cents. Partial-run resumption is a real
+question **at volume** and is deliberately deferred, with the note that it will
+need designing rather than patching.
+
+**10. The map is the source of truth for what exists.** A label removed from
+the map stops collecting; its old `talks_about` edges stay, pointing at the
+heading node they named, which remains true. The *view* simply has nothing to
+render them under.
 
 ### Vocabulary — SKOS and Dublin Core, honoured explicitly
 
@@ -3639,139 +3729,105 @@ inherited, which for a paid endpoint is a feature.
 ### What has to be built
 
 **1. `src/llm.py` — the one seam, stdlib only.** `urllib.request` and `json`
-are enough for OpenRouter's OpenAI-compatible endpoint; **no new dependency**,
-which keeps `pyproject.toml`'s `dependencies = []` true. The model id and the
-endpoint are each defined exactly once, and a test greps for them the way
-`test_extras` already greps for `READER`. The call is an **injectable
-parameter** so the suites never touch the network — `tools/loop.py`'s `ask=`
-is the shape that already works here.
+are enough for OpenRouter's OpenAI-compatible endpoint, so **no new
+dependency** and `pyproject.toml`'s `dependencies = []` stays true. Model id
+and endpoint each defined exactly once, with a grep test the way `test_extras`
+already greps for `READER`. The call is an **injectable parameter** so the
+suites never touch the network — `tools/loop.py`'s `ask=` is the shape that
+already works. Explicit timeout and a small retry; no key in the graph, in
+`storage/`, or in git.
 
 **2. `src/layers.py` — a `concept-map` builder**, registered in `BUILDERS`
-beside `_citation` and `_kg8hex`. One run classifies against **one** map,
-mints one `prov:Activity` node, and writes one graph file.
+beside `_citation` and `_kg8hex`, and **the first that takes an argument**:
+`compost layer concept-map --map=GUID`. It refuses a root whose
+`params["meta"]` lacks `concept_map: true`. One run: one `prov:Activity`, one
+graph file, one abstention node, one map.
 
-**3. `--cost-calculation`, and it does not import `llm.py`'s caller.** Local
-counting only, no network, no key. Report `x of y` blocks, the batch size, the
-input tokens, and — with `--model` — the fetched price and the product.
+**3. The batcher, with two limits and not one.** A per-batch count (default
+100 — measured at ~6,800 tokens typical, ~18,500 worst case) **and a per-block
+size cap**. The full notes base holds one block of **1,350,840 characters**,
+which would exhaust any context window alone; over-sized blocks are skipped and
+reported, never silently truncated.
 
-**Tokenisation is an estimate and must say so.** No tokenizer ships with this
-project and none is installed; an exact count needs a per-model tokenizer,
-which is a dependency per model family. The honest form is a character-based
-estimate with the ratio stated, since the decision it informs — *is this cents
-or dollars* — survives a 20% error. What must be exact is the **character
-count and the call count**, which are computable and testable.
+**4. `--cost-calculation`.** No network, with or without `--model`. Reports
+`x of y` blocks, the batch size, the call count and the character count —
+those are **exact** — and the token count and price **labelled as estimates**.
+An offline exact count is not achievable across the model families named
+(Claude publishes no offline tokenizer; counting is itself an API call), so the
+estimate is the only honest offline answer rather than a shortcut.
 
-**4. The concept map's own ingest.** None. It is `--as=notes
---mutability=mutable` like any document; v0.2.16 made its headings containers
-and v0.2.17 did the same for its bullets. **Nothing in this release parses a
-concept map specially**, which is the point of having spent two releases on
-tree shape.
+**5. `src/views.py` — the collection view.** A fourth family beside
+`default-{djot,html,md}`: one page per label, every block that `talks_about`
+it, a handle on each. Generated from records and nothing else.
 
-**5. Schema and docs.** `talks_about` and the abstention node in the edge and
-node tables, with what each borrowed name honours and does not; the man page's
-`layer` section; `docs/record-format.md`.
+**6. Nothing for the concept map's ingest.** It is `--as=notes
+--mutability=mutable` like any document. That is what v0.2.16 and v0.2.17 were
+for.
+
+**7. Schema and docs.** `talks_about` and the abstention node in the tables,
+each declaring what its borrowed name honours and does not; `compost layer`'s
+new argument in the man page; `docs/record-format.md`.
 
 ### Guarantees
 
 1. **`--cost-calculation` makes no network call**, with or without `--model`.
-   Sabotage: point the endpoint at a closed port and confirm the flag still
-   returns 0.
-2. **The suites never make a network call.** Sabotage: replace the injected
-   caller with one that raises on use, and the whole board stays green.
-3. **The reported block count matches the graph.** `x of y` against a real
-   digest, not a snapshot.
-4. **Batch size changes the reported cost and not the block count.** The 46×
-   is the headline; assert the direction and that coverage is unchanged.
-5. **One run is one `prov:Activity`, and deleting it removes everything it
-   minted** — edges, the abstention node, the activity itself, and nothing
-   else. Sabotage: delete the run and assert `check` is clean and no other
-   run's edges moved.
-6. **A block may carry several `talks_about` edges but exactly one primary.**
-   Sabotage: mint two primaries and `check` reports it.
-7. **Abstention is a node, one per map**, and a block classified nowhere points
-   at it rather than at nothing — so *"considered and declined"* is
-   distinguishable from *"not yet seen"*.
-8. **An edge minted against an earlier revision of a map keeps pointing at the
-   heading node it named.** That stays true and must not be rewritten.
-9. **`check` reports 0 problems** on a base carrying a classified map, and
-   every record validates against the schema.
-10. **Nothing in `src/` calls a model except through `llm.py`.** A grep test,
+   Sabotage: point the endpoint at a closed port and confirm it still exits 0.
+2. **The suites never make a network call.** Sabotage: inject a caller that
+   raises on use; the whole board stays green.
+3. **A root without `concept_map: true` is refused**, and the refusal names the
+   key. Sabotage: strip the frontmatter and re-run.
+4. **Every estimated number is labelled as an estimate** where it is printed,
+   and the character and call counts are not.
+5. **A batch whose response is short, or names a label absent from the map, or
+   names a block that was not sent, fails loudly and writes nothing.** Three
+   sabotages, one per check.
+6. **A failed run writes nothing at all** — not a partial graph file. Sabotage:
+   fail the thirtieth of forty-nine calls and assert the base is untouched.
+7. **One run is one `prov:Activity`, and deleting it removes everything it
+   minted** and nothing else. Sabotage: delete one run with two present, and
+   assert `check` is clean and the other is intact.
+8. **A block may carry several `talks_about` edges but exactly one primary.**
+   Sabotage: mint two primaries; `check` reports it.
+9. **Abstention is a node, one per map**, and an unclassified block points at
+   it — so *considered and declined* is distinguishable from *not yet seen*.
+10. **A block over the size cap is skipped and reported**, never truncated.
+    Sabotage: the 1,350,840-character block, which is real and on disk.
+11. **A label removed from the map stops collecting, and its old edges stay
+    valid.** The view renders nothing for it; `check` stays clean.
+12. **The collection view carries a handle on every block** and is rebuilt by
+    `render` from records alone, so it cannot drift from the classification.
+13. **`check` reports 0 problems** on a base carrying a classified map, and
+    every record validates against the schema.
+14. **Nothing in `src/` calls a model except through `llm.py`.** A grep test,
     the same shape as `READER`'s.
 
-### Still missing before this can be handed over — the interaction itself
+### What is still open — and it is now only the prompt
 
-**The infrastructure is specced; the classification is not.** Everything above
-describes where records go, what they cost and how a run is deleted. None of it
-says what the model is actually asked, and that is the part which most needs
-care, because it is the one thing in this project whose output cannot be
-recomputed.
+**The prompt is the last unwritten piece.** Everything around it is settled.
+What it needs, from the human's own framing:
 
-**a. The prompt.** Unwritten. It needs: how the concept map is rendered into
-it, how a block and its ancestor path are rendered, how abstention is invited
-rather than merely permitted — the human prefers false negatives, and a model
-told only "classify this" will not decline — and how the primary topic is
-distinguished from the rest.
+- **written for a cheap model**, which is the working hypothesis and which the
+  cost measurement says is affordable to test
+- **the block arrives with its ancestor path**, rendered as the heading and
+  bullet chain above it — which v0.2.16 and v0.2.17 made a single walk, and on
+  which **38.7%** of the human's blocks depend completely, carrying seven words
+  or fewer of their own text
+- **siblings batched together share one path**, so a chain is sent once per
+  group rather than once per block
+- **abstention invited, not merely permitted** — a model told "classify this"
+  will not decline, and the stated preference is false negatives over false
+  positives. The map's own "none of these" is named as a valid answer.
+  **Without overdoing it**, or the layer returns only a few very strong hits.
+- **the answer is a label, optionally a sublabel**, both drawn from the map
 
-**b. The response contract.** A batch of 100 goes out; what comes back, and how
-is each answer matched to its block? **What if 97 come back?** A missing or
-hallucinated identifier is the normal failure of this interaction, not an edge
-case, and the design has to say whether the batch is retried, partially
-accepted, or failed whole.
+**And one measurement stays open.** The none-of-these rate is the quality
+signal for the map — but only on material worth classifying. Measured on the
+notes repository: **14.1% of blocks are both short and have no ancestor path**,
+almost all of it vendored plugin documentation rather than the human's own
+writing. On that material a high abstention rate would mean *the material is
+unclassifiable*, not *the map is wrong*, and the two are indistinguishable from
+outside. Classify the human's own notes separately, at least first.
 
-**c. Failure mid-run.** Forty-nine calls to classify the human's notes. If call
-thirty fails after twenty-nine succeeded, is a partial run written or nothing?
-This interacts directly with *one run, deletable whole*: a half-run that looks
-complete is worse than no run, and "delete it and start again" is only an
-acceptable answer if a partial run is visibly partial.
-
-**d. Prompt versioning.** The design says the record must carry enough to
-explain a judgement it cannot reproduce, and names the prompt version as part
-of that. Where it lives and what changes it is unspecified.
-
-**e. What a classified block looks like when the map moves on.** Guarantee 8
-says an edge keeps pointing at the heading it named. What the *view* shows for
-a block whose topic belongs to a superseded revision is a separate question and
-is not answered.
-
-**These five are why this is still a draft.** They are not blocked on anything
-— no measurement is waiting, no decision is outstanding — they simply have not
-been written yet, and writing them is the next piece of work.
-
-### What is still open — needs the human or a lived-in base
-
-1. **The unit.** Measured: depth does **not** predict meaning. Over 1,951
-   prose blocks in the human's notes, median length drops once from depth 0 to
-   1 (15 → 9 words) and then flattens; depth 3 is *longer* than depth 1; and
-   short blocks are **more** common at top level (30.7% ≤5 words) than nested.
-   Only 8.3% of blocks sit at depth ≥2. So there is no granularity floor at a
-   depth — the working answer is to classify **a block together with its
-   ancestor path as context**, which v0.2.16 and v0.2.17 make a single walk.
-   Still to decide: whether a section carries its own topic distinct from its
-   children's.
-2. **Which model, and the prompt.** Still unmeasured, and still needs
-   `--cost-calculation` built before it can be answered — but the cost
-   measurement above removes the *constraint*: at 100 blocks per call the
-   human's whole notes repository is **$0.03** at a cheap model's prices, so
-   model choice is a quality question rather than a budget one. Their
-   hypothesis — that this will not need the most expensive models — is now
-   cheap to test on real material.
-3. **Accumulation policy — proposed and needing a yes.** Re-running mints a
-   complete second set of edges. One graph file per run, attributed to one
-   `prov:Activity`, deletable whole. Build step 2 and guarantee 5 assume this;
-   it is the layer's only inverse and it should be confirmed as the intended
-   workflow rather than discovered as a surprise.
-
-   **The batch size is now a fourth thing to decide**, and it is not a tuning
-   detail: 46× separates one block per call from a hundred. A default has to be
-   chosen, and whether it is a flag.
-4. **Re-measure everything on a lived-in base.** `TODO-v0.3.0-readiness.md` has
-   the standing warning: the human's base was replaced on 2026-09-08 and is
-   effectively empty, and the archive pre-dates delegation, mutability and
-   sections. Every rate in `design-naming.md` §4.2 was taken on a shape that no
-   longer exists.
-5. **How the wiki pages are read.** A view, a subcommand, or a generated
-   document that is itself digested. Undecided, and it decides whether this
-   layer has a rendering surface at all.
 
 ---
 
