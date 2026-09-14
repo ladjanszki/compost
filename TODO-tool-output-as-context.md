@@ -1,8 +1,8 @@
 # TODO — tool output through compost, instead of into the context
 
 **Not scheduled. An idea from the human, 2026-09-14, with the argument for it,
-the conflict I think it contains, and a proposed split that resolves the
-conflict.** Written because the idea is good and the failure mode is subtle
+the conflict I think it contains, and the three-stage split that resolves
+it.** Written because the idea is good and the failure mode is subtle
 enough to be worth recording before anyone builds it.
 
 ---
@@ -89,9 +89,10 @@ did not use". A generic summariser will underperform a well-chosen `grep`.
 
 ---
 
-## The split I would propose, and why this half first
+## The split I would propose, and why stage 1 first
 
-**The idea is two ideas, and only the second one needs a model.**
+**The idea is three ideas.** Only the first needs no model at all, and — as
+stage 3 argues — the obvious middle one is the weakest of the three.
 
 ### Stage 1 — store it, hand back a handle. No LLM at all.
 
@@ -120,6 +121,79 @@ measure, and let evidence decide whether the ambitious half is needed. It is
 the same shape as *code first, record the scheme name from day one*, and as
 *require the flag first and relax later*.
 
+### Stage 3 — the query travels down, and **handles** come back
+
+**The human's refinement, 2026-09-14, and it resolves the conflict above
+rather than merely mitigating it.**
+
+The request goes down with the output — a one-liner, *"find where the abcd
+service is having problems in this log"* — and what comes back is **a list of
+handles**, often consecutive ranges, not prose. The agent then reads exactly
+those from the graph, verbatim.
+
+**Why this is better than stage 2, and it is not a small difference.** My
+objection to a summariser was that *a summary reads as complete*, so its
+omissions are invisible and unfalsifiable. **A list of handles cannot do
+that.** It selects rather than paraphrases:
+
+- every returned handle resolves to the real text, one `lookup` away, in the
+  delegate's own words nowhere
+- *how many* were returned against how many exist is a visible number
+- a wrong selection is **checkable** — widen the range and look — where a wrong
+  paraphrase is not
+- the delegate never puts words in the reader's mouth
+
+That is the project's own move, applied to context: **address, never copy.**
+It is what a citation is (`[-](#guid)` points, it does not quote), what
+`blob.stored_as` is (a route to the bytes, not the bytes), and what §5.2 of
+the naming design concluded — *store the question and the answer, and leave the
+value where it already is.*
+
+**And it is the delegation rule, one level up.** v0.2.14 settled that *a
+digestor which meets content it does not own delegates to the digestor that
+does*. Here: an agent that meets output it does not need in full delegates the
+**reading** to an agent that will. The same composition, with attention as the
+resource instead of format knowledge.
+
+### The economics are inverted, and that is the point
+
+**This is not about saving dollars. It is about saving context in a
+semantically coherent conversation.**
+
+The delegate may be expensive — the human's own framing is that it might be
+*another Opus*, not a cheap model, precisely because a capable reader selects
+better. It pays full price to read the whole log. But it pays in **its own,
+disposable context**, and returns a handful of pointers.
+
+The scarce resource is not tokens. It is **the continuity of one conversation
+that holds a design in its head.** This session is the case in point: **197k of
+578k tokens — about a fifth — was Bash output**, and with that back, v0.3.0
+could have been specced, built, verified and released *inside the conversation
+that designed it*, instead of being handed to a fresh agent who must reconstruct
+the reasoning from documents.
+
+**A handover is not free**, and this is the cost it is paying: not money, not
+even time, but the difference between an agent that argued a design and one
+that inherited it. Six subagents ran in this session and every one was cheaper
+in dollars than the context it would have cost to do the work inline — and each
+one still needed its findings verified by the agent that held the thread.
+
+So the right measure for this feature is not cost per call. It is **how much
+further one conversation gets before it has to hand over.**
+
+### Three stages, and the order is deliberate
+
+| stage | what it does | needs a model | resolves the invisible-filter problem |
+|---|---|---|---|
+| **1** | store it; hand back a handle and an honest slice | **no** | yes — nothing is dropped, and the omission is stated |
+| **2** | a cheap model summarises | yes | **no** — a summary reads as complete |
+| **3** | the query travels down; **handles** come back | yes, possibly a capable one | **yes** — selection is checkable, paraphrase is not |
+
+**Stage 2 may be skippable entirely.** It is the obvious idea and the weakest
+one: it is the only stage that puts a model's prose between the reader and the
+text. If stage 1 is built and measured, the next thing to try is **stage 3, not
+stage 2.**
+
 ---
 
 ## What would have to be decided
@@ -139,7 +213,13 @@ the same shape as *code first, record the scheme name from day one*, and as
    precedent for the second, and `pyproject.toml` deliberately does not ship
    `tools/`.
 6. **Does it need an LLM at all?** Stage 1 says no. That should be *tested*
-   before stage 2 is designed.
+   before either of the others is designed.
+7. **What is a handle *of*, in a log?** Stage 3 needs the output to be
+   addressable in pieces, and today a `tooloutput` node stores the whole text
+   in one `text` param — there is nothing per-line to point at. Line ranges are
+   the natural unit and consecutive ones the common case, but this is genuinely
+   new: it is the first time the project would address *inside* a stored blob
+   rather than at block boundaries pandoc gave it.
 
 ---
 
@@ -151,6 +231,12 @@ distribution of output sizes is; and — the one that decides everything — **h
 often the agent later needed something it had already truncated away.** The
 last is answerable by looking for repeated calls that widen a previous
 `head`/`tail`, which is a mechanical pattern in the transcript.
+
+And one more, which stage 3 makes the real figure: **how much further one
+conversation gets before it has to hand over.** That is the quantity being
+bought, and it is measurable — tokens of tool output against tokens of
+everything else, per session, against whether the session ended in a release or
+a handover.
 
 This project has never once regretted measuring first, and has reversed three
 designs in a single session by doing it.
