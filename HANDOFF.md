@@ -227,6 +227,7 @@ different. Tell them so in the brief.
 | `TODO-citations-in-transcripts.md` | a decision, not a task |
 | `TODO-multiple-text-blocks.md` | guarded by a loud error |
 | `TODO-code-review.md` | the weakness blueprint. **Item 2 has now fired six times**, and `clean-room.sh` discarding evidence has cost two investigations |
+| `TODO-tool-output-as-context.md` | **new, unscheduled, and the human's idea.** Tool output into compost instead of into an agent's context. Stage 1 needs no LLM and is the half to build first |
 
 ---
 
