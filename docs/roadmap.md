@@ -3803,7 +3803,11 @@ new argument in the man page; `docs/record-format.md`.
 
 ### What is still open — and it is now only the prompt
 
-**The prompt is the last unwritten piece.** Everything around it is settled.
+**The prompt has a draft at `prompts/concept-map.md`, and the implementer is
+free to change it.** It is a text artifact with a `version` field for exactly
+that reason: decisions about batching, the id format and the answer format may
+well want it different, and those are discovered while building. What follows
+is what it must keep, not how it must read.
 What it needs, from the human's own framing:
 
 - **written for a cheap model**, which is the working hypothesis and which the
