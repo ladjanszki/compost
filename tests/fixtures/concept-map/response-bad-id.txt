@@ -1,0 +1,5 @@
+[1] Storage > Immutability
+[2] Time > Replay
+[3] none of these
+[4] Measurement
+[9] Storage > Addressing

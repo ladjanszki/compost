@@ -1,0 +1,5 @@
+[1] Storage > Immutability
+[2] Provenance
+[3] none of these
+[4] Measurement
+[5] Storage > Addressing
