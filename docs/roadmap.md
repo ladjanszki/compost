@@ -3414,14 +3414,20 @@ that is the reason this lands now rather than later.
 
 ---
 
-## v0.3.0 — the talks-about layer (DRAFT, pending v0.2.17)
+## v0.3.0 — the talks-about layer
 
-**Status: draft, written 2026-09-11 immediately after the design conversation
-that produced it, and deliberately before v0.2.17 is built.** Not because it is
-ready to hand over — it is not, and §"What is still open" says why — but
-because the *reasoning* is what perishes, and this document is where this
-project keeps reasoning. Review it after v0.2.17 ships; the parts that depend
-on the tree shape are marked.
+**Status: specced, reviewed 2026-09-15 against shipped v0.2.17.** Written
+2026-09-11 immediately after the design conversation that produced it and
+deliberately before v0.2.17 was built, because the *reasoning* is what perishes
+and this document is where this project keeps reasoning.
+
+**The post-v0.2.17 review the draft asked for has now happened, and it found
+three things.** The tree-shape dependency checks out — re-measured, a concept
+map's frontmatter arrives as a typed `MetaBool`, the round-trip holds with it
+present, and the body parses to label → grounding prose → sublabel with no new
+mechanism, exactly as claimed. The cost table's prose contradicted its own
+numbers (see "What it costs"). And the spec named no record shape, no cap
+number, and no fixtures, which three new sections below now supply.
 
 ### What this is, and what it is not
 
@@ -3655,14 +3661,42 @@ models.
 ### What it costs, measured — and batching is not an optimisation
 
 Taken 2026-09-11, before any API call existed, so the numbers cost nothing to
-get. **Classifiable blocks** are `Para`, `Plain`, `ListItem`, `Header`,
-`CodeBlock` and `BlockQuote` with non-empty text; **context** is the ancestor
-path, which v0.2.16 and v0.2.17 made a single walk.
+get. **Context** is the ancestor path, which v0.2.16 and v0.2.17 made a single
+walk.
 
 | | files | classifiable blocks | block text | ancestor context | total |
 |---|---|---|---|---|---|
 | test corpus | 520 | 12,296 | ~514k tokens | ~178k | **~692k** |
 | the human's notes | 50 | 4,845 | ~108k | ~75k | **~183k** |
+
+**Corrected 2026-09-15: this table's prose and its numbers disagreed, and the
+numbers were right.** The paragraph above used to define a classifiable block
+as `Para`, `Plain`, `ListItem`, `Header`, `CodeBlock` and `BlockQuote` with
+non-empty text. Re-measured against the current tree — corpus pin confirmed
+intact at **19,400 nodes**, exactly what `verify-0.2.17.sh` asserted — that
+definition yields **14,298** blocks and **~602,629** estimated tokens, not
+12,296 and ~514,343. The difference is **2,002**, which is exactly the corpus's
+`CodeBlock` count, and excluding them reproduces both published figures to the
+character: **12,296 blocks, 2,057,373 chars, ~514,343 tokens.** So the table
+was measured without code blocks while the prose claimed them.
+
+**`BlockQuote` was a no-op in both readings.** It carries its own text **0 of
+159** times in the corpus, because a block quote is a container and its prose
+lives in the child `Para`s that are already counted. Naming it changed nothing
+and hid that fact.
+
+**CLASSIFIABLE is therefore `Para`, `Plain`, `ListItem`, `Header` — one named
+constant in `src/layers.py`, one line to change.** Two reasons beyond matching
+the measurement. A code block has no prose *about* a topic, so classifying one
+invites exactly the false positive the human's stated preference rules against;
+and code blocks are the largest blocks in the corpus, so they dominate the size
+cap while contributing the least judgement. This is a **query-time** filter,
+which the digest-everything rule explicitly permits — the bytes are all in the
+graph, and widening the constant reclassifies without re-importing anything.
+
+**If the human wants code blocks classified, this is the line to change and the
+cost table moves to 14,298 / ~602,629.** Flagged rather than decided silently,
+because it is the only place the spec contradicted itself.
 
 At a cheap model's prices that is **cents**, and the worry that started this —
 that re-running on a large corpus gets expensive — does not survive contact with
@@ -3726,6 +3760,91 @@ project has defended, requiring a written justification even for `jsonschema` �
 no longer true. Timeouts and a small retry loop are explicit rather than
 inherited, which for a paid endpoint is a feature.
 
+### The records this mints — decided 2026-09-15
+
+**The spec had fourteen guarantees and seven build steps, and no record shape
+at all.** Guarantee 8 says `check` reports a second primary; nothing said what
+a primary *is*. This section fills that in, and it is the one part of v0.3.0
+the human has not reviewed — **overrule it before the implementer starts, not
+after.**
+
+The schema forced the question. `tools/record-schema-1.json` sets
+`"additionalProperties": false` on both nodes and edges, with a closed `enum`
+for node `type`, edge `type` and `layer`. So **every name below is a schema
+change**, and an implementer who invents one gets a record that fails
+`test_grammar` rather than one that quietly works.
+
+| record | shape |
+|---|---|
+| node `concept_run` | one per run, `UNCONTAINED`. **Its own guid is the run id.** `params`: `model`, `batch_size`, `prompt_version` |
+| node `abstention` | one per run, `UNCONTAINED`. The "none of these" target |
+| edge `talks_about` | block → `Header` (a concept), or block → `abstention`. Props: `primary` (bool), `run` (the `concept_run` guid) |
+| edge `used` | `concept_run` → the map root, and `concept_run` → the prompt root |
+| layer `concept-map` | the `layer` value on every record the run mints |
+
+**`used` is `prov:used`, and that is why it is a separate type rather than
+`derived_from`.** PROV says an *Activity* `used` an *Entity* and an *Entity*
+`wasDerivedFrom` an Entity. A run is an Activity; the map and the prompt are
+Entities it consumed. Reusing `derived_from` — which in this project means
+document → blob — would claim the run was *made of* the map. **What it
+enforces:** the map and prompt revisions a run consumed are edges, so `check`'s
+dangling-endpoint assertion protects them and deleting a map out from under a
+run is caught. **What it does not:** it says nothing about whether the run
+succeeded, and nothing about order.
+
+**`talks_about` is `dcterms:subject`; `primary: true` is `foaf:primaryTopic`.**
+Carrying the primary as a *prop on the same edge type* rather than as a second
+edge type is what makes guarantee 8 checkable in one pass, and what keeps a
+block's topics a single list to read.
+
+**The run id is the node's guid, not a separate field.** A `run_id` string
+beside a `concept_run` guid is two identifiers for one thing, and the second
+one is the one that drifts.
+
+**The fifteenth `check` assertion — this is build step 8, and it was missing.**
+`records.check()` holds fourteen; guarantee 8 needs a fifteenth:
+
+> Within one run, a block that carries any `talks_about` edge carries exactly
+> one with `primary: true`.
+
+Scoped **per run**, because two runs over the same base legitimately give the
+same block two primaries — one each. Phrase the problem the way the existing
+fourteen do: `block {guid} has {n} primary talks_about edges in run {run},
+expected 1`. A block skipped for size carries no edges at all and is not
+caught by this — that is guarantee 10's job, and the two must not be conflated.
+
+**`UNCONTAINED` grows by two** in `src/records.py`, beside `file`, `blob`,
+`alias`, `unresolved_citation` and `display_name`. Both new node types are
+parentless leaves, exactly like the placeholders `_citation` already mints, so
+`_entity()` in `src/layers.py` is the function to reuse.
+
+### The per-block size cap is 8,000 characters — measured 2026-09-15
+
+The spec specified a cap and chose no number. Measured over the 520-document
+corpus, **14,298** classifiable-including-code blocks:
+
+| median | p90 | p95 | p99 | p99.9 | max |
+|---|---|---|---|---|---|
+| 102 | 412 | 513 | 738 | 1,072 | 2,120 |
+
+**8,000 skips 0 of 14,298.** It is 7.5× the corpus p99.9, so it never fires on
+normal material; it is ~2,000 estimated tokens, so one block can never be more
+than about a third of the ~6,800-token typical batch; and it is 0.6% of the
+**1,350,840-character** block the notes base really holds, so the pathological
+case is caught by a wide margin.
+
+**A consequence for the tests: the corpus cannot exercise this.** Its largest
+block is 2,120 characters, so guarantee 10 needs a *synthetic* over-cap block
+in a fixture. The 1.35M-character block is field confirmation, not a test
+input — it is in the human's private base and no suite may read it.
+
+**A finding, not a mandate: two limits may not be enough.** A hundred blocks at
+8,000 characters each is 800,000 characters in one batch. That cannot happen on
+any material measured, but nothing prevents it. A third limit — close the batch
+on total characters as well as on count — is the obvious guard. It is left to
+the implementer to report on rather than specified, because adding it
+unmeasured is the tuning-before-measuring this project avoids.
+
 ### What has to be built
 
 **1. `src/llm.py` — the one seam, stdlib only.** `urllib.request` and `json`
@@ -3764,9 +3883,35 @@ it, a handle on each. Generated from records and nothing else.
 --mutability=mutable` like any document. That is what v0.2.16 and v0.2.17 were
 for.
 
-**7. Schema and docs.** `talks_about` and the abstention node in the tables,
-each declaring what its borrowed name honours and does not; `compost layer`'s
-new argument in the man page; `docs/record-format.md`.
+**7. Schema and docs.** `tools/record-schema-1.json` is **closed** —
+`additionalProperties: false`, with enums for node `type`, edge `type` and
+`layer` — so all five names in "The records this mints" are schema edits and
+none of them is optional: node types `concept_run` and `abstention`, edge types
+`talks_about` and `used`, layer `concept-map`, and the two new edge properties
+`primary` and `run`. Then the tables in `docs/record-format.md`, each borrowed
+name declaring what it honours and what it does not, and `compost layer`'s new
+argument in `docs/man-compost.md` — which `tests/test_manpage.py` holds against
+the program, so the man page is not documentation you may defer.
+
+**8. The fifteenth `check` assertion**, in `records.check()` — exactly one
+primary per block per run. See "The records this mints". Guarantee 8 has no
+other home: `check` is where every graph-level invariant lives, and the schema
+provably cannot express this one.
+
+**9. Fixtures, because none of this exists yet.** `tests/fixtures/` has ast,
+edge-cases, grammar, notes and sessions, and nothing with frontmatter. Five are
+needed and each is named by a guarantee:
+
+| fixture | for |
+|---|---|
+| `concept-map/map.md` | frontmatter + labels + sublabels + grounding prose. The input to almost every NEW check |
+| `concept-map/no-frontmatter.md` | the same body with the frontmatter stripped — guarantee 3's refusal |
+| `concept-map/over-cap.md` | a synthetic block past 8,000 characters — guarantee 10. The corpus maxes at 2,120 and cannot exercise it |
+| `concept-map/response-good.txt` | a canned well-formed batch answer, so the whole pipeline runs with the caller injected and the network untouched |
+| `concept-map/response-bad-*.txt` | three malformed answers, one per check in guarantee 5: short count, unknown label, unsent id |
+
+The canned responses are what make guarantees 5, 6, 9, 11 and 12 testable at
+all without a network call, and they are why guarantee 2 can stay true.
 
 ### Guarantees
 
@@ -3786,12 +3931,17 @@ new argument in the man page; `docs/record-format.md`.
 7. **One run is one `prov:Activity`, and deleting it removes everything it
    minted** and nothing else. Sabotage: delete one run with two present, and
    assert `check` is clean and the other is intact.
-8. **A block may carry several `talks_about` edges but exactly one primary.**
-   Sabotage: mint two primaries; `check` reports it.
+8. **A block may carry several `talks_about` edges but exactly one primary,
+   per run.** The fifteenth `check` assertion — build step 8. Sabotage: mint
+   two primaries in one run; `check` reports it. Mint one in each of two runs;
+   `check` stays clean.
 9. **Abstention is a node, one per map**, and an unclassified block points at
    it — so *considered and declined* is distinguishable from *not yet seen*.
-10. **A block over the size cap is skipped and reported**, never truncated.
-    Sabotage: the 1,350,840-character block, which is real and on disk.
+10. **A block over the 8,000-character cap is skipped and reported**, never
+    truncated. Sabotage: `concept-map/over-cap.md`, a synthetic fixture — the
+    corpus maxes at 2,120 characters and cannot exercise this. The
+    1,350,840-character block in the human's base is the field confirmation
+    that the case is real, and is **not** a test input: no suite reads it.
 11. **A label removed from the map stops collecting, and its old edges stay
     valid.** The view renders nothing for it; `check` stays clean.
 12. **The collection view carries a handle on every block** and is rebuilt by
