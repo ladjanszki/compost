@@ -175,6 +175,79 @@ assert re.search(r"^def render_collection\b", src, re.M), \
     "views.py defines no render_collection(); stage 2 is a view, not a layer"
 PY
 
+run NEW "batch_size is a bound, not a hint -- an oversized path-group is split" <<PY
+import sys; sys.path.insert(0,"$ROOT")
+from src import layers as L
+# Measured 2026-09-17: the test corpus has a single path-group of 1,140
+# fragments, and fragments with no ancestor path all share the empty path.
+# _make_batches never split a group, so batch_size was only ever a hint.
+groups=[(("p",), [{"guid":str(i),"text":"x","path":("p",)} for i in range(250)])]
+batches=L._make_batches(groups, 100)
+biggest=max(sum(len(fs) for _,fs in b) for b in batches)
+assert biggest<=100, \
+    f"largest batch holds {biggest} fragments; batch_size is not a bound"
+total=sum(sum(len(fs) for _,fs in b) for b in batches)
+assert total==250, f"splitting lost or duplicated fragments: {total} of 250"
+PY
+
+run NEW "ask() fails loudly when a model returns no text, and caps its output" <<PY
+import sys, json, os, urllib.request; sys.path.insert(0,"$ROOT")
+from src import llm
+# A reasoning model spends output tokens on reasoning; with no max_tokens a
+# large batch gets truncated and content comes back None. This crashed the
+# 2026-09-17 model sweep deep inside _parse_response with an opaque
+# AttributeError. No network here: urlopen is replaced.
+seen={}
+class Fake:
+    def __init__(self,p): self._p=json.dumps(p).encode()
+    def read(self): return self._p
+    def __enter__(self): return self
+    def __exit__(self,*a): return False
+def fake(req, timeout=None):
+    seen["body"]=json.loads(req.data.decode())
+    return Fake({"choices":[{"message":{"content":None},"finish_reason":"length"}]})
+urllib.request.urlopen=fake
+os.environ["OPENROUTER_API_KEY"]="not-a-real-key"
+assert hasattr(llm,"LLMError"), "llm.py defines no named error for a bad response"
+try:
+    llm.ask("s","u")
+    raise AssertionError("ask() returned a non-string instead of failing loudly")
+except llm.LLMError as e:
+    assert "length" in str(e), f"the error does not name finish_reason: {e}"
+assert seen["body"].get("max_tokens"), "the request sets no max_tokens"
+PY
+
+run NEW "the default model is the one that was measured" <<PY
+import sys; sys.path.insert(0,"$ROOT")
+from src import llm
+# Measured 2026-09-17 over 2,207 fragments with ground truth: gpt-4o-mini
+# rejected 12 of 13 batches and scored 39.3% page accuracy without headings;
+# gemini-3.8-flash rejected 0 and scored 99.4%, matching claude-opus-5 at a
+# sixth of the price. docs/decisions.md carries the table.
+assert llm.MODEL=="google/gemini-3.8-flash", \
+    f"MODEL is {llm.MODEL!r}; the measured default is google/gemini-3.8-flash"
+assert llm.MODEL in llm.PRICE_TABLE, "the default model has no price table entry"
+PY
+
+run NEW "a map with two labels of the same name is refused, not silently merged" <<PY
+import sys, tempfile, pathlib; sys.path.insert(0,"$ROOT")
+from src import layers as L, markdown as MD, records as R
+# _label_index is a flat dict, so a repeated top-level label used to
+# overwrite the first silently and every block classified under it would be
+# attributed to whichever won. Measured 2026-09-17 against real material:
+# 14 headings repeat across the Wikipedia set -- Definition, History,
+# Examples, Properties -- so this is the normal case, not a corner.
+d=pathlib.Path(tempfile.mkdtemp())/"m.md"
+d.write_text("---\nconcept_map: true\n---\n\n"
+             "# Storage\n\nOne.\n\n# Storage\n\nTwo.\n")
+recs,root=R.ast_to_records(MD.ast_of_file(str(d)))
+try:
+    L._label_index(L._concept_map_tree(recs, root))
+    raise AssertionError("a duplicate label was accepted and silently merged")
+except L.ConceptMapError as e:
+    assert "Storage" in str(e), f"the refusal does not name the label: {e}"
+PY
+
 echo
 
 # ---------------------------------------------------------------------------
