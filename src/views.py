@@ -622,6 +622,94 @@ def render_html(records, root, title: str) -> str:
             f"</body>\n</html>\n")
 
 
+# -- collection (v0.3.0, "the talks-about layer") ---------------------------
+#
+# The second of the release's two stages, and the only one this version
+# ships: "the classification is a layer, the collection page is a view"
+# (docs/roadmap.md). Deterministic given the `talks_about` edges a
+# `concept-map` run mints — no model call here, generated from records and
+# nothing else, so a collection page cannot drift from the classification
+# (guarantee 12) and disappears at the next `render` the moment its edges do
+# (guarantee 11).
+
+
+def _collection_slug(label_path: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", label_path.lower()).strip("-")
+    return s or "untitled"
+
+
+def render_collection(records: list) -> dict:
+    """label-path slug -> one collection page's HTML.
+
+    "The map is the source of truth for what exists" (docs/roadmap.md): a
+    label's page exists only for a concept map that is *current* — a
+    `document` root with `params.meta.concept_map` typed `true` and no
+    `revision_of` edge superseding it. A `--mutability=mutable` re-ingest
+    mints an entirely new tree, fresh guids included, so a talks_about edge
+    minted against a superseded map's old Header guids has nothing to render
+    under here without any special-casing: the old guids simply are not
+    reachable from any live map, which is exactly "a label removed from the
+    map stops collecting" (guarantee 11) whether the label was dropped or
+    the whole map was revised out from under it.
+    """
+    g = R.Graph(records)
+    nodes = g.nodes
+    superseded = {e["destination"] for e in records
+                 if e.get("record") == "edge" and e["type"] == "revision_of"}
+    live_maps = []
+    for guid, n in nodes.items():
+        if n["type"] != "document" or guid in superseded:
+            continue
+        meta = (n.get("params") or {}).get("meta") or {}
+        flag = meta.get("concept_map")
+        if isinstance(flag, dict) and flag.get("t") == "MetaBool" \
+                and flag.get("c") is True:
+            live_maps.append(guid)
+
+    # Header guid -> its "Label" or "Label > Sublabel" path, current maps only.
+    labels: dict[str, str] = {}
+    for m in sorted(live_maps):
+        for hg in g.children(m):
+            if nodes[hg]["type"] != "Header":
+                continue
+            labels[hg] = R.plain_text(nodes[hg])
+            for sg in g.children(hg):
+                if nodes[sg]["type"] == "Header":
+                    labels[sg] = f"{labels[hg]} > {R.plain_text(nodes[sg])}"
+
+    by_label: dict[str, list[str]] = {}
+    for e in records:
+        if (e.get("record") == "edge" and e["type"] == "talks_about"
+                and e["destination"] in labels):
+            by_label.setdefault(e["destination"], []).append(e["source"])
+
+    pages = {}
+    for hg, path in sorted(labels.items(), key=lambda kv: kv[1]):
+        blocks = by_label.get(hg, [])
+        if not blocks:
+            continue
+        items = []
+        for bg in blocks:
+            n = nodes.get(bg)
+            if n is None:
+                continue
+            h = handle(bg)
+            text = _html.escape((R.plain_text(n) or "").strip())
+            items.append(f'<li id="{h}">'
+                        f'<code>{h}</code> — {text}</li>')
+        body = (f"<h1>{_html.escape(path)}</h1>\n"
+               f"<p>{len(items)} block(s) classified here.</p>\n"
+               f"<ul>{''.join(items)}</ul>")
+        pages[_collection_slug(path)] = (
+            f"<!doctype html>\n<html lang=\"en\"><head>"
+            f"<meta charset=\"utf-8\">"
+            f"<meta name=\"viewport\" content=\"width=device-width, "
+            f"initial-scale=1\"><title>{_html.escape(path)}</title>"
+            f"<style>{CSS}</style></head><body><main>{body}</main>"
+            f"</body></html>\n")
+    return pages
+
+
 # -- the index ----------------------------------------------------------
 
 def _display_name(g: R.Graph, root: str) -> str | None:
@@ -841,6 +929,16 @@ def render_all(st: S.Store):
             (d / (name + ext)).write_text(fn(), encoding="utf-8")
             written.append(d / (name + ext))
 
+    # v0.3.0: the fourth family, one page per live concept-map label with
+    # any block classified under it. A pure function of `recs` alone (no
+    # model call, guarantee 12), so it costs nothing to rebuild every render.
+    coll_dir = st.views / "default-collection"
+    coll_dir.mkdir(parents=True, exist_ok=True)
+    for slug, page_html in render_collection(recs).items():
+        p = coll_dir / f"{slug}.html"
+        p.write_text(page_html, encoding="utf-8")
+        written.append(p)
+
     # Remove pages this render did not produce. `render` used to only ever
     # write, which was invisible while every document had a page forever — and
     # became wrong the moment a transcript could stop having one of its own,
@@ -849,7 +947,8 @@ def render_all(st: S.Store):
     # rule is that what is on disk is exactly this render's output.
     kept = {f.resolve() for f in written}
     removed = []
-    for sub in ("default-djot", "default-html", "default-md"):
+    for sub in ("default-djot", "default-html", "default-md",
+               "default-collection"):
         d = st.views / sub
         if not d.is_dir():
             continue
@@ -882,7 +981,8 @@ def main(argv):
         print(f"  removed {len(removed)} stale view files")
     print(f"  {ndocs} documents and sessions -> {len(written)} files under "
           f"{st.views.relative_to(st.root)}/")
-    for sub in ("default-djot", "default-html", "default-md"):
+    for sub in ("default-djot", "default-html", "default-md",
+               "default-collection"):
         n = len(list((st.views / sub).glob("*")))
         print(f"    {sub:<16} {n} files")
     return 0

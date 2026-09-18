@@ -40,7 +40,8 @@ ROOT_TYPES = {"document", "session"}
 # `file` is *referenced* by the calls that touched it. A `blob` is the bytes
 # of an ingested source, which a document is derived *from* rather than
 # contained *by*. Both are pointed at; neither is inside anything.
-UNCONTAINED = {"file", "blob", "alias", "unresolved_citation", "display_name"}
+UNCONTAINED = {"file", "blob", "alias", "unresolved_citation", "display_name",
+               "concept_run", "abstention"}
 
 # What a view shows, a human pastes, and a citation names: the whole guid.
 # A prefix is not a handle. There was a resolver that accepted any unambiguous
@@ -1232,6 +1233,26 @@ def check(records: list) -> list[str]:
         if not rev_colour.get(g_) and rev_visit(g_):
             problems.append("cycle in the revision_of graph")
             break
+
+    # Fifteenth assertion (v0.3.0, "the talks-about layer"): within one run, a
+    # block that carries any `talks_about` edge carries exactly one with
+    # `primary: true`. Scoped by the edge's own `run` prop — a `concept_run`
+    # guid — because two runs over the same base legitimately give the same
+    # block two primaries, one each, and this must stay clean when they do.
+    # A block skipped for size (the 8,000-character cap) carries no edge at
+    # all and is invisible here on purpose; that is guarantee 10's job, not
+    # this one's, and the two are not to be conflated.
+    talks_about: dict[tuple[str, str | None], list[bool]] = {}
+    for e in edges:
+        if e["type"] == "talks_about":
+            key = (e["source"], e.get("run"))
+            talks_about.setdefault(key, []).append(bool(e.get("primary")))
+    for (blk, run), flags in talks_about.items():
+        n = sum(1 for f in flags if f)
+        if n != 1:
+            problems.append(
+                f"block {blk} has {n} primary talks_about edges in run "
+                f"{run}, expected 1")
 
     return problems
 

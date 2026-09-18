@@ -27,6 +27,7 @@ base is validated against the schema directly, which no amount of
 table-scraping ever did.
 """
 import json
+import re
 import sys
 import tempfile
 from collections import Counter, defaultdict
@@ -199,6 +200,45 @@ def build() -> list:
         b2.edge("names", al, answered_root["guid"], "citation")
         R.stamp_hashes(b2.records)
         st.write("v01-alias.jsonl", b2.records)
+
+        # v0.3.0, "the talks-about layer": the schema names `concept_run`,
+        # `abstention`, `talks_about` and `used`, so this suite has to mint a
+        # real one of each or "every node type/edge pair the schema names is
+        # exercised" fails on the very thing it exists to catch. The concept
+        # map and the real prompt are digested exactly as any human would;
+        # the caller is injected with an always-abstain answer so this
+        # suite never reaches the network (CLAUDE.md, "the suites never make
+        # a network call") — a valid answer is all guarantee 13 needs here,
+        # not a considered one.
+        from src import layers as LY
+        with contextlib.redirect_stdout(io.StringIO()):
+            if S._digest(st, "notes", [str(FIX / "concept-map/map.md")],
+                        "compost", mutability="mutable"):
+                raise RuntimeError("digest failed for concept-map/map.md")
+            if S._digest(st, "notes",
+                        [str(HERE.parent / "prompts/concept-map.md")],
+                        "compost", mutability="mutable"):
+                raise RuntimeError("digest failed for prompts/concept-map.md")
+        recs_cm, _ = st.load()
+        cm_map_root = next(
+            r["guid"] for r in recs_cm if r["record"] == "node"
+            and r["type"] == "document"
+            and ((r.get("params") or {}).get("meta") or {})
+                .get("concept_map", {}).get("c") is True)
+        cm_prompt_root = next(
+            r["guid"] for r in recs_cm if r["record"] == "node"
+            and r["type"] == "document"
+            and (r.get("params") or {}).get("source") == "concept-map.md")
+
+        def _always_abstain(system, user, model):
+            return "\n".join(
+                f"[{m.group(1)}] {LY.ABSTAIN_LABEL}"
+                for m in re.finditer(r"^\[(\d+)\]", user, re.M))
+
+        cm_result = LY.build_concept_map(
+            st, cm_map_root, cm_prompt_root, ask=_always_abstain,
+            model="test/grammar-fixture", batch_size=100)
+        st.write(f"{cm_result['run']}.jsonl", cm_result["records"])
 
         recs, _ = st.load()
         return recs

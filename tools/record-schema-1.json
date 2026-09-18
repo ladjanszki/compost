@@ -66,8 +66,10 @@
             "TableBody",
             "TableFoot",
             "TableHead",
+            "abstention",
             "alias",
             "blob",
+            "concept_run",
             "contentblock",
             "display_name",
             "document",
@@ -130,6 +132,7 @@
             "agent",
             "citation",
             "claude-code",
+            "concept-map",
             "conversation",
             "display",
             "ingestion",
@@ -149,7 +152,9 @@
             "replies_to",
             "responds_to",
             "revision_of",
-            "touches"
+            "talks_about",
+            "touches",
+            "used"
           ]
         },
         "source": {
@@ -160,6 +165,14 @@
         },
         "by": {
           "type": "string"
+        },
+        "primary": {
+          "type": "boolean",
+          "description": "v0.3.0, `talks_about` only: this is the block's `foaf:primaryTopic` among however many `talks_about` edges it carries in one run. `records.check()`'s fifteenth assertion requires exactly one `primary: true` per (block, run) pair among the edges that exist for it."
+        },
+        "run": {
+          "$ref": "#/$defs/guid",
+          "description": "v0.3.0, `talks_about` only: the `concept_run` node this classification came from. Carried as a prop rather than inferred, because two runs may legitimately classify the same block and each edge must say which run made the claim."
         },
         "created_at": {
           "type": "string"
@@ -439,6 +452,14 @@
         },
         "carries_content": false
       },
+      "abstention": {
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "carries_content": false
+      },
       "alias": {
         "params": {
           "type": "object",
@@ -486,6 +507,23 @@
           "additionalProperties": false
         },
         "carries_content": true
+      },
+      "concept_run": {
+        "params": {
+          "type": "object",
+          "properties": {
+            "model": {},
+            "batch_size": {},
+            "prompt_version": {}
+          },
+          "required": [
+            "model",
+            "batch_size",
+            "prompt_version"
+          ],
+          "additionalProperties": false
+        },
+        "carries_content": false
       },
       "contentblock": {
         "params": {
@@ -704,6 +742,20 @@
       {
         "layer": "claude-code",
         "type": "replies_to"
+      },
+      {
+        "layer": "concept-map",
+        "type": "talks_about",
+        "aligns_with": "dcterms:subject; primary: true aligns with foaf:primaryTopic",
+        "enforced": "records.check()'s fifteenth assertion — within one run, a block that carries any talks_about edge carries exactly one with primary: true",
+        "not_enforced": "nothing about whether the classification is correct; a judgement, not a recomputable fact"
+      },
+      {
+        "layer": "concept-map",
+        "type": "used",
+        "aligns_with": "prov:used — an Activity (the run) used an Entity (the map, the prompt)",
+        "enforced": "check()'s dangling-endpoint assertion, same as every other edge",
+        "not_enforced": "whether the run succeeded, and any ordering"
       },
       {
         "layer": "conversation",
