@@ -3,7 +3,7 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
-## Unreleased — the talks-about layer
+## v0.3.0-rc — the talks-about layer
 
 **The first semantic layer, and the first thing in this project that calls a
 model.** `compost layer concept-map --map=GUID --prompt=GUID` classifies
