@@ -3,7 +3,7 @@
 *A local-first knowledge base where a conversation and a document are the same
 kind of thing, and every paragraph has a name.*
 
-**Version 0.2.17.** Every earlier version of this document is kept, unedited, in
+**Version 0.3.0.** Every earlier version of this document is kept, unedited, in
 the notes repository — because the paper explaining this project is going to be
 digested *by* it: one revision chain over its own history, once v0.2.16 lands
 `revision_of`. They are not in `docs/`, and there is no procedure for putting
@@ -79,11 +79,11 @@ other.
 **These are not invariants, and the distinction matters.**
 
 An **invariant** is a property of the graph that a program checks. `check()`
-makes **fourteen** assertions and refuses a view when any fails. You cannot
-violate an invariant and ship; you get an error. (Fourteen assertions,
-twenty-four call sites — one rule can report several ways, the parent-count
+makes **fifteen** assertions and refuses a view when any fails. You cannot
+violate an invariant and ship; you get an error. (Fifteen assertions,
+twenty-five call sites — one rule can report several ways, the parent-count
 rule alone in three and the fourteenth (v0.2.16) in five. Counting
-`problems.append` gives twenty-four and is the wrong number; *The fourteen
+`problems.append` gives twenty-five and is the wrong number; *The fifteen
 invariants*, below, is the enumeration this document keeps current. This
 paragraph said "ten assertions, twelve call sites" through v0.2.15, two
 releases after the count moved — the same drift the invariant list itself
@@ -449,13 +449,54 @@ Everything else — `cites`, `launched`, `touches`, `replies_to`, `derived_from`
 
 ### Layers are the unit of provenance and of deletion
 
-Every edge carries one. Eight are defined: `pandoc-ast`, `session`,
-`claude-code`, `ingestion`, `agent`, `citation`, `conversation`, `display`.
+Every edge carries one. Nine are defined: `pandoc-ast`, `session`,
+`claude-code`, `ingestion`, `agent`, `citation`, `conversation`, `display`,
+`concept-map`.
 
 A layer answers *who asserted this, and can I remove it without touching
 anything else?* Deleting a whole graph file that one `layer` run wrote is the
 only inverse this design offers for accumulation it never removes — and it works
 because a layer's edges are separable from the structure they annotate.
+
+### A judgement is a record that cannot be recomputed — v0.3.0
+
+Every record before this one is a function of bytes. Run the digestor again
+and you get the same tree; that is what makes
+`records_to_ast(ast_to_records(ast)) == ast` an acceptance test rather than a
+hope. **The `talks_about` layer breaks that, on purpose**, and it is the
+first thing here that does: a model asked twice which concept a block is
+about may answer differently, and no amount of re-running settles it.
+
+This project has met the same shape twice before — the missing semantic clock
+(`TODO-the-clock.md`) and `design-naming.md`'s `scheme` — and the answer that
+worked twice applies again. **If it cannot be recomputed, the record must
+carry enough to explain it.** A run is a `prov:Activity` node whose own guid
+is the run id, carrying the model, the batch size and the prompt version, and
+`used` edges naming the concept map and the prompt revision it read. So the
+question *why does this block sit under that concept* has an answer in the
+graph rather than in somebody's memory of an afternoon.
+
+Two consequences follow, and both are deliberate.
+
+**Deletion is the only inverse, and it is exact.** One run writes one graph
+file; removing it removes everything that run asserted and nothing else. This
+is the same inverse layers already had, and it is what makes a classification
+you disagree with a thing you can *withdraw* rather than argue with.
+
+**Abstention is a node, not an absence.** "None of these" is a real target
+with an edge pointing at it, because absence cannot distinguish *considered
+and declined* from *not yet seen* — and on a layer re-run as the map improves,
+that is exactly the difference between done and needing another pass. It is
+scoped per run, since the only true reading is *we tried this block against
+**this** map and nothing fitted*.
+
+**What the graph does not record is whether the judgement is any good.** That
+is a measurement, and it belongs outside the records: `docs/decisions.md`
+carries a ground-truth sweep over 2,207 fragments with known correct answers,
+which is what the choice of model rests on. The finding worth carrying here
+is that the quality of this layer is dominated by the model, not by the
+design — three conclusions about the mechanism, each argued from a cheap
+model's output, did not survive a better one.
 
 ### Two hash functions that share a name and are not comparable
 
@@ -510,7 +551,7 @@ Two more sets are closed in code rather than in prose. **`ROOT_TYPES`** —
 `file`, `alias`, `unresolved_citation`, `display_name` — nodes that are *pointed
 at* rather than contained. Everything else has exactly one `contains` parent.
 
-### The fourteen invariants
+### The fifteen invariants
 
 What `check()` asserts over a whole loaded graph. **A view of a graph failing any
 of them is refused, not rendered** (principle 11).
@@ -561,6 +602,17 @@ of them is refused, not rendered** (principle 11).
     `launched` — a predecessor named by two different `revision_of` edges
     would mean two trees both claim to supersede it, forking a history the
     design declares linear.
+15. **Within one run, a block carrying any `talks_about` edge carries exactly
+    one with `primary: true`.** v0.3.0. Multi-label classification quietly
+    defeats an abstention preference — every individual edge looks
+    defensible while the aggregate over-assigns — so one primary per block
+    per run is what makes over-assignment countable rather than arguable.
+    Scoped by the edge's own `run`, because two runs over one base
+    legitimately give a block two primaries, one each, and this must stay
+    clean when they do. A block skipped for size carries no edge at all and
+    is invisible here on purpose: that is the size cap's business, and
+    conflating "declined" with "never seen" is the distinction the
+    `abstention` node exists to keep.
 
 ### Where the per-type grammar lives, now in three layers
 
