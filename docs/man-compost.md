@@ -12,7 +12,7 @@ compost init [DIR]
 compost digest --as=ROUTE (--mutability=VALUE | --updates=GUID) FILE...
 compost ls
 compost check
-compost layer NAME [--by SCHEME]
+compost layer NAME [--by SCHEME | --map GUID [--prompt GUID] [--cost-calculation]]
 compost lookup HANDLE
 compost render
 compost draw [ROOT] [--engine ENGINE]
@@ -420,7 +420,104 @@ read what a previous run wrote, so nothing is deduplicated and nothing is
 removed — the same governing decision as everywhere else in this tool: it
 does not hold your hand. See `docs/roadmap.md`.
 
+#### concept-map --map=GUID [--prompt=GUID] [--cost-calculation] [--model=NAME] [--batch-size=N]
+
+The first layer that calls a model, and the first that takes a **root**
+rather than a scheme: `--map` names a `document` root whose
+`params.meta.concept_map` is the typed `MetaBool` `true` — a markdown file
+digested like any other, `--as=notes --mutability=mutable`, where a heading
+is a topic label, a nested heading is a sublabel, and the prose under either
+is that concept's grounding description. Pointed at a root lacking the key,
+this refuses and names it; **frontmatter is a guard here, never a discovery
+mechanism** — the tool never goes looking for a concept map on its own.
+
+Classifies every `Para`, `Plain`, `ListItem` and `Header` elsewhere in the
+base with non-empty text — sections included, so a heading and its own body
+are each classified separately, which is what lets a mismatch between a
+parent's topic and its children's become a measurable signal rather than
+being silently prevented. `CodeBlock` and `BlockQuote` are excluded: a code
+block has no prose *about* a topic, classifying one invites exactly the
+false positive the human's stated preference (false negatives over false
+positives) rules against, and `BlockQuote` carries its own text in 0 of 159
+measured cases, its prose living in the child `Para`s that are already
+counted. A block over **8,000 characters** is skipped and reported, never
+truncated — measured against the corpus's own distribution (median 102,
+p99.9 1,072, max 2,120 characters).
+
+Fragments sharing an ancestor path — the heading and bullet chain above a
+block — are batched together, up to **100 per call** by default
+(`--batch-size`), so that chain is sent once per group rather than once per
+fragment: at one block per call, **98.7%** of every call's tokens are the
+concept map being re-sent, unchanged, for the ten-thousandth time.
+
+**`--prompt=GUID` names the ingested prompt document** — digest
+`prompts/concept-map.md` once, `--as=notes --mutability=mutable`, and pass
+its root here; it is required for a real run and ignored by
+`--cost-calculation`. The prompt is a text artifact like any other, so
+revising it and re-ingesting with `--updates=GUID` is how a prompt change is
+versioned, and the run records which `prompt_version` (the file's own
+frontmatter field) it used.
+
+**`--cost-calculation` makes no network call, with or without `--model`.**
+It reports the exact block count (`x of y`, oversized ones named apart), the
+exact character count, and the exact call count at the chosen batch size;
+the token count and, with `--model`, the price are always printed labelled
+`(estimate)` — no model family named in this project publishes an offline
+tokenizer, so counting exactly would itself be a network call, which would
+defeat the one promise this flag makes. `--model` prices against a small
+**hardcoded** table in `src/llm.py`; a model not in it prices as "unknown"
+rather than fetched, on purpose — the alternative would be a network call
+`--cost-calculation` is not supposed to make.
+
+A bad response fails loudly and writes nothing: the count of lines returned
+must match the count of fragments sent, every label returned must be one the
+map names exactly, and every id returned must be one this call actually
+sent. **A run either finishes every batch clean or writes nothing at all** —
+not a partial graph file — because refusal is affordable while a full pass
+costs cents and partial-run resumption is a real question only at a volume
+this project has not met yet.
+
+One run mints one `concept_run` node (its own guid is the run id), one
+`abstention` node for every "none of these" answer to point at, a
+`talks_about` edge per classified block (`primary: true`; `run` names the
+`concept_run`), and two `used` edges (run → map, run → prompt). Deleting the
+one `graph/*.jsonl` file a run wrote removes exactly what that run minted
+and nothing else — the layer's only inverse, same as everywhere else in this
+tool.
+
+`compost render` additionally regenerates `views/default-collection/` from
+whatever `talks_about` edges exist: one page per concept currently reachable
+from a **live** map (one with no `revision_of` edge superseding it), listing
+every block classified under it with its handle. A label dropped from the
+map, or a map revised out from under a run entirely, simply has nothing to
+render under it at the next `render` — the old edges stay exactly as valid
+as they were, pointing at a heading node that still exists, just not one any
+current map reaches.
+
 Like `lookup` and unlike `render`, this is **not** gated on `check` passing.
+
+**Revising a map invalidates every classification made against it — all of
+them, not only the labels you changed.** A `mutable` re-ingest mints a fresh
+tree, so labels you did not touch get new guids too: measured 2026-09-17,
+changing one section of a map left **0 of 5** unchanged labels with their
+original guid. Every prior `talks_about` edge then points at a heading no
+live map reaches. `check` stays clean and the view renders nothing for them,
+so nothing tells you it happened.
+
+So the loop is three steps, not two:
+
+```bash
+compost digest --as=notes --updates=$MAP map.md    # revise
+rm .compost/graph/$OLD_RUN.jsonl                   # drop the stale run
+compost layer concept-map --map=$NEW --prompt=$P   # re-classify
+compost render
+```
+
+Skipping the middle step is not an error and costs nothing visible — the old
+edges simply accumulate, unreachable, forever. Re-classifying is cheap enough
+that this is a procedure rather than a problem: a full pass over a
+4,845-block base is roughly $0.50 at the default model. `docs/decisions.md`,
+"A map revision invalidates every classification made against it".
 
 ### lookup HANDLE
 
@@ -640,6 +737,15 @@ placeholder for a citation target not yet in the base. Both carry
 and both carry `record_hash`/`record_subtree_hash` like every other node,
 since v0.2.13 made the two unconditional (`layers.py:_entity()` folds them
 in, the same as `digest`'s own mints).
+
+`concept_run` and `abstention` (v0.3.0) are minted by `compost layer
+concept-map`, `_entity()`'s third and fourth customers — both `UNCONTAINED`,
+parentless leaves the same way `alias` and `unresolved_citation` are.
+`concept_run`'s own guid is the run id; its `params` hold `model`,
+`batch_size` and `prompt_version`. `abstention` is the one node every "none
+of these" classification in a run points at, so *declined* is
+distinguishable from *never considered*. See `docs/record-format.md`,
+"`talks_about` and `used`".
 
 ## EDGE LAYERS
 

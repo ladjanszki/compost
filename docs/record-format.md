@@ -362,6 +362,71 @@ are specific to a chain of whole trees: **root-to-root only** (`document` or
 `revision_of` edges would mean two trees both claim to supersede it, forking
 a history the design declares linear).
 
+## `talks_about` and `used`: a layer that judges rather than derives (v0.3.0)
+
+Every record shape before this one is recomputable from bytes: `contains`
+and `next` from the AST, `derived_from` from a digest, `revision_of` from a
+re-ingest. `compost layer concept-map` mints the first kind of record this
+project has that is not — an LLM's judgement about which topic a block is
+about, which two runs of the same model may answer differently. The shape
+below is how that judgement is still made auditable rather than merely
+trusted.
+
+**`concept_run`** — `UNCONTAINED`, one per `compost layer concept-map`
+invocation. `params`: `model`, `batch_size`, `prompt_version`, all three
+required. **The node's own guid is the run id** — a separate `run_id` string
+beside it would be two names for one thing, and the second is the one that
+drifts.
+
+**`abstention`** — `UNCONTAINED`, one per run. The target every "none of
+these" classification points at. A real node rather than the mere absence of
+an edge, because absence cannot distinguish *"considered and declined"* from
+*"not yet seen"* — the difference between a layer that is done and one that
+needs another pass.
+
+**`talks_about`** — block → `Header` (a concept) or block → `abstention`.
+Props: `primary` (bool), `run` (a `concept_run` guid). Aligns with
+`dcterms:subject`; `primary: true` aligns with `foaf:primaryTopic`, one per
+block per run, to keep a measurable abstention-rate signal even though the
+map allows a block several topics. **Enforced:** `records.check()`'s
+fifteenth assertion — within one run, a block that carries any `talks_about`
+edge carries exactly one with `primary: true`, scoped by the edge's own
+`run` prop so two runs may each give the same block a primary of their own.
+**Not enforced:** whether the classification is correct — it is a judgement,
+not a recomputable fact, so nothing here can check it.
+
+**`used`** — `concept_run` → the map's document root, and `concept_run` →
+the prompt's document root. Aligns with `prov:used` (an *Activity* used two
+*Entities*) rather than reusing `derived_from`, which in this project always
+means "document → the blob it was read from" — claiming a run was *made of*
+the map would overstate it. **Enforced:** `check()`'s ordinary
+dangling-endpoint assertion, same as every edge; deleting a map or prompt
+root out from under a run it was used by is caught the same way any other
+dangling reference is. **Not enforced:** whether the run succeeded, or any
+ordering between the two `used` edges.
+
+**One run classifies against one map**, producing one run id and one
+abstention node — this is what keeps "delete a run, and everything it
+minted disappears" exact: deleting the one `graph/*.jsonl` file a run wrote
+removes its `concept_run`, its `abstention`, and every `talks_about` edge it
+minted, and nothing else, because nothing else was ever written to that
+file.
+
+**The concept map itself needs no new record shape at all.** It is a
+`document` root like any other, `--as=notes --mutability=mutable`; the only
+thing that makes it a concept map is `params.meta.concept_map` arriving as a
+typed `MetaBool` `true`, already stored since frontmatter parsing shipped
+and never read until this layer. A heading is a label, a heading nested one
+level inside it is a sublabel, and a `Para`/`Plain` directly inside either is
+that concept's grounding description — no mechanism beyond `contains`/`next`
+is needed, because a heading has contained its own section since v0.2.16.
+
+**The collection page is not a record shape at all.** It is
+`views.render_collection`, a pure function of the `talks_about` edges and
+the concept map's current tree — generated at `compost render` time,
+disposable, and unable to drift from the classification because it is
+derived from nothing else.
+
 ## The document node and `meta`
 
 A markdown file becomes a `document` node — compost-native, lowercase — whose

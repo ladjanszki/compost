@@ -784,7 +784,7 @@ render produces, and that running the build again changes nothing.
 
 <!-- BEGIN GENERATED: tools/schema_tables.py -->
 
-**36 node types.** Params split required / optional; "carries content" means the type also holds pandoc inline content, not only `params`.
+**38 node types.** Params split required / optional; "carries content" means the type also holds pandoc inline content, not only `params`.
 
 | type | required params | optional params | carries content |
 |---|---|---|---|
@@ -811,8 +811,10 @@ render produces, and that running the build again changes nothing.
 | `TableBody` | `attr`, `intermediate_rows`, `row_head_columns` | — | — |
 | `TableFoot` | `attr` | — | — |
 | `TableHead` | `attr` | — | — |
+| `abstention` | — | — | — |
 | `alias` | `scheme`, `value` | `generated_by`, `pandoc` | — |
 | `blob` | `bytes_sha256`, `imported_at`, `original_name`, `route`, `stored_as` | `selector_conforms_to`, `selector_value` | yes |
+| `concept_run` | `batch_size`, `model`, `prompt_version` | — | — |
 | `contentblock` | `block`, `block_type` | — | — |
 | `display_name` | `value` | — | — |
 | `document` | `meta`, `pandoc_api_version`, `route` | `api_error_status`, `duration_api_ms`, `duration_ms`, `fast_mode_disabled_reason`, `fast_mode_state`, `is_error`, `modelUsage`, `mutability`, `num_turns`, `permission_denials`, `result`, `session_id`, `source`, `stop_reason`, `subtype`, `terminal_reason`, `time_to_request_ms`, `total_cost_usd`, `ttft_ms`, `ttft_stream_ms`, `type`, `usage`, `uuid` | — |
@@ -825,7 +827,7 @@ render produces, and that running the build again changes nothing.
 | `turn` | `author`, `log`, `timestamp`, `uuid` | — | — |
 | `unresolved_citation` | — | — | — |
 
-**15 `(layer, type)` edge pairs.**
+**17 `(layer, type)` edge pairs.**
 
 | layer | type | aligns with |
 |---|---|---|
@@ -833,6 +835,8 @@ render produces, and that running the build again changes nothing.
 | `citation` | `cites` | — |
 | `citation` | `names` | — |
 | `claude-code` | `replies_to` | — |
+| `concept-map` | `talks_about` | dcterms:subject; primary: true aligns with foaf:primaryTopic — enforced: records.check()'s fifteenth assertion — within one run, a block that carries any talks_about edge carries exactly one with primary: true; not enforced: nothing about whether the classification is correct; a judgement, not a recomputable fact |
+| `concept-map` | `used` | prov:used — an Activity (the run) used an Entity (the map, the prompt) — enforced: check()'s dangling-endpoint assertion, same as every other edge; not enforced: whether the run succeeded, and any ordering |
 | `conversation` | `next` | — |
 | `conversation` | `responds_to` | — |
 | `display` | `names` | — |
@@ -845,7 +849,7 @@ render produces, and that running the build again changes nothing.
 | `session` | `next` | — |
 | `session` | `touches` | — |
 
-**64 distinct params.** Which node types each appears on. The third column is a leftover: it was to be filled in by hand, one row at a time, deciding which params counted as content. `v0.2.13` removed that question rather than answering it — the mapping is the whitelist — so nothing reads this column. It is still rendered because the table is generated and an empty column is cheaper than a special case.
+**67 distinct params.** Which node types each appears on. The third column is a leftover: it was to be filled in by hand, one row at a time, deciding which params counted as content. `v0.2.13` removed that question rather than answering it — the mapping is the whitelist — so nothing reads this column. It is still rendered because the table is generated and an empty column is cheaper than a special case.
 
 | param | appears on | content? (unused) |
 |---|---|---|
@@ -854,6 +858,7 @@ render produces, and that running the build again changes nothing.
 | `api_error_status` | `document` |  |
 | `attr` | `Cell`, `CodeBlock`, `Div`, `Figure`, `Header`, `Row`, `Table`, `TableBody`, `TableFoot`, `TableHead` |  |
 | `author` | `turn` |  |
+| `batch_size` | `concept_run` |  |
 | `block` | `contentblock` |  |
 | `block_type` | `contentblock` |  |
 | `bytes_sha256` | `blob` |  |
@@ -876,6 +881,7 @@ render produces, and that running the build again changes nothing.
 | `list_attributes` | `OrderedList` |  |
 | `log` | `logline`, `turn` |  |
 | `meta` | `document` |  |
+| `model` | `concept_run` |  |
 | `modelUsage` | `document` |  |
 | `mutability` | `document`, `session` |  |
 | `name` | `toolcall` |  |
@@ -885,6 +891,7 @@ render produces, and that running the build again changes nothing.
 | `pandoc_api_version` | `document` |  |
 | `path` | `file` |  |
 | `permission_denials` | `document` |  |
+| `prompt_version` | `concept_run` |  |
 | `result` | `document` |  |
 | `route` | `blob`, `document`, `session` |  |
 | `row_head_columns` | `TableBody` |  |

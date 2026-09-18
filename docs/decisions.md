@@ -805,3 +805,211 @@ suffix that is not part of the name, and every decoy fails `[0-9a-f]{8}`.
 closes on `}` immediately after the eight characters or after one known suffix.
 Nothing in the corpus depends on this; it is cheap to state and expensive to
 discover missing.
+
+## The concept-map answer format: a line per fragment, measured against a real model
+
+`docs/roadmap.md`'s v0.3.0 draft chose a line format (`[id] label`) over JSON
+on a guess — "a cheap model follows it more reliably" — and said so in
+writing, with `prompts/concept-map.md`'s `version` field left there for
+exactly the moment this got measured.
+
+**Measured against `openai/gpt-4o-mini`, temperature 0, 22 real batches
+across three throwaway bases (never the human's own):** the count-mismatch
+and unsent-id checks — guarantee 5's first and third — never fired once. The
+model reliably returns exactly one line per fragment sent, in order, with
+the id it was given. **The line format survived contact.** The failure that
+did happen, on 4 of 22 batches, was always the second check: the model
+answering with a real-sounding topic (`Ownership`, `Functions with Return
+Values`) or a plausible but unlisted sublabel (`Storage > Ownership`)
+instead of the map's own `none of these`, whenever the material had an
+obvious topic the map did not name. That is a **map-fit** failure, not a
+format failure — no measured evidence favours JSON over the line format, and
+switching would not have prevented any of the four real failures observed.
+
+**This is evidence, not proof.** Twenty-two batches against one model is a
+starting measurement, not a closed question; a different model, a larger
+map, or material more thoroughly unrelated to it could behave differently.
+Recorded here so the next person who revisits `prompts/concept-map.md`'s
+`version` field inherits a number instead of a guess.
+
+## `--cost-calculation` prices from a static table, never a fetch
+
+The v0.3.0 draft's own prose said the price per token would be "fetched"
+when `--model` is given; the guarantee it also wrote down says
+`--cost-calculation` makes no network call **with or without** `--model`.
+Both cannot be true — a live fetch of OpenRouter's models list is a network
+call regardless of how harmless or free it is.
+
+**Sided with the guarantee.** `src/llm.py:PRICE_TABLE` is a small,
+hand-maintained dict of USD per million input tokens for a few named
+models; a model missing from it prices as "no local price for X" rather
+than being guessed at or fetched live. It will go stale — OpenRouter's
+prices move and this table will not follow them — and that is the accepted
+cost of a flag whose one hard promise is that it never touches the network,
+even for a read that would itself have been free.
+
+## The classifying model: measured against ground truth, not chosen by price
+
+**Measured 2026-09-17, after v0.3.0 was built and before it shipped.** The
+first default was `openai/gpt-4o-mini`, picked because the release's working
+hypothesis said *"semantic categorisation will not need the most expensive
+models."* Nothing had tested that. This is the test.
+
+### The instrument: Wikipedia, because it has ground truth
+
+Every earlier attempt to judge this layer failed on the same thing — the
+abstention rate is uninterpretable. A high rate means either *the map is
+wrong* or *the material is unclassifiable*, and from outside they look
+identical. The roadmap says so and leaves it open.
+
+Wikipedia closes it. Fifteen articles on stochastic analysis were fetched,
+converted with `pandoc -f mediawiki`, and used **both** as the notes and as
+the concept map: the page title is a label, each `##` section a sublabel. So
+every fragment has a **known correct answer**, and an abstention is provably a
+false negative rather than an ambiguous signal. Three of the fifteen were held
+out of the map — their fragments are in the notes but their titles are not
+concepts — so the correct answer for all 352 of them is "none of these". That
+gives a measured **false-positive** rate, which the human's stated preference
+(false negatives over false positives) had never had.
+
+Two arms, on identical fragments:
+
+- **arm A** keeps the headings, so the ancestor path names the answer
+- **arm C** deletes every heading line and changes nothing else, so a fragment
+  arrives as bare text
+
+### The result
+
+2,207 fragments with ground truth, ~$2.79 of API spend for the whole sweep.
+
+| | arm A batches failed | arm A page | arm C batches failed | arm C page | arm C exact |
+|---|---|---|---|---|---|
+| `openai/gpt-4o-mini` | 12/13 | 88.7% | 5/10 | **39.3%** | 14.0% |
+| `google/gemini-2.5-flash-lite` | 11/13 | 99.1% | 6/10 | 81.2% | 48.5% |
+| **`google/gemini-3.8-flash`** | **0/13** | **99.7%** | **0/10** | **99.4%** | **97.9%** |
+| `anthropic/claude-opus-5` | 0/13 | 99.6% | 0/10 | 98.7% | 96.1% |
+
+**`gemini-3.8-flash` matches `claude-opus-5` on every measure at a sixth of
+the price** — $0.127 against $0.845 for a 1,235-fragment run. It is the
+default. Claude's role here was as the **instrument, not the candidate**:
+without a ceiling, 99.4% could not be distinguished from "as good as this task
+gets", and the whole point of the sweep was to tell those apart.
+
+**The hypothesis is confirmed, with a floor under it.** The cheapest models
+are not adequate — two of the four tested are well below the bar — but the
+best is not needed either. Re-picking this constant without re-running this
+measurement is how the floor gets lost, which is why `src/llm.py` carries the
+numbers beside it.
+
+### Three things this overturned, each of which had been argued from one model
+
+**Instruction-following is a capability, and was being read as a design flaw.**
+`gpt-4o-mini` had 12 of 13 batches rejected for naming labels absent from the
+map. That was diagnosed as a representational bug — the map expresses two
+levels and the articles are five deep, so the model named a real `h3` it could
+see and the strict check rejected it. The diagnosis was half right: 608 of the
+743 rejected answers did name a genuinely existing heading. But a *capable*
+model obeys "use only topics from the list" regardless, and rejections went to
+**zero**. The `flash-lite` row is the proof: **99.1% page accuracy and still
+11 of 13 batches rejected** — it knows the answer and violates the constraint
+anyway. Semantic judgement and constraint adherence are separate capabilities
+and only the first is about difficulty.
+
+**The ancestor path is not doing the work.** Removing every heading costs
+`gpt-4o-mini` **49.4 points** of page accuracy and `gemini-3.8-flash` **0.3**.
+The conclusion drawn from the cheap model — that this layer reads the heading
+above the prose rather than the prose — is false for a model that can do the
+task. This matters directly for real material: the 14.1% of blocks in a notes
+base that have no ancestor path are not a lost cause.
+
+**Refusing the whole run on one bad batch is affordable.** With `gpt-4o-mini`
+at an 18% per-batch failure rate, a 49-batch run completes with probability
+0.01%, and that arithmetic was used to argue the policy was too strict. At
+0/13 and 0/10 the policy costs nothing. The policy was never the problem; the
+model was.
+
+### Rejected, and why they are recorded rather than built
+
+**Concept ids instead of label strings.** Proposed to make invention
+impossible by construction. Rejected: detection was *already* deterministic —
+`_parse_response` validates membership exactly — so ids improve nothing there,
+while an in-range but wrong id passes validation and mints a bad edge
+**silently**. Trading a loud failure for a quiet one is the wrong direction
+here.
+
+**Longest-valid-prefix resolution** — resolve `A > B > C` to `A > B` when only
+that exists. It works: it lifts `gpt-4o-mini`'s arm-A acceptance from 65.5% to
+90.6% with accuracy unchanged, and arm C to 100%. It is not built, because at
+the chosen model acceptance is already 100% and it silently coarsens an answer
+the model did not give. Recorded here as the measured fallback if a cheaper
+model is ever wanted.
+
+**A third, character-based batch limit.** Still not built — see the group-size
+bound below, which was the limit that actually turned out to be missing.
+
+## `batch_size` is a bound, and three other repairs the sweep found
+
+The sweep above was run through the shipped code, which is why it found these
+rather than the tests finding them: each needed either real material or a real
+model to show up at all.
+
+**`_make_batches` never split a path-group, so `batch_size` was a hint.** Its
+docstring claimed *"nothing in any measured material reaches that case"*, and
+that was false when written. The **test corpus holds one path-group of 1,140
+fragments**, and — the sharper case — every fragment with no ancestor path
+shares the empty path, so context-free material collapses into a single group
+of everything. Arm C's first run sent **948 fragments in one call** and got
+1,580 answer lines back for them. A group is now split when it exceeds
+`batch_size` on its own. The cost is one repeat of that group's ancestor path
+per extra chunk — which is the exact cost the grouping exists to avoid — and
+it is obviously the lesser one.
+
+**`llm.ask` returned `message["content"]` unchecked.** The models that pass
+the measurement above are reasoning models: they spend output tokens on a
+trace before answering. With no `max_tokens`, a 100-fragment answer is
+truncated, the response carries `content: null` and
+`finish_reason: "length"`, and that `None` was handed to the caller — dying
+inside `_parse_response` with an `AttributeError` far from its cause. This
+broke the first sweep run. Now: an explicit cap, `reasoning: {"exclude":
+true}` since this layer wants a label and not an argument for it, and a named
+`LLMError` that reports `finish_reason` and points at `--batch-size`.
+Transport failures still retry; a response that *arrived* but is unusable
+raises, because retrying buys the same answer again.
+
+**`key_usage` hardcoded a second `openrouter.ai` URL**, so
+`COMPOST_LLM_ENDPOINT` moved the chat endpoint but not that one — the override
+exists precisely so a test can point every call in the module somewhere
+closed. It is derived from `endpoint()` now.
+
+**`_label_index` merged duplicate labels silently.** A flat dict, so a second
+label of the same name overwrote the first and blocks were attributed to
+whichever won — differently depending on document order. Measured over the
+twelve mapped articles, **14 headings repeat**: `Definition`, `History`,
+`Examples`, `Properties`. Those are safe as *sublabels*, whose keys are
+qualified by their parent; it is two top-level labels, or two sublabels under
+one parent, that collide. It refuses now, naming the label. Nothing in the
+answer format can say which of two identically named concepts is meant, so
+there is no honest merge.
+
+## A map revision invalidates every classification made against it
+
+**Not a defect, and not fixed — a consequence worth writing down before
+someone meets it.** Measured 2026-09-17: revise a concept map with
+`--updates`, changing only its last section, and of the labels that are
+byte-for-byte unchanged, **0 of 5 keep their guid**. A `mutable` re-ingest
+mints a fresh tree, so every prior `talks_about` edge points at a heading no
+live map reaches.
+
+Decision 10 says a removed label's old edges "stay, pointing at the heading
+node they named, which remains true". That is literally true and practically
+empty: after *any* edit to the map, that is the state of *every* edge, not
+just the removed label's. `check` stays clean and the collection view simply
+renders nothing for them, so the accumulation is silent.
+
+The workflow this implies is in `docs/man-compost.md`: **revise the map,
+delete the old run's graph file, re-classify.** At the measured cost — a full
+pass over a 4,845-block base is about $0.50 — re-classifying is cheap enough
+that this is a procedure rather than a problem. Making guids survive a
+revision is a real design question about identity, and is not being answered
+here; it is the same shape as the semantic clock this project has declined to
+build three times.
