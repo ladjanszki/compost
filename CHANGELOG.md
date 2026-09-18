@@ -3,6 +3,125 @@
 This file overarches versions. Entries below the `v0` marker describe the
 LadybugDB-centric architecture that `v0` closes out.
 
+## Unreleased — the talks-about layer
+
+**The first semantic layer, and the first thing in this project that calls a
+model.** `compost layer concept-map --map=GUID --prompt=GUID` classifies
+every `Para`, `Plain`, `ListItem` and `Header` in the base against a concept
+map the human writes as an ordinary markdown document — a heading is a
+label, a nested heading a sublabel, the prose under either its grounding
+description. One run mints one `concept_run` node (its own guid is the run
+id), one `abstention` node every "none of these" answer points at, a
+`talks_about` edge per classified block (`primary: true`, `run` naming the
+`concept_run`), and two `used` edges (run → map, run → prompt). Deleting the
+one `graph/*.jsonl` file a run wrote removes exactly what it minted and
+nothing else.
+
+Three schema-closed names are new: node types `concept_run` and
+`abstention` (both `UNCONTAINED`), edge types `talks_about` and `used`, and
+layer `concept-map` — `tools/record-schema-1.json` had to grow to accept
+all five, `additionalProperties: false` being what it is. `records.check()`
+gains a fifteenth assertion: within one run, a block that carries any
+`talks_about` edge carries exactly one with `primary: true`.
+
+**`src/llm.py`** is the one seam that reaches a network — stdlib
+`urllib.request` only, so `pyproject.toml`'s `dependencies = []` stays true.
+`ENDPOINT` and `MODEL` are each defined exactly once, the same discipline
+`markdown.py`'s `READER` already holds. Every call is injectable (`ask=`),
+so the test suite never touches the network.
+
+`compost layer concept-map --cost-calculation [--model=NAME]` reports the
+exact block, character and call count and an always-labelled *estimate* of
+tokens and price, with no network call either way — there is no offline
+exact tokenizer for the model families this project targets, so an honest
+estimate is the ceiling, not a shortcut. Fragments sharing an ancestor path
+are batched together (100 per call, `--batch-size` to change it): at one
+block per call, 98.7% of every call's tokens are the concept map being
+re-sent unchanged.
+
+A block over **8,000 characters** is skipped and reported, never truncated
+— measured against the corpus's own distribution (median 102, p99.9 1,072,
+max 2,120). `CodeBlock` and `BlockQuote` are excluded from what gets
+classified: a code block has no prose *about* a topic, and a block quote
+carries its own text in 0 of 159 measured cases.
+
+A bad response — a short count, a label the map does not name, an id never
+sent — fails loudly and writes nothing; a run either finishes every batch
+clean or leaves the base exactly as it was. Measured against a real model
+(`openai/gpt-4o-mini`, temperature 0) over 22 real batches across three
+throwaway bases: the count-mismatch and unsent-id checks never fired once,
+but the unknown-label check did, on 4 of those 22 — always the model
+inventing a real-sounding topic (or a plausible-sounding sublabel) instead
+of answering `none of these` when the material had an obvious topic the map
+did not name. On material genuinely unrelated to the map (rust-book prose
+against a three-label test map), abstention ran at 1,158 of 1,164 — a
+signal that the *material* was unclassifiable by that map, not evidence
+about a map that fits its own base.
+
+**`views.render_collection`** is the fourth view family, alongside
+`default-{djot,html,md}` — one page per concept currently reachable from a
+**live** map (no `revision_of` edge superseding it), listing every block
+classified under it with its handle. Generated from records and nothing
+else, so it cannot drift from the classification, and a label dropped from
+the map — or a map revised out from under a run entirely — simply has
+nothing to render under it at the next `render`.
+
+### Measured against ground truth before shipping, and four repairs it found
+
+**The default model was wrong, and the numbers that said otherwise came from
+it.** Everything above about invented labels and abstention rates was
+measured on `openai/gpt-4o-mini`. A ground-truth sweep on 2026-09-17 —
+fifteen Wikipedia articles on stochastic analysis, used both as the notes and
+as the concept map, so every one of 2,207 fragments has a known correct
+answer, three articles held out of the map so false positives are measurable
+too — replaced that with a comparison across four models:
+
+| | arm A failed | arm C page | arm C exact |
+|---|---|---|---|
+| `openai/gpt-4o-mini` | 12/13 | 39.3% | 14.0% |
+| `google/gemini-2.5-flash-lite` | 11/13 | 81.2% | 48.5% |
+| **`google/gemini-3.8-flash`** | **0/13** | **99.4%** | **97.9%** |
+| `anthropic/claude-opus-5` | 0/13 | 98.7% | 96.1% |
+
+Arm A keeps the headings; arm C deletes every heading line and changes
+nothing else. **`MODEL` is now `google/gemini-3.8-flash`** — matching
+`claude-opus-5` at a sixth of the price, with Claude serving as the
+instrument that proves 99.4% is the ceiling rather than one model's number.
+The release's working hypothesis, *"semantic categorisation will not need the
+most expensive models"*, is confirmed with a floor under it: two of the four
+are well below the bar. Whole sweep, $2.79.
+
+Three conclusions in the entry above do not survive it. The 18% unknown-label
+rate is a property of the cheapest model, not the task — capable models
+reject **zero** batches, because "use only topics from the list" is itself a
+capability. The ancestor path is worth 49.4 points of page accuracy to
+`gpt-4o-mini` and **0.3** to `gemini-3.8-flash`, so this layer is not merely
+reading the heading above the prose. And refusing a whole run on one bad
+batch, which that 18% made look untenable, costs nothing at 0/13.
+`docs/decisions.md` carries the table, and the two mechanisms designed
+against the old numbers — concept ids, and longest-valid-prefix resolution —
+are recorded there as rejected-with-reasons rather than built.
+
+**Four repairs, each needing real material or a real model to surface.**
+`_make_batches` never split a path-group, so `batch_size` was a hint: the
+test corpus holds one group of **1,140** fragments, and every fragment with
+no ancestor path shares the empty path, so context-free material collapsed
+into one call of everything — 948 fragments in one request, 1,580 answer
+lines back. `llm.ask` returned `message["content"]` unchecked, and a
+reasoning model truncated for want of a `max_tokens` returns `null` with
+`finish_reason: "length"`; there is an explicit cap, an excluded reasoning
+trace, and a named `LLMError` now. `key_usage` hardcoded a second
+`openrouter.ai` URL that escaped the `COMPOST_LLM_ENDPOINT` override.
+`_label_index` merged two identically named labels silently — 14 headings
+repeat across the twelve mapped articles — and refuses now, naming the label.
+
+**And one consequence written down rather than fixed:** revising a concept
+map invalidates *every* classification made against it, not just the labels
+that changed — a `mutable` re-ingest mints fresh guids, so 0 of 5 unchanged
+labels kept theirs. `check` stays clean and the view renders nothing, so it
+is silent. `docs/man-compost.md` documents the three-step loop it implies:
+revise, delete the old run's file, re-classify.
+
 ## v0.2.17 — 2026-09-11 — the list item is a container too
 
 **The same shape v0.2.16 fixed for headings, one level down.** A bullet with a
