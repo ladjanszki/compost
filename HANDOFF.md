@@ -36,7 +36,7 @@ guarantees, and a section saying what is still open.
 ## The hazard that cannot be undone
 
 **`.compost` is a symlink into the human's
-private notes repository** — `../notes-repo/base`.
+private notes repository** — `../<notes-repo>/base`.
 
 `compost digest`, `render`, `layer` and `draw` all walk *up* the tree looking
 for `.compost/`. Run any of them from inside the repo — or anywhere beneath it
@@ -59,7 +59,7 @@ tracked file.
 **It destroys the conda env you name.** Always pass a throwaway:
 
 ```bash
-./tests/clean-room.sh --with-agent compost-gate-tmp /path/to/compost
+./tests/clean-room.sh --with-agent compost-gate-tmp "$PWD"
 ```
 
 **And it installs into whatever env is active.** A failed env step used to let

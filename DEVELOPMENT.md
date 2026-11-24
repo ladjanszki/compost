@@ -143,7 +143,7 @@ The order:
    `TODO-code-review.md` item 2 has the standing version of this.
 5. `git tag -a vX.Y.Z`, **delete the rc in the same breath**, push branch and
    tags. Then **freeze the whitepaper into the notes repository** — `git show
-   vX.Y.Z:docs/compost.md > ../notes-repo/whitepaper-versions/compost-vX.Y.Z.md`
+   vX.Y.Z:docs/compost.md > ../<notes-repo>/whitepaper-versions/compost-vX.Y.Z.md`
    — which has to happen *after* the tag, because by the next commit the working
    copy has already moved on. It goes to the notes repo rather than `docs/`
    because `tools/build_whitepaper.py` and two suites hardcode `docs/compost.md`,

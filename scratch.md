@@ -81,7 +81,7 @@ This question really got me thinking and I realised that for me to be able to an
     - I guess because the titles are pre-configured we should give an error and do nothing
     - I think this is a much more intuitive behaviour than half query half result md files
     - Also the passing of a yaml file gives us a lot of possibility to configure this layer building **and** layer building in general if we use this elsewhere
-    - I created an example yaml file at `/path/to/notes-repo/example.yaml`
+    - I created an example yaml file in a local scratch directory outside the repo
         - I'm not sure if it's syntactically correct but shows how I imagine giving the tags and some description for them
 - Rendering of the blocks
     - This build process creates 
